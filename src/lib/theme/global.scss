@@ -1,0 +1,192 @@
+:root {
+  --backgound-color: #121212;
+  --title-color: rgba(255, 255, 255, 0.9);
+  --text-color: #999999;
+  --primary-color: #b8ff65;
+  --primary-color50: rgba(250, 221, 145, 0.8);
+
+  --hamburger: rgba(255, 255, 255, 0.5);
+  --nav-backgound-color: rgba(32, 32, 32, 0.9);
+  --nav-link-color: #ffffff;
+  --link-color: #ffffff;
+  --border-radius: 5px;
+
+  --border-color: rgba(255, 255, 255, 0.1);
+  --button-border: #303030;
+  --button-background: #202020;
+  --card-border: #252525;
+  --card-background: #171717;
+  --input-border: rgba(255, 255, 255, 0.15);
+  --input-background: rgba(0, 0, 0, 0.4);
+  --input-placeholder: rgba(255, 255, 255, 0.6);
+
+  --desktop-padding: 0 40px;
+  --mobile-padding: 0 20px;
+  --website-width: 1400px;
+
+  --success-color: #40d77c;
+  --warn-color: #ed6580;
+  --info-color: #5a8bdb;
+  --alert-color: #e3b75f;
+}
+
+body {
+  background-color: var(--backgound-color);
+  font-family: Montserratm, Arial, serif;
+  height: 700px;
+  width: 600px;
+  margin: 0;
+  position: fixed;
+  color: var(--text-color);
+  user-select: none;
+  box-sizing: border-box;
+}
+
+html {
+  box-sizing: border-box;
+}
+
+*,
+*:before,
+*:after {
+  box-sizing: inherit;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@font-face {
+  font-family: 'Montserrat';
+  src: url('/static/fonts/Montserrat-Regular.woff') format('woff'),
+  url('/static/fonts/Montserrat-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Roboto Mono';
+  src: url('/static/fonts/RobotoMono-Regular.woff') format('woff'),
+  url('/static/fonts/RobotoMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Norse';
+  src: url('/static/fonts/Norse.woff') format('woff'),
+  url('/static/fonts/Norse.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  margin: 0;
+  color: var(--title-color)
+}
+
+p {
+  font-family: "Roboto Mono", monospace;
+}
+
+.draggable {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-app-region: drag;
+}
+
+@keyframes rgbFill {
+  0%, 100% {
+    fill: #5f86f2;
+  }
+  12.5% {
+    fill: #a65ff2;
+  }
+  25% {
+    fill: #f25fd0;
+  }
+  37.5% {
+    fill: #f25f61;
+  }
+  50% {
+    fill: #f2cb5f;
+  }
+  62.5% {
+    fill: #abf25f;
+  }
+  75% {
+    fill: #5ff281;
+  }
+  87.5% {
+    fill: #5ff2f0;
+  }
+}
+
+.rgbFill {
+  fill: #5f86f2;
+  -webkit-animation: rgbFill 15s ease infinite;
+  -moz-animation: rgbFill 15s ease infinite;
+  animation: rgbFill 15s ease infinite;
+}
+
+.blink_me {
+  animation: blinker 1s linear infinite;
+}
+
+@keyframes blinker {
+  50% {
+    opacity: 0;
+  }
+}
+
+input {
+  height: 40px;
+  box-sizing: border-box;
+  background-color: var(--input-background);
+  border: 1px solid var(--input-border);
+  padding: 10px;
+  border-radius: var(--border-radius);
+  color: var(--title-color);
+  transition: 200ms ease-in-out;
+  width: 100%;
+
+  &::placeholder, ::-ms-input-placeholder, ::-webkit-input-placeholder {
+    color: var(--input-placeholder);
+    font-family: "Roboto Mono", monospace;
+  }
+
+  &:focus {
+    outline: none;
+    border: 1px solid var(--primary-color);
+  }
+}
+
+.layered-shadow {
+  box-shadow: 0 1px 1px hsl(0deg 0% 0% / 0.075),
+  0 2px 2px hsl(0deg 0% 0% / 0.075),
+  0 4px 4px hsl(0deg 0% 0% / 0.075),
+  0 8px 8px hsl(0deg 0% 0% / 0.075),
+  0 16px 16px hsl(0deg 0% 0% / 0.075);
+}
+
+.stripes {
+  background-size: 30px 30px;
+  background-image: linear-gradient(135deg, rgba(0, 0, 0, 0.3) 25%,
+          transparent 25%,
+          transparent 50%, rgba(0, 0, 0, 0.3) 50%, rgba(0, 0, 0, 0.3) 75%,
+          transparent 75%, transparent);
+  animation: animate-stripes 3s linear infinite;
+  -webkit-animation: animate-stripes 2s linear infinite;
+  -moz-animation: animate-stripes 2s linear infinite;
+  -ms-animation: animate-stripes 2s linear infinite;
+}
+
+@keyframes animate-stripes {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 60px 0;
+  }
+}
