@@ -1,34 +1,61 @@
-:root {
-  --backgound-color: #121212;
+:root.blue {
+  --backgound-color: #1A1C23;
   --title-color: rgba(255, 255, 255, 0.9);
   --text-color: #999999;
-  --primary-color: #b8ff65;
-  --primary-color50: rgba(250, 221, 145, 0.8);
+  --primary-color: #7098cf;
 
-  --hamburger: rgba(255, 255, 255, 0.5);
-  --nav-backgound-color: rgba(32, 32, 32, 0.9);
-  --nav-link-color: #ffffff;
-  --link-color: #ffffff;
-  --border-radius: 5px;
+  --button-bg-color: rgba(255, 255, 255, 0.1);
+  --button-b-color: rgba(255, 255, 255, 0.2);
+  --button-hover-bg-color: rgba(255, 255, 255, 0.3);
+  --button-text-color: rgba(255, 255, 255, 0.8);
+  --button-hover-text-color: rgba(255, 255, 255, 1.0);
 
-  --border-color: rgba(255, 255, 255, 0.1);
-  --button-border: #303030;
-  --button-background: #202020;
-  --card-border: #252525;
-  --card-background: #171717;
+  --toast-b-color: #585a5e;
+  --toast-bg-color: #2f333a;
+  --toast-text-color: rgba(255, 255, 255, 0.8);
+
+  --border-color: rgba(255, 255, 255, 0.2);
+  --button-border: rgba(255, 255, 255, 0.2);
+  --button-background: rgba(255, 255, 255, 0.2);
+
+
+  --card-border: rgba(255, 255, 255, 0.2);
+  --card-background: rgba(255, 255, 255, 0.1);
+
   --input-border: rgba(255, 255, 255, 0.15);
   --input-background: rgba(0, 0, 0, 0.4);
   --input-placeholder: rgba(255, 255, 255, 0.6);
+  --input-focus: #fff;
 
-  --desktop-padding: 0 40px;
-  --mobile-padding: 0 20px;
-  --website-width: 1400px;
+  --success-color: #5a8bdb;
+  --warn-color: #ed6580;
+  --info-color: #5a8bdb;
+  --alert-color: #e3b75f;
+}
+
+:root.dark {
+  --backgound-color: #121212;
+  --title-color: rgba(255, 255, 255, 0.9);
+  --text-color: #999999;
+  --primary-color: #40d77c;
+
+  --border-color: rgba(255, 255, 255, 0.2);
+  --button-border: rgba(255, 255, 255, 0.2);
+  --button-background: rgba(255, 255, 255, 0.2);
+  --card-border: rgba(255, 255, 255, 0.2);
+  --card-background: rgba(0, 0, 0, 0.5);
+
+  --input-border: rgba(255, 255, 255, 0.15);
+  --input-background: rgba(0, 0, 0, 0.4);
+  --input-placeholder: rgba(255, 255, 255, 0.6);
+  --input-focus: #fff;
 
   --success-color: #40d77c;
   --warn-color: #ed6580;
   --info-color: #5a8bdb;
   --alert-color: #e3b75f;
 }
+
 
 body {
   background-color: var(--backgound-color);
@@ -146,7 +173,7 @@ input {
   background-color: var(--input-background);
   border: 1px solid var(--input-border);
   padding: 10px;
-  border-radius: var(--border-radius);
+  border-radius: 5px;
   color: var(--title-color);
   transition: 200ms ease-in-out;
   width: 100%;
@@ -188,5 +215,30 @@ input {
   }
   100% {
     background-position: 60px 0;
+  }
+}
+
+.shake {
+  animation: shake 0.250s ease-in-out;
+}
+
+@keyframes shake {
+  0% {
+    transform: translate(0);
+  }
+  20% {
+    transform: translate(0.5rem);
+  }
+  40% {
+    transform: translate(-0.5rem);
+  }
+  60% {
+    transform: translate(0.5rem);
+  }
+  80% {
+    transform: translate(-0.5rem);
+  }
+  100% {
+    transform: translate(0);
   }
 }

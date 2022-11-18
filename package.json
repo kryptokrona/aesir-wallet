@@ -1,27 +1,40 @@
 {
-	"appId": "com.electron.yggdrasil-wallet",
+	"appId": "com.electron.yggdrasil",
 	"name": "yggdrasil",
 	"productName": "Yggdrasil",
 	"author": "Kryptokrona Developers",
-	"version": "0.0.1",
+	"version": "1.0.0",
 	"private": true,
 	"description": "a wallet for Kryptokrona",
-	"repository": "https://github.com/kryptokrona/hugin-desktop",
+	"repository": "https://github.com/Swepool/yggdrasil",
 	"main": "src/electron.cjs",
 	"type": "module",
+	"npmRebuild": false,
 	"scripts": {
 		"dev": "cross-env NODE_ENV=dev npm run dev:all",
 		"dev:all": "concurrently -n=svelte,electron -c='#ff3e00',blue \"npm run dev:svelte\" \"npm run dev:electron\"",
 		"dev:svelte": "vite dev",
 		"dev:electron": "electron src/electron.cjs",
 		"build": "cross-env NODE_ENV=production npm run build:svelte && npm run build:electron",
+		"postinstall": "patch-package",
 		"build:svelte": "vite build",
 		"build:electron": "electron-builder -mwl --config build.config.json",
-		"build:mac-arm": "cross-env NODE_ENV=production vite build && electron-builder --mac --arm64 --config build.config.json"
+		"build:mac-arm": "cross-env NODE_ENV=production vite build && electron-builder --mac --arm64 --config build.config.json",
+		"build:mac-intel": "cross-env NODE_ENV=production vite build && electron-builder --mac --x64 --config build.config.json",
+		"publish:mac-arm": "cross-env NODE_ENV=production vite build && electron-builder --mac --arm64 --config build.config.json -p always",
+		"publish:mac-intel": "cross-env NODE_ENV=production vite build && electron-builder --mac --x64 --config build.config.json -p always"
 	},
-	"engines": {
-		"npm": ">=7",
-		"yarn": "use npm - https://github.com/FractalHQ/sveltekit-electron/issues/12#issuecomment-1068399385"
+	"build": {
+		"publish": [
+			{
+				"provider": "github",
+				"owner": "swepool",
+				"repo": "yggdrasil"
+			}
+		],
+		"mac": {
+			"asarUnpack": "./node_modules/node-notifier/vendor/**"
+		}
 	},
 	"browserslist": [
 		"Chrome 89"
@@ -33,11 +46,15 @@
 		"electron-reloader": "^1.2.3",
 		"electron-serve": "^1.1.0",
 		"electron-store": "^8.1.0",
+		"electron-updater": "^5.3.0",
 		"electron-window-state": "^5.0.3",
+		"file-saver": "^2.0.5",
 		"keytar": "^7.9.0",
 		"kryptokrona-crypto": "^1.0.1",
 		"kryptokrona-wallet-backend-js": "^2.4.2",
 		"node-notifier": "^10.0.1",
+		"patch-package": "^6.5.0",
+		"sound-play": "^1.1.0",
 		"svelte-french-toast": "^1.0.3",
 		"svelte-loading-spinners": "^0.3.4"
 	},
@@ -54,7 +71,6 @@
 		"electron-builder": "^23.1.0",
 		"electron-connect": "^0.6.3",
 		"electron-packager": "^16.0.0",
-		"electron-updater": "^5.0.5",
 		"eslint": "^8.19.0",
 		"eslint-config-prettier": "^8.3.0",
 		"eslint-plugin-svelte3": "^4.0.0",

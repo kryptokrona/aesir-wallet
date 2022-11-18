@@ -1,0 +1,12 @@
+diff --git a/node_modules/kryptokrona-wallet-backend-js/dist/lib/SubWallets.js b/node_modules/kryptokrona-wallet-backend-js/dist/lib/SubWallets.js
+index 3729a95..5860ba4 100644
+--- a/node_modules/kryptokrona-wallet-backend-js/dist/lib/SubWallets.js
++++ b/node_modules/kryptokrona-wallet-backend-js/dist/lib/SubWallets.js
+@@ -684,6 +684,7 @@ class SubWallets {
+             this.subWallets.delete(publicSpendKey);
+             this.deleteAddressTransactions(this.transactions, publicSpendKey);
+             this.deleteAddressTransactions(this.lockedTransactions, publicSpendKey);
++            this.publicSpendKeys = this.publicSpendKeys.filter(elem => elem != publicSpendKey);
+             return WalletError_1.SUCCESS;
+         });
+     }

@@ -1,58 +1,78 @@
 <script>
-    import {Moon} from "svelte-loading-spinners";
-    import {fade} from 'svelte/transition'
     import {onMount} from "svelte";
     import {goto} from "$app/navigation";
-    import {sleep} from "../lib/utils.js";
+    import {sleep} from "$lib/utils";
     import {node} from "$lib/stores/node.js";
     import {user} from "$lib/stores/user.js";
     import {wallet} from "$lib/stores/wallet.js";
+    import Logo from "$lib/components/icons/Logo.svelte";
 
     let loading = true
+    let wallets
 
-    onMount(async () => {
+    onMount( async () => {
+        $wallet.wallets = await window.api.getWallets()
+        $node.selectedNode = await window.api.getNode()
+        $user.touchId = await window.api.checkTouchId()
+
         window.api.startApp()
+
         window.api.receive('started-app', async data => {
-
-            $node.selectedNode = data.node
-            $user.touchId = data.touchId
-            $wallet.currentWallet = data.myWallets
-
             if (data.myWallets) {
-                await sleep(700)
+                $wallet.currentWallet = $wallet.wallets[0].wallet
+                await sleep(2250)
                 loading = false
-
-                await sleep(300)
-                await goto('/login-wallet')
-
-            } else {
-                await sleep(700)
+                await sleep(250)
+                await goto('/auth/login-wallet')
+            } else if (!data.myWallets){
+                console.log('runs')
+                await sleep(2250)
                 loading = false
-
-                await sleep(300)
-                await goto('/create-wallet')
+                await sleep(250)
+                await goto('/auth/create-wallet')
             }
         })
-
     })
-
-
 </script>
 
 <section>
     {#if loading}
-        <div in:fade out:fade>
-            <Moon color="#ffffff" size="30" unit="px"/>
+        <div class="spin">
+            <Logo size="128" opacity="15"/>
         </div>
     {/if}
 </section>
 
 <style lang="scss">
-    section {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100%;
-      width: 100%;
+  section {
+    display: flex;
+    position: relative;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    width: 100%;
+  }
+
+  .spin {
+    animation: rotation forwards 2s ease-in-out normal;
+
+    &::before {
+      content: '';
+      transform: rotate(0deg)
     }
+
+    &::after {
+      content: '';
+      transform: rotate(180deg)
+    }
+  }
+
+  @-webkit-keyframes rotation {
+    0% {
+      transform: rotate(0deg)
+    }
+    100% {
+      transform: rotate(180deg)
+    }
+  }
 </style>

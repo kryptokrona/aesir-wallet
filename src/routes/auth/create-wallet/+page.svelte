@@ -5,9 +5,10 @@
     import {fade, fly} from 'svelte/transition'
     import Backward from "$lib/components/icons/Backward.svelte";
     import NodeSelector from "$lib/components/NodeSelector.svelte";
-    import toast from "svelte-french-toast";
+    import {wallet} from "$lib/stores/wallet.js";
+    import {node} from "$lib/stores/node.js";
+    import {sleep} from "$lib/utils";
     import {goto} from "$app/navigation";
-    import {sleep} from "$lib/utils.js";
 
     let animate = false
     onMount(() => {
@@ -17,27 +18,22 @@
     let step = 1
     let password = ''
     let walletName = ''
-    let nodeOnline
 
-    const createWallet = async (e) => {
-        const node = e.detail.node
-        await toast.promise(nodeOnline = window.api.checkNode(node),
-            {
-                loading: 'Connecting to node',
-                success: 'Node connected',
-                error: 'Could not connect.',
-            },
-            {
-                position: 'top-right',
-                style: 'border-radius: 5px; background: #171717; border: 1px solid #252525; color: #fff;',
+    const createWallet = async (e, selectedNode = e.detail.node) => {
+        $node.selectedNode = selectedNode
+
+        if (await window.api.checkNode(selectedNode)) {
+            const myWallets = await window.api.walletCreate(walletName, password, selectedNode)
+
+            if (myWallets) {
+                $wallet.wallets = myWallets
+                $wallet.currentWallet = myWallets[0].wallet
+                window.api.walletStart($wallet.currentWallet, password, selectedNode)
+                password = ''
+                walletName = ''
+                await sleep(300)
+                await goto('/auth/backup-wallet')
             }
-        );
-        if (nodeOnline) {
-            await sleep(1000)
-            const wallet = window.api.walletCreate(walletName, password, node)
-            if (wallet) await goto('/login-wallet')
-            password = ''
-            walletName = ''
         }
     }
 
@@ -46,22 +42,27 @@
 {#if animate}
     <StartFlash/>
 {/if}
+
 <section in:fade>
     <div style="margin-bottom: 2rem"></div>
     {#if step === 1}
+        <h2>Create wallet</h2>
         <div class="field">
             <input in:fly={{y: 20}} placeholder="Wallet name.." type="text" autofocus bind:value={walletName}/>
             <button class="enabled" on:click={() => step++}>
                 <ArrowRight green={walletName.length >= 3}/>
             </button>
         </div>
+        <p class="import" on:click={() => goto('/auth/import-wallet')}>Import wallet</p>
     {:else if step === 2}
+        <h2>Secure wallet</h2>
         <div class="field">
             <input in:fly={{y: 20}} placeholder="Password.." type="password" autofocus bind:value={password}/>
             <button on:click={() => step++}>
                 <ArrowRight green={password.length >= 3}/>
             </button>
         </div>
+        <p>v1.0.0</p>
     {:else if step === 3}
         <NodeSelector on:connect={(e) => createWallet(e)}/>
     {/if}
@@ -69,16 +70,22 @@
         <div style="margin-top: 2rem" in:fade on:click={() => {if(step > 1) step--}}>
             <Backward/>
         </div>
-        {:else}
-        <div style="margin-top: 2rem; opacity: 0%"><Backward/></div>
+    {:else}
+        <div style="margin-top: 2rem; opacity: 0%">
+            <Backward/>
+        </div>
     {/if}
 </section>
 
 <style lang="scss">
   section {
+    width: 100%;
+    height: 100%;
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
+    gap: 2rem;
   }
 
   .field {
@@ -126,6 +133,16 @@
       &:hover {
         background: #303030;
       }
+    }
+  }
+
+  .import {
+    text-decoration: underline;
+    opacity: 50%;
+    transition: 150ms ease-in-out;
+    cursor: pointer;
+    &:hover {
+      opacity: 100%;
     }
   }
 </style>

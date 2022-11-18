@@ -2,6 +2,7 @@
     import {fade} from 'svelte/transition'
     import {createEventDispatcher} from 'svelte'
     import ArrowRight from "$lib/components/icons/ArrowRight.svelte";
+    import {node} from "$lib/stores/node.js";
 
     let nodeInput = ''
     let nodeDetails = ''
@@ -22,6 +23,7 @@
         dispatch('connect', {
             node: nodeDetails,
         })
+        $node.selectedNode = nodeDetails
         nodeInput = ''
         selectedNode = ''
     }
@@ -37,8 +39,8 @@
     }
 </script>
 
-<div in:fade class="wrapper">
-    <h1>Pick a node</h1>
+<section in:fade>
+    <h2>Pick a node</h2>
     <div class="field">
         <input placeholder="Enter url & port" type="text" spellcheck="false" autofocus bind:value={nodeInput}/>
         <button on:click={connectTo}>
@@ -58,15 +60,15 @@
             </div>
         {/each}
     </div>
-</div>
+</section>
 
 <style lang="scss">
-  .wrapper {
+  section {
     display: flex;
     flex-direction: column;
-    gap: 2rem;
     justify-content: center;
     align-items: center;
+    gap: 2rem;
     max-width: 840px;
   }
 

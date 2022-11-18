@@ -15,20 +15,8 @@
     top: 0;
     height: 30px;
     transition: 150ms ease-in-out;
-
-    &:hover {
-      background: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(255, 255, 255, 0.2), rgba(255, 255, 159, 0));
-
-      .red {
-        background-color: #ed6580;
-      }
-
-      .orange {
-        background-color: #e3b75f;
-      }
-
-    }
   }
+
 
   .window-buttons {
     display: flex;
@@ -40,9 +28,16 @@
       width: 12px;
       height: 12px;
       border-radius: 100%;
-      background-color: #252525;
       cursor: pointer;
     }
+  }
+
+  .red {
+    background-color: #ed6580;
+  }
+
+  .orange {
+    background-color: #e3b75f;
   }
 
   .drag-area {
