@@ -7,7 +7,10 @@
 		"strict": true,
 		"types": ["vite/client", "node"],
 		"typeRoots": ["node_modules/@types"],
-		"lib": ["ESNext"],
+		"lib": [
+          "ESNext",
+          "dom"
+        ],
 		/**
 			svelte-preprocess cannot figure out whether you have a value or a type, so tell TypeScript
 			to enforce using \`import type\` instead of \`import\` for Types.

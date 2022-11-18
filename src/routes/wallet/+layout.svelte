@@ -1,46 +1,46 @@
 <script>
-    import Navbar from "../../lib/components/layout/Navbar.svelte";
-    import Balance from "$lib/components/Balance.svelte";
-    import {node} from "$lib/stores/node.js";
-    import {wallet} from "$lib/stores/wallet.js";
-    import {user} from "$lib/stores/user.js";
+  import Navbar from "../../lib/components/layout/Navbar.svelte";
+  import Balance from "$lib/components/Balance.svelte";
+  import { node } from "$lib/stores/node.js";
+  import { wallet } from "$lib/stores/wallet.js";
+  import { user } from "$lib/stores/user.js";
 
-    window.api.receive('data', data => {
-        $node.localDaemonBlockCount = data.localDaemonBlockCount
-        $node.networkBlockCount = data.networkBlockCount
-        $node.walletBlockCount = data.walletBlockCount
-        $wallet.balance = data.balance
-        $user.idleTime = data.idle ?? 0
-    })
+  window.api.receive("data", data => {
+    $node.localDaemonBlockCount = data.localDaemonBlockCount;
+    $node.networkBlockCount = data.networkBlockCount;
+    $node.walletBlockCount = data.walletBlockCount;
+    $wallet.balance = data.balance;
+    $user.idleTime = data.idle ?? 0;
+  });
 
-    window.api.receive('node-status', (res) => {
-        $node.nodeStatus = res
-    })
+  window.api.receive("node-status", (res) => {
+    $node.nodeStatus = res;
+  });
 
-    console.log('wallet');
+  console.log("wallet");
 </script>
 
 <section>
-    <Navbar/>
-    <div>
-        <Balance/>
-        <slot/>
-    </div>
+  <Navbar />
+  <div>
+    <Balance />
+    <slot />
+  </div>
 </section>
 
 <style lang="scss">
-    section {
+  section {
+    display: flex;
+    width: 100%;
+    height: 100%;
+
+    div {
       display: flex;
+      flex-direction: column;
       width: 100%;
       height: 100%;
-
-      div {
-        display: flex;
-        flex-direction: column;
-        width: 100%;
-        height: 100%;
-      }
     }
+  }
 
 
 </style>

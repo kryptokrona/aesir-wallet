@@ -20,12 +20,12 @@
   };
 
   const createWallet = async () => {
-    $wallet.addresses = await window.api.createSubwallet()
-  }
+    $wallet.addresses = await window.api.createSubwallet();
+  };
 
-  const deleteWallet = async() => {
-    $wallet.addresses = await window.api.deleteSubwallet()
-  }
+  const deleteWallet = async () => {
+    $wallet.addresses = await window.api.deleteSubwallet();
+  };
 
 </script>
 
@@ -36,7 +36,8 @@
 
   {#each $wallet.addresses as address}
     <div class="row" in:fly={{y: 20, delay: 50}}>
-      <p class:primary={address === $wallet.addresses[0]}>{address.substring(0, 10) + "..." + address.substring(89, address.length)}</p>
+      <p
+        class:primary={address === $wallet.addresses[0]}>{address.substring(0, 10) + "..." + address.substring(89, address.length)}</p>
       <div on:click={() => copy(address)}>
         <CopyButton />
       </div>

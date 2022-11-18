@@ -11,7 +11,7 @@
   import { saveAs } from "file-saver";
 
   onMount(async () => {
-    $user.contacts = await window.api.getContacts() ?? []
+    $user.contacts = await window.api.getContacts() ?? [];
   });
 
   const copy = address => {
@@ -31,23 +31,23 @@
     const blob = new Blob([JSON.stringify($user.contacts)], {
       type: "application/json"
     });
-    await saveAs(blob, `yggdrasil-contacts`)
+    await saveAs(blob, `yggdrasil-contacts`);
   };
 
   const importContacts = async () => {
-    console.log('Import contacts');
-    $user.contacts = await window.api.importContacts()
+    console.log("Import contacts");
+    $user.contacts = await window.api.importContacts();
     console.log($user.contacts);
-  }
+  };
 
-  $: $user.contacts
+  $: $user.contacts;
 </script>
 
 <div class="header" in:fade>
   <h3>Contacts</h3>
   <div>
-    <Button text="Export" on:click={exportContacts}/>
-    <Button text="Import" on:click={importContacts}/>
+    <Button text="Export" on:click={exportContacts} />
+    <Button text="Import" on:click={importContacts} />
     <AddContact />
   </div>
 </div>

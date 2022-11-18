@@ -36,11 +36,11 @@ function createWindow() {
 
   const mainWindow = new BrowserWindow({
     frame: false,
+    transparent: true,
     maxHeight: 700,
     maxWidth: 600,
     minHeight: 700,
     minWidth: 600,
-    backgroundColor: "#121212",
     webPreferences: {
       enableRemoteModule: false,
       contextIsolation: true,

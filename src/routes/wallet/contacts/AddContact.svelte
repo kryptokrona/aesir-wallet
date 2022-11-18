@@ -11,9 +11,9 @@
 
   const keyDown = (e) => {
     if (e.key === "Enter" && username.length > 0) {
-      if(step === 1) {
-        step++
-      } else save()
+      if (step === 1) {
+        step++;
+      } else save();
     } else if (e.key === "Escape") {
       close();
     }
@@ -21,7 +21,7 @@
 
   const save = async () => {
     if (username && address) {
-      if($user.contacts.some(x => x.address === address)) {
+      if ($user.contacts.some(x => x.address === address)) {
         toast.error("Already added", {
           position: "top-right",
           style: "border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);"

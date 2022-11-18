@@ -3,7 +3,7 @@
     import {onMount} from 'svelte';
     import TopBar from "../lib/components/layout/TopBar.svelte";
     import toast, {Toaster} from "svelte-french-toast";
-    import {user} from "$lib/stores/user.js";
+    import { theme, user } from "$lib/stores/user.js";
     import {goto} from "$app/navigation";
     import {updater} from "$lib/stores/updater.js";
     import {page} from "$app/stores";
@@ -12,6 +12,8 @@
     let ready = false;
 
     onMount(async () => {
+
+        document.documentElement.className = $theme
 
         ready = true;
 

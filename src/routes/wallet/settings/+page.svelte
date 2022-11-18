@@ -1,21 +1,20 @@
 <script>
-
-import NodeSelector from "$lib/components/NodeSelector.svelte";
-import Button from "$lib/components/buttons/Button.svelte";
-import Themes from "./Themes.svelte";
+  import Button from "$lib/components/buttons/Button.svelte";
+  import Themes from "./Themes.svelte";
+  import { fade } from "svelte/transition";
 </script>
 
-<div class="header">
+<div class="header" in:fade>
   <h3>Settings</h3>
   <div>
-    <Button text="Wallet"/>
-    <Button text="Node"/>
-    <Button text="Theme"/>
-    <Button text="Theme"/>
+    <Button text="Wallet" />
+    <Button text="Node" />
+    <Button text="Theme" />
+    <Button text="Theme" />
   </div>
 </div>
 <div class="wrapper">
-  <Themes/>
+  <Themes />
 </div>
 
 <style lang="scss">
@@ -27,14 +26,13 @@ import Themes from "./Themes.svelte";
     min-height: 60px;
     border-bottom: 1px solid var(--border-color);
     padding: 0 2rem 0 2rem
+  }
 
-    }
-
-    .wrapper {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      width: 100%;
-      height: 100%;
-    }
+  .wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    height: 100%;
+  }
 </style>
