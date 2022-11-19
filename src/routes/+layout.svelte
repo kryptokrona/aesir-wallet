@@ -59,6 +59,7 @@
             })
         })
 
+        window.api.receive()
     });
 
     $:if ($user.idleTime >= 300) goto('/auth/login-wallet')

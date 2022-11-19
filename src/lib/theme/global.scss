@@ -23,7 +23,7 @@
   --card-background: rgba(255, 255, 255, 0.1);
 
   --input-border: rgba(255, 255, 255, 0.15);
-  --input-background: rgba(0, 0, 0, 0.4);
+  --input-background: rgba(0, 0, 0, 0.1);
   --input-placeholder: rgba(255, 255, 255, 0.6);
   --input-focus: #fff;
 
@@ -169,9 +169,8 @@ p {
 
 input {
   height: 40px;
-  box-sizing: border-box;
-  background-color: var(--input-background);
   border: 1px solid var(--input-border);
+  background-color: transparent;
   padding: 10px;
   border-radius: 5px;
   color: var(--title-color);

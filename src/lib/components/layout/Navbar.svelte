@@ -9,6 +9,7 @@
     import {goto} from "$app/navigation";
     import Logo from "$lib/components/icons/Logo.svelte";
     import Contacts from "$lib/components/icons/Navbar/Contacts.svelte";
+    import Lightning from "$lib/components/icons/Navbar/Lightning.svelte";
 </script>
 <nav in:fade>
     <div>
@@ -26,6 +27,9 @@
         </button>
         <button on:click={() => goto('/wallet/history')}>
             <Transactions/>
+        </button>
+        <button on:click={() => goto('/wallet/hyper')}>
+            <Lightning/>
         </button>
     </div>
     <div class="draggable drag"></div>

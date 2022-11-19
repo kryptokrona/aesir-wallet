@@ -4,5 +4,6 @@ export const wallet = writable({
     wallets: [],
     currentWallet: undefined,
     balance: [0, 0],
-    addresses: []
+    addresses: [],
+    preparedTransaction: undefined
 })

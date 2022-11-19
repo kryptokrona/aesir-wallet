@@ -74,7 +74,18 @@ contextBridge.exposeInMainWorld("api", {
   },
   importContacts: async () => {
     return await ipcRenderer.invoke('import-contacts')
-  }
+  },
+
+
+  prepareTransaction: async (address, amount, paymentID, sendAll) => {
+    return await ipcRenderer.invoke('prepare-transaction', address, amount, paymentID, sendAll)
+  },
+  sendTransaction: async (hash) => {
+    return await ipcRenderer.invoke('send-transaction', hash)
+  },
+  deleteTransaction: async (hash) => {
+    return await ipcRenderer.invoke('delete-transaction', hash)
+  },
 
 
 });

@@ -4,6 +4,7 @@
   import { node } from "$lib/stores/node.js";
   import { wallet } from "$lib/stores/wallet.js";
   import { user } from "$lib/stores/user.js";
+  import { page } from "$app/stores";
 
   window.api.receive("data", data => {
     $node.localDaemonBlockCount = data.localDaemonBlockCount;
@@ -17,13 +18,15 @@
     $node.nodeStatus = res;
   });
 
-  console.log("wallet");
+  console.log($page.url.pathname);
 </script>
 
 <section>
   <Navbar />
   <div>
-    <Balance />
+    {#if !$page.url.pathname.startsWith('/wallet/hyper')}
+      <Balance />
+    {/if}
     <slot />
   </div>
 </section>

@@ -1,12 +1,13 @@
 <script>
     import Button from "$lib/components/buttons/Button.svelte";
     import { fade } from "svelte/transition";
+    import PrepareTransaction from "./PrepareTransaction.svelte";
 </script>
 
 <div class="header" in:fade>
   <h3>Send</h3>
-  <Button text="Add" />
 </div>
+<PrepareTransaction/>
 
 <style lang="scss">
   .header {

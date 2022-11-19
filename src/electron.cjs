@@ -12,6 +12,7 @@ const keytar = require("keytar");
 const Store = require("electron-store");
 const { autoUpdater } = require("electron-updater");
 const fs = require("fs");
+const { createSwarm, destroySwarm, sendMessage } = require("./hyper/index.cjs");
 
 
 try {
@@ -257,7 +258,7 @@ ipcMain.on("start-wallet", async (e, walletName, password, node) => {
 
     try {
       //Start syncing
-      await sleep(5000);
+      await sleep(30 * 1000);
       backgroundSyncTransactions(keyset, node);
       const [walletBlockCount, localDaemonBlockCount, networkBlockCount] = walletBackend.getSyncStatus();
       const balance = await walletBackend.getBalance();
@@ -314,7 +315,7 @@ async function backgroundSyncTransactions(keyset, node) {
 
 //Checks if we can unlock transactions
 async function checkTx(tx, keyset) {
-  if (tx.transactionPrefixInfo.extra.length >= 67) return
+  if (tx.transactionPrefixInfo.extra.length >= 200) return
   known_pool_txs.push(tx.transactionPrefixInfotxHash);
   const txPublicKey = tx.transactionPrefixInfo.extra.substring(2, 66);
   const derivation = await crypto.generateKeyDerivation(txPublicKey, keyset.privateViewKey);
@@ -548,8 +549,66 @@ ipcMain.handle('create-subwallet', async (e) => {
 ipcMain.handle('delete-subwallet', async (e) => {
 
 })
+
 ipcMain.handle('balance-subwallet', async (e) => {
 
+})
+
+ipcMain.handle('prepare-transaction', async (e, address, amount, paymentID, sendAll) => {
+  const result = await walletBackend.sendTransactionAdvanced(
+    [[address, amount * 100000]],
+    3,
+    {isFixedFee: true, fixedFee: 10000},
+    paymentID,
+    undefined,
+    undefined,
+    false,
+    sendAll,
+    undefined
+  );
+
+  if (result.success) {
+    let transaction = {
+      address: address,
+      hash: result.transactionHash,
+      amount: amountToSend(amount),
+      fee: result.fee,
+      paymentId: paymentID
+    }
+    known_pool_txs.push(result.transactionHash)
+    return transaction
+  } else {
+    console.log(`Failed to send transaction: ${result.error.toString()}`);
+  }
+})
+
+ipcMain.handle('send-transaction', async (e, hash) => {
+  const result = await walletBackend.sendPreparedTransaction(hash)
+  return result.success;
+})
+
+ipcMain.handle('delete-transaction', async (e, hash) => {
+  const result = await walletBackend.deletePreparedTransaction(hash)
+  return result.success;
+})
+
+
+///////////// HYPER CORE
+
+const sender = (channel, data) => {
+  mainWindow.webContents.send(channel, data)
+}
+
+ipcMain.on('connect-hyper', async (e, secret) => {
+  createSwarm(sender, secret)
+})
+
+ipcMain.on('disconnect-hyper', async (e, domain) => {
+  destroySwarm(sender)
+})
+
+ipcMain.on('send-message', async (e, data) => {
+  sendMessage(data)
 })
 
 

@@ -17,7 +17,7 @@
     box-sizing: border-box;
     height: 40px;
     padding: 10px 15px;
-    border-radius: var(--border-radius);
+    border-radius: 5px;
     color: var(--title-color);
     border: 1px solid var(--button-border);
     background-color: var(--button-background);

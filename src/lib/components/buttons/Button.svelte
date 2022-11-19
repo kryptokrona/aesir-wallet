@@ -1,8 +1,10 @@
 <script>
     export let text
+    export let width = 'auto'
+    export let height = 'auto'
 </script>
 
-<button on:click>
+<button on:click style="width: {width}px; height: {height}px">
     {text}
     <slot/>
 </button>
@@ -15,7 +17,7 @@
     background-color: var(--button-bg-color);
     color: var(--button-text-color);
     font-weight: 600;
-    border-radius: 0.4rem;
+    border-radius: 0.25rem;
     padding: 0 15px 0 15px;
     cursor: pointer;
     text-align: center;
