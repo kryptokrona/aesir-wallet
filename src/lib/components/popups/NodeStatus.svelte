@@ -12,7 +12,7 @@
 
 </script>
 
-<div in:fade="{{duration: 100}}" out:fade="{{duration: 100}}" class="popup" on:click>
+<div in:fade="{{duration: 100}}" out:fade="{{duration: 100}}" class="popup" on:click|self>
     <div in:fly="{{y: 50}}" out:fly="{{y: -50}}" class="popup-card layered-shadow">
         <div style="margin-bottom: 10px; display: flex; justify-content: space-between">
             <h3 style="color: var(--title-color)" on:click={() => window.api.rescanWallet()}>Node status</h3>

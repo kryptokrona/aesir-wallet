@@ -24,5 +24,7 @@
     display: flex;
     flex-direction: column;
     gap: 1rem;
+    height: calc(100% - 260px);
+    width: 100%;
   }
 </style>

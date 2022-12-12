@@ -29,8 +29,8 @@
 
 </script>
 
-<div class="header" in:fade>
-  <h3>Wallet</h3>
+<div class="header">
+  <h3 in:fade>Wallet</h3>
 </div>
 <div class="list">
 

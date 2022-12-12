@@ -5,15 +5,17 @@
   import { wallet } from "$lib/stores/wallet.js";
 </script>
 
-<div class="header" in:fade>
-  <h3>Send</h3>
+<div class="header">
+  <h3 in:fade>Send</h3>
 </div>
 
 
-<PrepareTransaction />
-{#if $wallet.preparedTransaction}
-  <ConfirmTransaction />
-{/if}
+<div style="height: 100%; width: 100%">
+  <PrepareTransaction />
+  {#if !$wallet.preparedTransaction}
+    <ConfirmTransaction />
+  {/if}
+</div>
 
 <style lang="scss">
   .header {

@@ -4,9 +4,9 @@
   import { fade } from "svelte/transition";
 </script>
 
-<div class="header" in:fade>
-  <h3>Settings</h3>
-  <div>
+<div class="header">
+  <h3 in:fade>Settings</h3>
+  <div in:fade>
     <Button text="Wallet" />
     <Button text="Node" />
     <Button text="Theme" />

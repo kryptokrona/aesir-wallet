@@ -2,6 +2,7 @@
   import { wallet } from "$lib/stores/wallet.js";
   import Button from "$lib/components/buttons/Button.svelte";
   import toast from "svelte-french-toast";
+  import {fade} from "svelte/transition";
 
   let address;
   let amount;
@@ -46,7 +47,7 @@
 
 </script>
 
-<div class="wrapper">
+<div class="wrapper" in:fade>
   <div class="field">
     <input type="text" placeholder="Address" bind:value={address}>
     <Button on:click={pasteAddress} text="Paste" width="105" height="36" />
@@ -73,6 +74,7 @@
     display: flex;
     flex-direction: column;
     gap: 1rem;
+    height: 50%;
   }
 
   .field {

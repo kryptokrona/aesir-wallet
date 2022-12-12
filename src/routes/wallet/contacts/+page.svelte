@@ -43,9 +43,9 @@
   $: $user.contacts;
 </script>
 
-<div class="header" in:fade>
-  <h3>Contacts</h3>
-  <div>
+<div class="header">
+  <h3 in:fade>Contacts</h3>
+  <div in:fade>
     <Button text="Export" on:click={exportContacts} />
     <Button text="Import" on:click={importContacts} />
     <AddContact />

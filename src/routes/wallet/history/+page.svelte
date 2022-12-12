@@ -3,9 +3,9 @@
     import { fade } from "svelte/transition";
 </script>
 
-<div class="header" in:fade>
-  <h3>History</h3>
-  <div>
+<div class="header">
+  <h3 in:fade>History</h3>
+  <div in:fade>
     <Button text="-" />
     <Button text="+" />
   </div>
