@@ -1,14 +1,21 @@
 <script>
-  import Button from "$lib/components/icons/Button.svelte";
   import { hyper } from "$lib/stores/hyper.js";
 
   let message;
 
   const sendMessage = () => {
+    const data = {
+      type: 'message',
+      id: crypto.randomUUID(),
+      time: Date.now(),
+      nickname: $hyper.nickname,
+      message: message,
+    }
+
     let messages = $hyper.messages ?? []
-    messages.push({type:'message', nickname: "Anon", message })
+    messages.push(data)
     $hyper.messages = messages
-    window.api.send('send-message', {type:'message', nickname: "Anon", message })
+    window.api.send('send-message', data)
     message = ''
   };
 
@@ -16,8 +23,7 @@
 
 <div class="wrapper">
   <div class="field">
-    <input type="text" bind:value={message}>
-    <Button text="Send" on:click={sendMessage} disabled={false} />
+    <input type="text" bind:value={message} placeholder="Message.." on:keydown={(e) => {if(e.key === 'Enter') sendMessage()}}>
   </div>
 </div>
 

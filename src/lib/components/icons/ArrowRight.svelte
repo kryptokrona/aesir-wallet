@@ -4,7 +4,7 @@
 
     $:{
         if(green) {
-            color = 'var(--success-color)'
+            color = 'var(--primary-color)'
         } else color = 'var(--text-color)'
     }
 

@@ -86,6 +86,15 @@ contextBridge.exposeInMainWorld("api", {
   deleteTransaction: async (hash) => {
     return await ipcRenderer.invoke('delete-transaction', hash)
   },
+  validateAddress: async (address) => {
+    return await ipcRenderer.invoke('validate-address', address)
+  },
+  generatePaymentId: async () => {
+    return await ipcRenderer.invoke('validate-paymentId')
+  },
+  validatePaymentId: async (paymentId) => {
+    return await ipcRenderer.invoke('validate-paymentId', paymentId)
+  }
 
 
 });

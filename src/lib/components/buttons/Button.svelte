@@ -1,12 +1,15 @@
 <script>
-    export let text
-    export let width = 'auto'
-    export let height = 'auto'
+  export let text;
+  export let width = "auto";
+  export let height = "auto";
+  export let rounded = false;
+  export let wUnit;
+  export let hUnit;
 </script>
 
-<button on:click style="width: {width}px; height: {height}px">
-    {text}
-    <slot/>
+<button on:click style="width: {width}{wUnit ? wUnit : 'px'}; height: {height}{hUnit ? hUnit : 'px'}" class:rounded>
+  {text}
+  <slot />
 </button>
 
 <style lang="scss">
@@ -27,5 +30,9 @@
       background: var(--button-hover-bg-color);
       color: var(--button-hover-text-color);
     }
+  }
+
+  .rounded {
+    border-radius: 100px;
   }
 </style>

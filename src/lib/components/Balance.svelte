@@ -17,11 +17,10 @@
   let fundsPopup = false;
 
 
-  let bal;
+  let balance;
   $: {
-    bal = prettyNumbers($wallet.balance[0]).toString().split("");
+    balance = prettyNumbers($wallet.balance[0]).toString().split("");
   }
-
 
 </script>
 
@@ -36,7 +35,7 @@
   <div class="summary">
     <h2 on:click={() => $wallet.balance[0] = 800000}>Balance</h2>
     <div style="display: inline-flex">
-      {#each bal ?? [] as number, i (number + i)}
+      {#each balance ?? [] as number, i (number + i)}
         {#key number}
           <p in:fly={{y: 20, delay: i * 100}} style="font-size: 1.75rem; margin-top: 10px; color: var(--primary-color)">{number}</p>
         {/key}

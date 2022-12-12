@@ -1,0 +1,103 @@
+:root.blue {
+  --backgound-color: #1A1C23;
+  --title-color: rgba(255, 255, 255, 1);
+  --text-color: rgba(255, 255, 255, 0.8);
+  --primary-color: #5a8bdb;
+
+  --button-bg-color: rgba(255, 255, 255, 0.1);
+  --button-b-color: rgba(255, 255, 255, 0.2);
+  --button-hover-bg-color: rgba(255, 255, 255, 0.3);
+  --button-text-color: rgba(255, 255, 255, 0.8);
+  --button-hover-text-color: rgba(255, 255, 255, 1.0);
+
+  --toast-b-color: #585a5e;
+  --toast-bg-color: #2f333a;
+  --toast-text-color: rgba(255, 255, 255, 0.8);
+
+  --border-color: rgba(255, 255, 255, 0.2);
+  --button-border: rgba(255, 255, 255, 0.2);
+  --button-background: rgba(255, 255, 255, 0.2);
+
+  --card-border: rgba(255, 255, 255, 0.2);
+  --card-background: rgba(255, 255, 255, 0.1);
+
+  --input-border: rgba(255, 255, 255, 0.15);
+  --input-background: rgba(0, 0, 0, 0.1);
+  --input-placeholder: rgba(255, 255, 255, 0.6);
+  --input-focus: #fff;
+
+
+
+  --success-color: #5a8bdb;
+  --warn-color: #ed6580;
+  --info-color: #5a8bdb;
+  --alert-color: #e3b75f;
+}
+
+:root.dark {
+  --backgound-color: #121212;
+  --title-color: rgba(255, 255, 255, 1);
+  --text-color: rgba(255, 255, 255, 0.8);
+  --primary-color: #0eff6b;
+
+  --button-bg-color: rgba(255, 255, 255, 0.1);
+  --button-b-color: rgba(255, 255, 255, 0.2);
+  --button-hover-bg-color: rgba(255, 255, 255, 0.3);
+  --button-text-color: rgba(255, 255, 255, 0.8);
+  --button-hover-text-color: rgba(255, 255, 255, 1.0);
+
+  --toast-b-color: #585a5e;
+  --toast-bg-color: #2f333a;
+  --toast-text-color: rgba(255, 255, 255, 0.8);
+
+  --border-color: rgba(255, 255, 255, 0.2);
+  --button-border: rgba(255, 255, 255, 0.2);
+  --button-background: rgba(255, 255, 255, 0.2);
+
+  --card-border: rgba(255, 255, 255, 0.2);
+  --card-background: rgba(255, 255, 255, 0.1);
+
+  --input-border: rgba(255, 255, 255, 0.15);
+  --input-background: rgba(0, 0, 0, 0.1);
+  --input-placeholder: rgba(255, 255, 255, 0.6);
+  --input-focus: #fff;
+
+  --success-color: #0eff6b;;
+  --warn-color: #ed6580;
+  --info-color: #5a8bdb;
+  --alert-color: #e3b75f;
+}
+
+:root.flashbang {
+  --backgound-color: #fcfcfc;
+  --title-color: rgba(0, 0, 0, 1);
+  --text-color: rgba(0, 0, 0, 0.8);
+  --primary-color: #ff5e00;
+
+  --button-bg-color: rgba(0, 0, 0, 0.05);
+  --button-b-color: rgba(0, 0, 0, 0.1);
+  --button-hover-bg-color: rgba(0, 0, 0, 0.3);
+  --button-text-color: rgba(0, 0, 0, 0.8);
+  --button-hover-text-color: rgba(0, 0, 0, 1.0);
+
+  --toast-b-color: #585a5e;
+  --toast-bg-color: #2f333a;
+  --toast-text-color: rgba(0, 0, 0, 0.8);
+
+  --border-color: rgba(0, 0, 0, 0.2);
+  --button-border: rgba(0, 0, 0, 0.2);
+  --button-background: rgba(0, 0, 0, 0.2);
+
+  --card-border: rgba(0, 0, 0, 0.2);
+  --card-background: rgba(0, 0, 0, 0.1);
+
+  --input-border: rgba(0, 0, 0, 0.15);
+  --input-background: rgba(0, 0, 0, 0);
+  --input-placeholder: rgba(0, 0, 0, 0.6);
+  --input-focus: #fff;
+
+  --success-color: #0eff6b;
+  --warn-color: #ff224c;
+  --info-color: #2c7aff;
+  --alert-color: #ff5e00;
+}

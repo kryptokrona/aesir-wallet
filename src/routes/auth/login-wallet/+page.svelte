@@ -91,8 +91,8 @@
     justify-content: space-between;
     align-items: center;
     padding: 0 6px 0 10px;
-    background-color: var(--card-background);
-    border: 1px solid var(--card-border);
+    background-color: var(--input-background);
+    border: 1px solid var(--input-border);
     border-radius: 8px;
     transition: 100ms ease-in-out;
 
@@ -116,8 +116,8 @@
     }
 
     button {
-      border: none;
-      background-color: #252525;
+      border: 1px solid var(--button-b-color);
+      background-color: var(--button-bg-color);
       height: 36px;
       width: 48px;
       display: inline-flex;
@@ -128,7 +128,7 @@
       transition: 100ms ease-in-out;
 
       &:hover {
-        background: #303030;
+        background: var(--button-hover-bg-color);
       }
     }
   }

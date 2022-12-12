@@ -8,42 +8,23 @@
 <div class="wrapper">
   <div class="grid">
 
-    <div class="card Midnight" on:click={() => setTheme('')}>
-      <div class="header">
-        <h3>Midnight</h3>
-      </div>
-    </div>
-
     <div class="card Blue" on:click={() => setTheme('blue')}>
       <div class="header">
-        <h3>Blue</h3>
+        <h3>I'm blue</h3>
       </div>
     </div>
 
     <div class="card Dark" on:click={() => setTheme('dark')}>
       <div class="header">
-        <h3>Dark</h3>
-      </div>
-    </div>
-
-    <div class="card Hacker" on:click={() => setTheme('')}>
-      <div class="header">
         <h3>Hacker</h3>
       </div>
     </div>
 
-    <div class="card Flashbang" on:click={() => setTheme('')}>
+    <div class="card Dark" on:click={() => setTheme('flashbang')}>
       <div class="header">
         <h3>Flashbang</h3>
       </div>
     </div>
-
-    <div class="card Idiot" on:click={() => setTheme('')}>
-      <div class="header">
-        <h3>Idiot</h3>
-      </div>
-    </div>
-
 
   </div>
 </div>

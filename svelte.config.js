@@ -19,12 +19,20 @@ const config = {
 		}),
 		prerender: { entries: [] },
 	},
+
+	vitePlugin: {
+		experimental: {
+			inspector: true,
+		},
+	},
+
 	onwarn: (warning, handler) => {
 		const { code } = warning;
 		if (code === 'css-semicolonexpected' || code === 'css-ruleorselectorexpected' || code === 'css-unused-selector')
 			return;
 		handler(warning);
 	}
+
 };
 
 export default config;

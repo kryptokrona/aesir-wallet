@@ -5,7 +5,6 @@ const serve = require("electron-serve");
 const path = require("path");
 const WB = require("kryptokrona-wallet-backend-js");
 const notifier = require("node-notifier");
-const { validateAddress } = require("kryptokrona-wallet-backend-js");
 const Crypto = require("kryptokrona-crypto").Crypto;
 const fetch = require("cross-fetch");
 const keytar = require("keytar");
@@ -258,7 +257,7 @@ ipcMain.on("start-wallet", async (e, walletName, password, node) => {
 
     try {
       //Start syncing
-      await sleep(30 * 1000);
+      await sleep(5 * 1000);
       backgroundSyncTransactions(keyset, node);
       const [walletBlockCount, localDaemonBlockCount, networkBlockCount] = walletBackend.getSyncStatus();
       const balance = await walletBackend.getBalance();
@@ -555,6 +554,7 @@ ipcMain.handle('balance-subwallet', async (e) => {
 })
 
 ipcMain.handle('prepare-transaction', async (e, address, amount, paymentID, sendAll) => {
+  console.log(address, amount, paymentID, sendAll);
   const result = await walletBackend.sendTransactionAdvanced(
     [[address, amount * 100000]],
     3,
@@ -571,14 +571,14 @@ ipcMain.handle('prepare-transaction', async (e, address, amount, paymentID, send
     let transaction = {
       address: address,
       hash: result.transactionHash,
-      amount: amountToSend(amount),
+      amount: amount * 100000,
       fee: result.fee,
       paymentId: paymentID
     }
     known_pool_txs.push(result.transactionHash)
     return transaction
   } else {
-    console.log(`Failed to send transaction: ${result.error.toString()}`);
+    console.log(`Failed to prepare transaction: ${result.error.toString()}`);
   }
 })
 
@@ -590,6 +590,19 @@ ipcMain.handle('send-transaction', async (e, hash) => {
 ipcMain.handle('delete-transaction', async (e, hash) => {
   const result = await walletBackend.deletePreparedTransaction(hash)
   return result.success;
+})
+
+ipcMain.handle('validate-address', async (e, address) => {
+  return await WB.validateAddress(address, true)
+})
+
+ipcMain.handle('generate-paymentId', async (e, paymentId) => {
+  return WB.validatePaymentID(paymentId);
+})
+
+
+ipcMain.handle('validate-paymentId', async (e, paymentId) => {
+  return WB.validatePaymentID(paymentId);
 })
 
 

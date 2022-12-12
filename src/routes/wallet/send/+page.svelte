@@ -1,13 +1,19 @@
 <script>
-    import Button from "$lib/components/buttons/Button.svelte";
-    import { fade } from "svelte/transition";
-    import PrepareTransaction from "./PrepareTransaction.svelte";
+  import { fade } from "svelte/transition";
+  import PrepareTransaction from "./PrepareTransaction.svelte";
+  import ConfirmTransaction from "./ConfirmTransaction.svelte";
+  import { wallet } from "$lib/stores/wallet.js";
 </script>
 
 <div class="header" in:fade>
   <h3>Send</h3>
 </div>
-<PrepareTransaction/>
+
+
+<PrepareTransaction />
+{#if $wallet.preparedTransaction}
+  <ConfirmTransaction />
+{/if}
 
 <style lang="scss">
   .header {
