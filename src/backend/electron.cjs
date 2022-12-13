@@ -476,10 +476,16 @@ ipcMain.handle("check-node", async (e, node) => {
 });
 
 ipcMain.handle("check-touchId", (e) => {
-  const touchId = systemPreferences.canPromptTouchID();
-  if (touchId) {
-    return touchId;
-  } else return false;
+  try {
+
+    const touchId = systemPreferences.canPromptTouchID();
+    if (touchId) {
+      return touchId;
+    } else return false;
+
+  } catch (e) {
+    return false;
+  }
 });
 
 //TODO move
@@ -623,8 +629,3 @@ ipcMain.on('disconnect-hyper', async (e, domain) => {
 ipcMain.on('send-message', async (e, data) => {
   sendMessage(data)
 })
-
-
-
-
-
