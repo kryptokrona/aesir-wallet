@@ -2,7 +2,7 @@
   import { wallet } from "$lib/stores/wallet.js";
   import Button from "$lib/components/buttons/Button.svelte";
   import toast from "svelte-french-toast";
-  import {fade} from "svelte/transition";
+  import { fade } from "svelte/transition";
   import { onMount } from "svelte";
 
   let address;
@@ -11,12 +11,12 @@
   let sendAll;
 
   onMount(() => {
-    const searchParams = new URLSearchParams(location.search)
-    const contactAddress = searchParams.get('address')
-    if(contactAddress) address = contactAddress
-  })
+    const searchParams = new URLSearchParams(location.search);
+    const contactAddress = searchParams.get("address");
+    if (contactAddress) address = contactAddress;
+  });
 
-  const prepareTransaction = async () => {
+  export const prepareTx = async () => {
     $wallet.preparedTransaction = await window.api.prepareTransaction(address, amount, paymentId, sendAll);
   };
 
@@ -48,10 +48,6 @@
 
   };
 
-  const resetTransaction = () => {
-
-  }
-
 </script>
 
 <div class="wrapper" in:fade>
@@ -66,10 +62,6 @@
   <div class="field">
     <input type="number" placeholder="Amount" bind:value={amount}>
     <Button on:click text="Max" width="105" height="36" />
-  </div>
-  <div style="display: flex; gap: 1rem">
-    <Button on:click={resetTransaction} text="Reset" width="100" wUnit="%" height="40" hUnit="px" />
-    <Button on:click={prepareTransaction} text="Send" width="100" wUnit="%" height="40" hUnit="px" />
   </div>
 
 </div>

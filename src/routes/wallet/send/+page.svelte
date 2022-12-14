@@ -3,15 +3,21 @@
   import PrepareTransaction from "./PrepareTransaction.svelte";
   import ConfirmTransaction from "./ConfirmTransaction.svelte";
   import { wallet } from "$lib/stores/wallet.js";
+  import Button from "$lib/components/buttons/Button.svelte";
+
+  let prepare
 </script>
 
 <div class="header">
   <h3 in:fade>Send</h3>
+  <div>
+    <Button text="Send" on:click={prepare.prepareTx}/>
+  </div>
 </div>
 
 
 <div style="height: 100%; width: 100%">
-  <PrepareTransaction />
+  <PrepareTransaction bind:this={prepare}/>
   {#if $wallet.preparedTransaction}
     <ConfirmTransaction />
   {/if}
