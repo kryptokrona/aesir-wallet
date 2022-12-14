@@ -9,6 +9,7 @@
   import { flip } from "svelte/animate";
   import Trashcan from "$lib/components/icons/Trashcan.svelte";
   import { saveAs } from "file-saver";
+  import { goto } from "$app/navigation";
 
   onMount(async () => {
     $user.contacts = await window.api.getContacts() ?? [];
@@ -21,6 +22,10 @@
       style: "border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);"
     });
   };
+
+  const sendTo = (contact) => {
+    goto(`/wallet/send?address=${contact}`)
+  }
 
   const deleteContact = async (contact) => {
     console.log("DELETE");
@@ -54,7 +59,7 @@
 <div class="list">
   {#each $user.contacts ?? [] as contact, i (contact.address)}
     <div class="row" animate:flip={{duration: 500}} in:fly={{y: 30, delay:  i * 50}}>
-      <p style="color: var(--primary-color)">{contact.username}</p>
+      <p style="color: var(--primary-color)" on:click={() => sendTo(contact.address)}>{contact.username}</p>
       <div style="display: inline-flex; gap: 0.5rem">
         <div on:click={() => deleteContact(contact)}>
           <Trashcan />

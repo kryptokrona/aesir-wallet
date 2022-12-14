@@ -3,11 +3,18 @@
   import Button from "$lib/components/buttons/Button.svelte";
   import toast from "svelte-french-toast";
   import {fade} from "svelte/transition";
+  import { onMount } from "svelte";
 
   let address;
   let amount;
   let paymentId;
   let sendAll;
+
+  onMount(() => {
+    const searchParams = new URLSearchParams(location.search)
+    const contactAddress = searchParams.get('address')
+    if(contactAddress) address = contactAddress
+  })
 
   const prepareTransaction = async () => {
     $wallet.preparedTransaction = await window.api.prepareTransaction(address, amount, paymentId, sendAll);
