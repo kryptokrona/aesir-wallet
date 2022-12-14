@@ -74,6 +74,8 @@
 
   const sendMaxAmount = () => {
 
+    amount = ($wallet.balance[0] / 100000) - 0.1;
+
   };
 
 </script>
@@ -90,7 +92,7 @@
   <div class="field">
     <input type="number" placeholder="Amount" bind:value={amount}>
     <p class="fiat-value">{fiatValue}</p>
-    <Button on:click text="Max" width="105" height="36" />
+    <Button on:click={sendMaxAmount} text="Max" width="105" height="36" />
   </div>
 
 </div>
