@@ -12,7 +12,7 @@
 
 <div style="height: 100%; width: 100%">
   <PrepareTransaction />
-  {#if !$wallet.preparedTransaction}
+  {#if $wallet.preparedTransaction}
     <ConfirmTransaction />
   {/if}
 </div>

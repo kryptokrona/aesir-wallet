@@ -40,7 +40,7 @@
   <div class="draggable drag"></div>
 
   <div>
-    <button on:click={() => goto('/wallet/settings')}>
+    <button on:click={() => goto('/wallet/settings/node')}>
       <Settings />
     </button>
     <button on:click={() => goto('/auth/login-wallet')}>

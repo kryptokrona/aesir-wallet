@@ -1,20 +1,19 @@
 <script>
   import Button from "$lib/components/buttons/Button.svelte";
-  import Themes from "./Themes.svelte";
   import { fade } from "svelte/transition";
+  import { goto } from "$app/navigation";
 </script>
 
 <div class="header">
   <h3 in:fade>Settings</h3>
   <div in:fade>
-    <Button text="Wallet" />
-    <Button text="Node" />
-    <Button text="Theme" />
-    <Button text="Theme" />
+    <Button text="Node" on:click={() => goto('/wallet/settings/node')}/>
+    <Button text="Wallet" on:click={() => goto('/wallet/settings/wallet')} />
+    <Button text="Themes" on:click={() => goto('/wallet/settings/themes')}/>
   </div>
 </div>
 <div class="wrapper">
-  <Themes />
+  <slot/>
 </div>
 
 <style lang="scss">

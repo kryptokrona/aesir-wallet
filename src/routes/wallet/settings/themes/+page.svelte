@@ -1,6 +1,6 @@
 <script lang="ts">
   const setTheme = (theme: string) => {
-    localStorage.setItem("theme", theme);
+    localStorage.setItem("themes", theme);
     document.documentElement.className = theme;
   };
 </script>
