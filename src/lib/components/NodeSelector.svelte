@@ -58,9 +58,51 @@
     selectedNode = i;
   }
 
-  const randomNode = () => {
-    nodeInput = 'https://myrandomnode.org:11898'
-  }
+  const randomNode = async (ssl=true) => {
+      let recommended_node = undefined;
+
+      let nodes = await fetch('https://raw.githubusercontent.com/kryptokrona/kryptokrona-nodes-list/master/nodes.json');
+      nodes = await nodes.json();
+      nodes = nodes.nodes;
+
+      console.log(nodes);
+
+
+      let node_requests = [];
+      let ssl_nodes =[];
+      if (ssl) {
+          ssl_nodes = nodes.filter(node => {return node.ssl});
+      } else {
+          ssl_nodes = nodes.filter(node => {return !node.ssl});
+      }
+
+      ssl_nodes = ssl_nodes.sort((a, b) => 0.5 - Math.random());
+
+      for (let n = 0; n < ssl_nodes.length; n++) {
+        let this_node = ssl_nodes[n];
+
+        let nodeURL = `${this_node.ssl ? 'https://' : 'http://'}${this_node.url}:${this_node.port}/info`;
+        try {
+          const resp = await fetch(nodeURL, {
+             method: 'GET'
+          }, 1000);
+
+         if (resp.ok) {
+           nodeInput = `${this_node.ssl ? 'https://' : 'http://'}${this_node.url}:${this_node.port}`;
+
+           return;
+         }
+      } catch (e) {
+        console.log(e);
+      }
+    }
+
+    if (recommended_node == undefined) {
+      const recommended_non_ssl_node = await randomNode(false);
+      nodeInput = recommended_non_ssl_node;
+    }
+
+  };
 
 </script>
 
