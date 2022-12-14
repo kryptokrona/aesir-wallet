@@ -7,6 +7,7 @@
 <div class="header">
   <h3 in:fade>Settings</h3>
   <div in:fade>
+    <Button text="General" on:click={() => goto('/wallet/settings/general')}/>
     <Button text="Node" on:click={() => goto('/wallet/settings/node')}/>
     <Button text="Wallet" on:click={() => goto('/wallet/settings/wallet')} />
     <Button text="Themes" on:click={() => goto('/wallet/settings/themes')}/>
