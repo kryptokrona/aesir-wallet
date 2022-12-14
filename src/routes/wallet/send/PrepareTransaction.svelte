@@ -11,20 +11,44 @@
   let sendAll;
 
   onMount(() => {
+    //Get address from url if user clicked contact
     const searchParams = new URLSearchParams(location.search);
     const contactAddress = searchParams.get("address");
     if (contactAddress) address = contactAddress;
   });
 
   export const prepareTx = async () => {
-    $wallet.preparedTransaction = await window.api.prepareTransaction(address, amount, paymentId, sendAll);
+    let validAddress = await window.api.validateAddress(address);
+    if(!amount) {
+      toast.error("Enter amount", {
+        position: "top-right",
+        style: "border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);"
+      });
+    }
+    if(!address) {
+      toast.error("Enter address", {
+        position: "top-right",
+        style: "border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);"
+      });
+    }
+    if(!validAddress) {
+      address = ''
+      toast.error("Invalid address", {
+        position: "top-right",
+        style: "border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);"
+      });
+    }
+    if(validAddress && amount) $wallet.preparedTransaction = await window.api.prepareTransaction(address, amount, paymentId, sendAll);
+    if($wallet.preparedTransaction) { address = ''; amount = ''}
   };
 
   const generatePaymentId = () => {
 
   };
 
+  //Validate and paste address
   const pasteAddress = async () => {
+    address = ''
     let pastedAddress = await navigator.clipboard.readText();
     let validAddress = await window.api.validateAddress(pastedAddress);
 
@@ -35,7 +59,7 @@
         style: "border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);"
       });
     } else {
-      toast.error("Try again", {
+      toast.error("Invalid address", {
         position: "top-right",
         style: "border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);"
       });
