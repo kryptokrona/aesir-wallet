@@ -14,6 +14,8 @@
 
   <div class="wrapper">
     <h2>prepared</h2>
+    <button on:click={sendTransaction}>send</button>
+    <button on:click={deleteTransaction}>delete</button>
   </div>
 
 
