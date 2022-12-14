@@ -1,109 +1,123 @@
 <script>
-  import { fade } from "svelte/transition";
-  import { createEventDispatcher } from "svelte";
-  import ArrowRight from "$lib/components/icons/ArrowRight.svelte";
-  import { node } from "$lib/stores/node.js";
-  import Auto from "$lib/components/icons/Auto.svelte";
+  import { fade } from 'svelte/transition';
+  import { createEventDispatcher, onMount } from "svelte";
+  import ArrowRight from '$lib/components/icons/ArrowRight.svelte';
+  import { node } from '$lib/stores/node.js';
+  import Auto from '$lib/components/icons/Auto.svelte';
+  import { Moon } from 'svelte-loading-spinners';
 
-  let nodeInput = "";
-  let nodeDetails = "";
+  let nodeInput = '';
+  let nodeDetails = '';
   let selectedNode;
+  let loadingNode;
+
+  onMount(() => {
+    if($node.selectedNode) {
+      nodeInput = `${$node.selectedNode.url}:${$node.selectedNode.port}`;
+    }
+  })
 
   const nodeList = [
-    { name: "blocksum", url: "http://blocksum.org", port: 11898, ssl: false },
-    { name: "götapool", url: "http://gota.kryptokrona.se", port: 11898, ssl: false }
+    { name: 'Blocksum', url: 'http://blocksum.org', port: 11898, ssl: false },
+    { name: 'Götapool', url: 'http://gota.kryptokrona.se', port: 11898, ssl: false },
+    { name: 'Privacymine', url: 'https://privacymine.net', port: 21898, ssl: true },
   ];
 
   const dispatch = new createEventDispatcher();
 
   const back = () => {
-    dispatch("back");
+    dispatch('back');
   };
 
   const connectTo = () => {
-    if (nodeInput.startsWith("http://")) {
+    if (nodeInput.startsWith('http://')) {
       nodeInput = nodeInput.replace(/(^\w+:|^)\/\//, '');
       nodeDetails = {
-        url: nodeInput.split(":")[0] ?? nodeInput,
-        port: parseInt(nodeInput.split(":")[1])  ?? '',
-        ssl: false
+        url: nodeInput.split(':')[0] ?? nodeInput,
+        port: parseInt(nodeInput.split(':')[1]) ?? '',
+        ssl: false,
       };
-    } else if (nodeInput.startsWith("https://")) {
+    } else if (nodeInput.startsWith('https://')) {
       nodeInput = nodeInput.replace(/(^\w+:|^)\/\//, '');
       nodeDetails = {
-        url: nodeInput.split(":")[0] ?? nodeInput,
-        port: parseInt(nodeInput.split(":")[1])  ?? '',
-        ssl: true
+        url: nodeInput.split(':')[0] ?? nodeInput,
+        port: parseInt(nodeInput.split(':')[1]) ?? '',
+        ssl: true,
       };
     } else {
       nodeDetails = {
-        url: nodeInput.split(":")[0] ?? nodeInput,
-        port: parseInt(nodeInput.split(":")[1]) ?? '',
-        ssl: undefined
+        url: nodeInput.split(':')[0] ?? nodeInput,
+        port: parseInt(nodeInput.split(':')[1]) ?? '',
+        ssl: undefined,
       };
     }
 
-    dispatch("connect", {
-      node: nodeDetails
+    dispatch('connect', {
+      node: nodeDetails,
     });
 
     $node.selectedNode = nodeDetails;
 
-    nodeInput = "";
-    selectedNode = "";
+    nodeInput = '';
+    selectedNode = '';
   };
 
   const chooseNode = (node, i) => {
     nodeInput = `${node.url}:${node.port}`;
     selectedNode = i;
-  }
+  };
 
-  const randomNode = async (ssl=true) => {
-      let recommended_node = undefined;
+  const randomNode = async (ssl = true) => {
+    loadingNode = true;
+    let recommended_node = undefined;
 
-      let nodes = await fetch('https://raw.githubusercontent.com/kryptokrona/kryptokrona-nodes-list/master/nodes.json');
-      nodes = await nodes.json();
-      nodes = nodes.nodes;
+    let nodes = await fetch('https://raw.githubusercontent.com/kryptokrona/kryptokrona-nodes-list/master/nodes.json');
+    nodes = await nodes.json();
+    nodes = nodes.nodes;
 
-      console.log(nodes);
+    console.log(nodes);
 
+    let node_requests = [];
+    let ssl_nodes = [];
+    if (ssl) {
+      ssl_nodes = nodes.filter((node) => {
+        return node.ssl;
+      });
+    } else {
+      ssl_nodes = nodes.filter((node) => {
+        return !node.ssl;
+      });
+    }
 
-      let node_requests = [];
-      let ssl_nodes =[];
-      if (ssl) {
-          ssl_nodes = nodes.filter(node => {return node.ssl});
-      } else {
-          ssl_nodes = nodes.filter(node => {return !node.ssl});
-      }
+    ssl_nodes = ssl_nodes.sort((a, b) => 0.5 - Math.random());
 
-      ssl_nodes = ssl_nodes.sort((a, b) => 0.5 - Math.random());
+    for (let n = 0; n < ssl_nodes.length; n++) {
+      let this_node = ssl_nodes[n];
 
-      for (let n = 0; n < ssl_nodes.length; n++) {
-        let this_node = ssl_nodes[n];
+      let nodeURL = `${this_node.ssl ? 'https://' : 'http://'}${this_node.url}:${this_node.port}/info`;
+      try {
+        const resp = await fetch(
+          nodeURL,
+          {
+            method: 'GET',
+          },
+          1000,
+        );
 
-        let nodeURL = `${this_node.ssl ? 'https://' : 'http://'}${this_node.url}:${this_node.port}/info`;
-        try {
-          const resp = await fetch(nodeURL, {
-             method: 'GET'
-          }, 1000);
-
-         if (resp.ok) {
-           nodeInput = `${this_node.ssl ? 'https://' : 'http://'}${this_node.url}:${this_node.port}`;
-
-           return;
-         }
+        if (resp.ok) {
+          nodeInput = `${this_node.ssl ? 'https://' : 'http://'}${this_node.url}:${this_node.port}`;
+          loadingNode = false;
+          return;
+        }
       } catch (e) {
         console.log(e);
       }
     }
 
-    if (recommended_node == undefined) {
-      const recommended_non_ssl_node = await randomNode(false);
-      nodeInput = recommended_non_ssl_node;
+    if (recommended_node === undefined) {
+      nodeInput = await randomNode(false);
     }
-
   };
-
 </script>
 
 <section in:fade>
@@ -111,7 +125,11 @@
   <div class="field">
     <input placeholder="Enter url & port" type="text" spellcheck="false" autofocus bind:value={nodeInput} />
     <button style="margin-right: 0.25rem" on:click={randomNode}>
-      <Auto/>
+      {#if loadingNode}
+        <Moon color="#ffffff" size="20" unit="px" />
+      {:else}
+        <Auto />
+      {/if}
     </button>
     <button on:click={connectTo}>
       <ArrowRight green={nodeInput} />
@@ -121,8 +139,11 @@
     {#each nodeList as node, i}
       <div
         class="node-card"
-        class:selected="{selectedNode === i}"
-        on:click="{() => {chooseNode(node, i)}}">
+        class:selected={selectedNode === i}
+        on:click={() => {
+          chooseNode(node, i);
+        }}
+      >
         <p id="node">{node.name}</p>
       </div>
     {/each}
