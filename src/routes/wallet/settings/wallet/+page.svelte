@@ -1,5 +1,6 @@
 <script>
 import Button from "$lib/components/buttons/Button.svelte";
+import { goto } from "$app/navigation";
 </script>
 
 <div class="wrapper">
@@ -9,7 +10,7 @@ import Button from "$lib/components/buttons/Button.svelte";
 
     <h5>Export private keys</h5><br>
 
-    <Button text="Export mnemonic" on:click={console.log('Clicked')} />
+    <Button text="Export mnemonic" on:click={() => goto('/auth/backup-wallet')} />
     <Button text="Export private key" on:click={console.log('Clicked')} />
 
   </div>
