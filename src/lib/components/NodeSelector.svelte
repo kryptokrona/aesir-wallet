@@ -1,65 +1,82 @@
 <script>
-    import {fade} from 'svelte/transition'
-    import {createEventDispatcher} from 'svelte'
-    import ArrowRight from "$lib/components/icons/ArrowRight.svelte";
-    import {node} from "$lib/stores/node.js";
+  import { fade } from "svelte/transition";
+  import { createEventDispatcher } from "svelte";
+  import ArrowRight from "$lib/components/icons/ArrowRight.svelte";
+  import { node } from "$lib/stores/node.js";
 
-    let nodeInput = ''
-    let nodeDetails = ''
-    let selectedNode
+  let nodeInput = "";
+  let nodeDetails = "";
+  let selectedNode;
 
-    const nodeList = [
-        {name: 'blocksum', url: 'blocksum.org', port: 11898},
-        {name: 'götapool', url: 'blocksum.org', port: 11898}
-    ]
+  const nodeList = [
+    { name: "blocksum", url: "http://blocksum.org", port: 11898, ssl: false },
+    { name: "götapool", url: "http://gota.kryptokrona.se", port: 11898, ssl: false }
+  ];
 
-    const dispatch = new createEventDispatcher()
+  const dispatch = new createEventDispatcher();
 
-    const back = () => {
-        dispatch('back')
+  const back = () => {
+    dispatch("back");
+  };
+
+  const connectTo = () => {
+    if (nodeInput.startsWith("http://")) {
+      nodeInput = nodeInput.replace(/(^\w+:|^)\/\//, '');
+      nodeDetails = {
+        url: nodeInput.split(":")[0] ?? nodeInput,
+        port: parseInt(nodeInput.split(":")[1])  ?? '',
+        ssl: false
+      };
+    } else if (nodeInput.startsWith("https://")) {
+      nodeInput = nodeInput.replace(/(^\w+:|^)\/\//, '');
+      nodeDetails = {
+        url: nodeInput.split(":")[0] ?? nodeInput,
+        port: parseInt(nodeInput.split(":")[1])  ?? '',
+        ssl: true
+      };
+    } else {
+      nodeDetails = {
+        url: nodeInput.split(":")[0] ?? nodeInput,
+        port: parseInt(nodeInput.split(":")[1]) ?? '',
+        ssl: undefined
+      };
     }
 
-    const connectTo = () => {
-        dispatch('connect', {
-            node: nodeDetails,
-        })
-        $node.selectedNode = nodeDetails
-        nodeInput = ''
-        selectedNode = ''
-    }
+    dispatch("connect", {
+      node: nodeDetails
+    });
 
-    function chooseNode(node, i) {
-        nodeInput = `${node.url}:${node.port}`
-        nodeDetails = node
-        selectedNode = i
-    }
+    $node.selectedNode = nodeDetails;
 
-    const empty = () => {
-        nodeInput = ''
-    }
+    nodeInput = "";
+    selectedNode = "";
+  };
+
+  function chooseNode(node, i) {
+    nodeInput = `${node.url}:${node.port}`;
+    selectedNode = i;
+  }
+
 </script>
 
 <section in:fade>
-    <h2>Pick a node</h2>
-    <div class="field">
-        <input placeholder="Enter url & port" type="text" spellcheck="false" autofocus bind:value={nodeInput}/>
-        <button on:click={connectTo}>
-            <ArrowRight green={nodeInput}/>
-        </button>
-    </div>
-    <div class="node-list">
-        {#each nodeList as node, i}
-            <div
-                    class="node-card"
-                    class:selected="{selectedNode === i}"
-                    on:click="{() => {
-                   chooseNode(node, i)
-                }}"
-            >
-                <p id="node">{node.name}</p>
-            </div>
-        {/each}
-    </div>
+  <h2>Pick a node</h2>
+  <div class="field">
+    <input placeholder="Enter url & port" type="text" spellcheck="false" autofocus bind:value={nodeInput} />
+    <button on:click={connectTo}>
+      <ArrowRight green={nodeInput} />
+    </button>
+  </div>
+  <div class="node-list">
+    {#each nodeList as node, i}
+      <div
+        class="node-card"
+        class:selected="{selectedNode === i}"
+        on:click="{() => {chooseNode(node, i)}}">
+        <p id="node">{node.name}</p>
+      </div>
+    {/each}
+  </div>
 </section>
 
 <style lang="scss">
