@@ -1,5 +1,5 @@
 body {
-  background-color: var(--backgound-color);
+  background-color: transparent;
   font-family: Montserratm, Arial, serif;
   height: 700px;
   width: 600px;
@@ -8,6 +8,11 @@ body {
   color: var(--text-color);
   user-select: none;
   box-sizing: border-box;
+}
+
+div#svelte {
+  background-color: var(--backgound-color);
+  border-radius: 15px;
 }
 
 html {
