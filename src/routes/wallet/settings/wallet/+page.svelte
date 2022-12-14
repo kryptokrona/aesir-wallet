@@ -3,7 +3,15 @@
 </script>
 
 <div class="wrapper">
-  <h2>this is wallet settings</h2>
+  <h2>Wallet Settings</h2>
+  <button>Export mnemonic</button>
+  <button>Reset Wallet</button>
+
+  <input placeholder="Enter block height">
+  <button>Rescan Wallet</button>
+  <button>Rewind Wallet</button>
+
+
 </div>
 
 <style lang="scss">
