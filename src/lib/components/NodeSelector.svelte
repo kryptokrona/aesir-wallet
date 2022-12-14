@@ -3,6 +3,7 @@
   import { createEventDispatcher } from "svelte";
   import ArrowRight from "$lib/components/icons/ArrowRight.svelte";
   import { node } from "$lib/stores/node.js";
+  import Auto from "$lib/components/icons/Auto.svelte";
 
   let nodeInput = "";
   let nodeDetails = "";
@@ -52,9 +53,13 @@
     selectedNode = "";
   };
 
-  function chooseNode(node, i) {
+  const chooseNode = (node, i) => {
     nodeInput = `${node.url}:${node.port}`;
     selectedNode = i;
+  }
+
+  const randomNode = () => {
+    nodeInput = 'https://myrandomnode.org:11898'
   }
 
 </script>
@@ -63,6 +68,9 @@
   <h2>Pick a node</h2>
   <div class="field">
     <input placeholder="Enter url & port" type="text" spellcheck="false" autofocus bind:value={nodeInput} />
+    <button style="margin-right: 0.25rem" on:click={randomNode}>
+      <Auto/>
+    </button>
     <button on:click={connectTo}>
       <ArrowRight green={nodeInput} />
     </button>
