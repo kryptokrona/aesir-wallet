@@ -341,6 +341,18 @@ async function checkTx(tx, keyset) {
   }
 }
 
+ipcMain.on("reset-wallet", (e, height) => {
+
+  walletBackend.reset(parseInt(height));
+
+});
+
+ipcMain.on("rewind-wallet", async (e, height) => {
+
+  walletBackend.rewind(parseInt(height));
+
+});
+
 ipcMain.handle("create-wallet", async (e, walletName, password, node) => {
   try {
 

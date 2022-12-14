@@ -61,6 +61,12 @@ contextBridge.exposeInMainWorld("api", {
   getSeed: () => {
     return ipcRenderer.invoke("get-seed");
   },
+  resetWallet: (height) => {
+    return ipcRenderer.send("reset-wallet", height);
+  },
+  rewindWallet: (height) => {
+    return ipcRenderer.send("rewind-wallet", height);
+  },
 
 
   getContacts: async () => {

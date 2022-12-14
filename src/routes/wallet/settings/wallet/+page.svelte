@@ -1,6 +1,22 @@
 <script>
 import Button from "$lib/components/buttons/Button.svelte";
 import { goto } from "$app/navigation";
+
+let height = 0;
+
+
+const resetWallet = () => {
+
+  window.api.resetWallet(height);
+
+};
+
+const rewindWallet = () => {
+
+  window.api.rewindWallet(height);
+
+};
+
 </script>
 
 <div class="wrapper">
@@ -19,13 +35,11 @@ import { goto } from "$app/navigation";
 
     <h5>Resynchronize wallet</h5><br>
 
-    <Button text="Reset Wallet" on:click={console.log('Clicked')} /> <br><br>
 
-    <Button text="Rewind" on:click={console.log('Clicked')} /><br><br>
 
-    <input placeholder="Enter block height">
-    <Button text="Rescan from blockheight" on:click={console.log('Clicked')} />
-
+    <input bind:value={height} placeholder="Enter block height">
+    <Button text="Rescan from blockheight" on:click={resetWallet} />
+    <Button text="Rewind" on:click={rewindWallet} /><br><br>
 
   </div>
 
