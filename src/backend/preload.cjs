@@ -32,7 +32,9 @@ contextBridge.exposeInMainWorld("api", {
   checkNode: async (node) => {
     return await ipcRenderer.invoke("check-node", node);
   },
-
+  changeNode: async node => {
+    return await ipcRenderer.invoke("change-node", node)
+  },
 
   getWallets: async () => {
     return await ipcRenderer.invoke("get-wallets");
