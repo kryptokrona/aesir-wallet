@@ -1,6 +1,6 @@
 <script>
   import { fade } from 'svelte/transition';
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onMount } from "svelte";
   import ArrowRight from '$lib/components/icons/ArrowRight.svelte';
   import { node } from '$lib/stores/node.js';
   import Auto from '$lib/components/icons/Auto.svelte';
@@ -10,6 +10,12 @@
   let nodeDetails = '';
   let selectedNode;
   let loadingNode;
+
+  onMount(() => {
+    if($node.selectedNode) {
+      nodeInput = `${$node.selectedNode.url}:${$node.selectedNode.port}`;
+    }
+  })
 
   const nodeList = [
     { name: 'Blocksum', url: 'http://blocksum.org', port: 11898, ssl: false },
