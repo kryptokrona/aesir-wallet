@@ -4,9 +4,11 @@
   import toast from "svelte-french-toast";
   import { fade } from "svelte/transition";
   import { onMount } from "svelte";
+  import { fiat } from "$lib/stores/fiat.js";
+
 
   let address;
-  let amount;
+  let amount = 0;
   let paymentId;
   let sendAll;
 
@@ -16,6 +18,8 @@
     const contactAddress = searchParams.get("address");
     if (contactAddress) address = contactAddress;
   });
+
+  $:fiatValue = "$" + ($fiat * amount).toFixed(5);
 
   export const prepareTx = async () => {
     let validAddress = await window.api.validateAddress(address);
@@ -85,6 +89,7 @@
   </div>
   <div class="field">
     <input type="number" placeholder="Amount" bind:value={amount}>
+    <p class="fiat-value">{fiatValue}</p>
     <Button on:click text="Max" width="105" height="36" />
   </div>
 
