@@ -350,6 +350,29 @@ ipcMain.handle("create-wallet", async (e, walletName, password, node) => {
 
     walletBackend = await WB.WalletBackend.createWallet(daemon);
 
+    const [seed, err] = await walletBackend.getMnemonicSeed();
+
+    let height;
+
+    try {
+      const req = await fetch(`http://${node.url}:${node.port}/getinfo`);
+      if (!req.ok) {
+        return reject("error");
+      }
+
+      const res = await req.json();
+      if (res.status !== "OK") {
+        return reject("error");
+      }
+
+      height = res.height - 100;
+
+    } catch(err){
+      height = 1250000;
+    }
+
+    [walletBackend, error] = await WB.WalletBackend.importWalletFromSeed(daemon, height, seed);
+
     walletBackend.saveWalletToFile(userDataDir + "/" + walletName + ".wallet", password);
     await keytar.setPassword(`yggdrasilwallet?=${walletName}`, walletName, password);
 
