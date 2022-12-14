@@ -5,9 +5,10 @@
   export let rounded = false;
   export let wUnit;
   export let hUnit;
+  export let active
 </script>
 
-<button on:click style="width: {width}{wUnit ? wUnit : 'px'}; height: {height}{hUnit ? hUnit : 'px'}" class:rounded>
+<button on:click style="width: {width}{wUnit ? wUnit : 'px'}; height: {height}{hUnit ? hUnit : 'px'}" class:rounded class:active>
   {text}
   <slot />
 </button>
@@ -34,5 +35,9 @@
 
   .rounded {
     border-radius: 100px;
+  }
+
+  .active {
+    background-color: var(--button-hover-bg-color);
   }
 </style>
