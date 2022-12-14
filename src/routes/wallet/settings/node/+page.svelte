@@ -1,9 +1,10 @@
 <script>
-
+  import NodeSelector from '$lib/components/NodeSelector.svelte';
 </script>
 
 <div class="wrapper">
-  <h2>this is node settings</h2>
+  <h2>Node Settings</h2>
+  <NodeSelector on:connect={(e) => console.log(e)} />
 </div>
 
 <style lang="scss">
@@ -13,4 +14,3 @@
     padding: 30px;
   }
 </style>
-
