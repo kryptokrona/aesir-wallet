@@ -1,15 +1,32 @@
 <script>
-
+import Button from "$lib/components/buttons/Button.svelte";
 </script>
 
 <div class="wrapper">
   <h2>Wallet Settings</h2>
-  <button>Export mnemonic</button>
-  <button>Reset Wallet</button>
 
-  <input placeholder="Enter block height">
-  <button>Rescan Wallet</button>
-  <button>Rewind Wallet</button>
+  <div class="card-wrapper">
+
+    <h5>Export private keys</h5><br>
+
+    <Button text="Export mnemonic" on:click={console.log('Clicked')} />
+    <Button text="Export private key" on:click={console.log('Clicked')} />
+
+  </div>
+
+  <div class="card-wrapper">
+
+    <h5>Resynchronize wallet</h5><br>
+
+    <Button text="Reset Wallet" on:click={console.log('Clicked')} /> <br><br>
+
+    <Button text="Rewind" on:click={console.log('Clicked')} /><br><br>
+
+    <input placeholder="Enter block height">
+    <Button text="Rescan from blockheight" on:click={console.log('Clicked')} />
+
+
+  </div>
 
 
 </div>
@@ -20,5 +37,8 @@
     height: 100%;
     padding: 30px;
   }
-</style>
 
+  input {
+    margin-bottom: 5px;
+  }
+</style>
