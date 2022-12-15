@@ -148,7 +148,7 @@ ipcMain.on("start-app", async e => {
   mainWindow.webContents.send("started-app", data);
   mainWindow.setSize(600, 700, true);
   if (node) {
-    daemon = new WB.Daemon(node.url, node.port);
+    daemon = new WB.Daemon(node.url, node.port, node.ssl);
   }
 });
 
@@ -291,9 +291,10 @@ ipcMain.on("start-wallet", async (e, walletName, password, node) => {
 let known_pool_txs = [];
 
 async function backgroundSyncTransactions(keyset, node) {
+
   let message_was_unknown;
   try {
-    const resp = await fetch(`http://${node.url}:${node.port}/get_pool_changes_lite`, {
+    const resp = await fetch(`${node.ssl ? 'https://' : 'http://'}${node.url}:${node.port}/get_pool_changes_lite`, {
       method: "POST",
       body: JSON.stringify({ knownTxsIds: known_pool_txs })
     });
@@ -357,7 +358,7 @@ ipcMain.handle("create-wallet", async (e, walletName, password, node) => {
   try {
 
     if (!daemon) {
-      daemon = new WB.Daemon(node.url, node.port);
+      daemon = new WB.Daemon(node.url, node.port, node.ssl);
     }
 
     walletBackend = await WB.WalletBackend.createWallet(daemon);
@@ -397,7 +398,7 @@ ipcMain.handle("create-wallet", async (e, walletName, password, node) => {
     return false;
   }
 
-  nodes.set("node", { url: node.url, port: node.port });
+  nodes.set("node", { url: node.url, port: node.port, ssl: node.ssl });
   return wallets.get("wallets");
 });
 
@@ -451,7 +452,7 @@ ipcMain.handle("import-seed", async (e, seed, walletName, password, height, node
   await wallets.set("wallets", knownWallets);
 
   console.log("*******IMPORTED WALLET FROM SEED********");
-  nodes.set("node", { url: node.url, port: node.port });
+  nodes.set("node", { url: node.url, port: node.port, ssl: node.ssl });
   return true;
 });
 
@@ -509,6 +510,14 @@ ipcMain.handle("check-node", async (e, node) => {
     }
   });
 });
+
+ipcMain.handle('change-node', async (e, node) => {
+  console.log('SETTING', node);
+  daemon = new WB.Daemon(node.url, node.port, node.ssl)
+  await walletBackend.swapNode(daemon)
+  nodes.set("node", { url: node.url, port: node.port, ssl: node.ssl });
+  return node
+})
 
 ipcMain.handle("check-touchId", (e) => {
   try {
