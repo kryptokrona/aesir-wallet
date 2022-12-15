@@ -1,5 +1,6 @@
 <script>
 import Button from "$lib/components/buttons/Button.svelte";
+import Tooltip from '$lib/components/Tooltip.svelte';
 import { goto } from "$app/navigation";
 
 let height = 0;
@@ -38,8 +39,19 @@ const rewindWallet = () => {
 
 
     <input bind:value={height} placeholder="Enter block height">
-    <Button text="Rescan from blockheight" on:click={resetWallet} />
-    <Button text="Rewind" on:click={rewindWallet} /><br><br>
+
+    <span class='button_wrapper'>
+      <Tooltip title="Forget all transactions and rescan from height">
+        <Button text="Rescan from blockheight" on:click={resetWallet} />
+      </Tooltip>
+    </span>
+
+    <span class='button_wrapper'>
+      <Tooltip title="Remember transactions and look for missing transactions from height">
+        <Button text="Rewind" on:click={rewindWallet} /><br><br>
+      </Tooltip>
+    </span>
+
 
   </div>
 
@@ -56,4 +68,9 @@ const rewindWallet = () => {
   input {
     margin-bottom: 5px;
   }
+
+  .button_wrapper {
+    display: inline-block;
+    vertical-align: top;
+}
 </style>
