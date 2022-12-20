@@ -8,7 +8,6 @@
   const deleteTransaction = async () => {
     const deleted = await window.api.deleteTransaction($wallet.preparedTransaction.hash);
   };
-
 </script>
 
 

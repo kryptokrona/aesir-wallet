@@ -5,5 +5,5 @@ export const node = writable({
     walletBlockCount: null,
     localDaemonBlockCount: null,
     networkBlockCount: null,
-    nodeStatus: 'Syncing',
+    nodeStatus: '-',
 })
