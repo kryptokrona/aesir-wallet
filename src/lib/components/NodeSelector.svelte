@@ -1,65 +1,72 @@
 <script>
-  import { fade } from 'svelte/transition';
+  import { fade } from "svelte/transition";
   import { createEventDispatcher, onMount } from "svelte";
-  import ArrowRight from '$lib/components/icons/ArrowRight.svelte';
-  import { node } from '$lib/stores/node.js';
-  import Auto from '$lib/components/icons/Auto.svelte';
-  import { Moon } from 'svelte-loading-spinners';
+  import ArrowRight from "$lib/components/icons/ArrowRight.svelte";
+  import { node } from "$lib/stores/node.js";
+  import Auto from "$lib/components/icons/Auto.svelte";
+  import { Moon } from "svelte-loading-spinners";
 
-  let nodeInput = '';
-  let nodeDetails = '';
+  let nodeInput = "";
+  let nodeDetails = "";
   let selectedNode;
   let loadingNode;
 
   onMount(() => {
-    if($node.selectedNode) {
-      nodeInput = `${$node.selectedNode.url}:${$node.selectedNode.port}`;
+    if ($node.selectedNode) {
+
+      if ($node.selectedNode.ssl) {
+        nodeInput = `https://${$node.selectedNode.url}:${$node.selectedNode.port}`;
+      } else {
+        nodeInput = `http://${$node.selectedNode.url}:${$node.selectedNode.port}`;
+      }
+
+    } else {
+      nodeInput = "";
+      selectedNode = "";
     }
-  })
+  });
 
   const nodeList = [
-    { name: 'Blocksum', url: 'http://blocksum.org', port: 11898, ssl: false },
-    { name: 'Götapool', url: 'http://gota.kryptokrona.se', port: 11898, ssl: false },
-    { name: 'Privacymine', url: 'https://privacymine.net', port: 21898, ssl: true },
+    { name: "Blocksum", url: "http://blocksum.org", port: 11898, ssl: false },
+    { name: "Götapool", url: "http://gota.kryptokrona.se", port: 11898, ssl: false },
+    { name: "Privacymine", url: "https://privacymine.net", port: 21898, ssl: true }
   ];
 
   const dispatch = new createEventDispatcher();
 
   const back = () => {
-    dispatch('back');
+    dispatch("back");
   };
 
   const connectTo = () => {
-    if (nodeInput.startsWith('http://')) {
-      nodeInput = nodeInput.replace(/(^\w+:|^)\/\//, '');
+    let input = nodeInput;
+    if (input.startsWith("http://")) {
+      input = input.replace(/(^\w+:|^)\/\//, "");
       nodeDetails = {
-        url: nodeInput.split(':')[0] ?? nodeInput,
-        port: parseInt(nodeInput.split(':')[1]) ?? '',
-        ssl: false,
+        url: input.split(":")[0] ?? input,
+        port: parseInt(input.split(":")[1]) ?? "",
+        ssl: false
       };
-    } else if (nodeInput.startsWith('https://')) {
-      nodeInput = nodeInput.replace(/(^\w+:|^)\/\//, '');
+    } else if (input.startsWith("https://")) {
+      input = input.replace(/(^\w+:|^)\/\//, "");
       nodeDetails = {
-        url: nodeInput.split(':')[0] ?? nodeInput,
-        port: parseInt(nodeInput.split(':')[1]) ?? '',
-        ssl: true,
+        url: input.split(":")[0] ?? input,
+        port: parseInt(input.split(":")[1]) ?? "",
+        ssl: true
       };
     } else {
       nodeDetails = {
-        url: nodeInput.split(':')[0] ?? nodeInput,
-        port: parseInt(nodeInput.split(':')[1]) ?? '',
-        ssl: undefined,
+        url: input.split(":")[0] ?? input,
+        port: parseInt(input.split(":")[1]) ?? "",
+        ssl: undefined
       };
     }
 
-    dispatch('connect', {
-      node: nodeDetails,
+    dispatch("connect", {
+      node: nodeDetails
     });
 
     $node.selectedNode = nodeDetails;
-
-    nodeInput = '';
-    selectedNode = '';
   };
 
   const chooseNode = (node, i) => {
@@ -71,7 +78,7 @@
     loadingNode = true;
     let recommended_node = undefined;
 
-    let nodes = await fetch('https://raw.githubusercontent.com/kryptokrona/kryptokrona-nodes-list/master/nodes.json');
+    let nodes = await fetch("https://raw.githubusercontent.com/kryptokrona/kryptokrona-nodes-list/master/nodes.json");
     nodes = await nodes.json();
     nodes = nodes.nodes;
 
@@ -94,18 +101,18 @@
     for (let n = 0; n < ssl_nodes.length; n++) {
       let this_node = ssl_nodes[n];
 
-      let nodeURL = `${this_node.ssl ? 'https://' : 'http://'}${this_node.url}:${this_node.port}/info`;
+      let nodeURL = `${this_node.ssl ? "https://" : "http://"}${this_node.url}:${this_node.port}/info`;
       try {
         const resp = await fetch(
           nodeURL,
           {
-            method: 'GET',
+            method: "GET"
           },
-          1000,
+          1000
         );
 
         if (resp.ok) {
-          nodeInput = `${this_node.ssl ? 'https://' : 'http://'}${this_node.url}:${this_node.port}`;
+          nodeInput = `${this_node.ssl ? "https://" : "http://"}${this_node.url}:${this_node.port}`;
           loadingNode = false;
           return;
         }
