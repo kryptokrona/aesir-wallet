@@ -19,7 +19,7 @@
 
   let balance;
   $: {
-    balance = prettyNumbers($wallet.balance[0]).toString().split("");
+    balance = prettyNumbers($wallet.balance[0] + $wallet.balance[1]).toString().split("");
   }
 
 </script>
