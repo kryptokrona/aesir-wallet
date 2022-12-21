@@ -18,9 +18,7 @@
 
 <div style="height: 100%; width: 100%">
   <PrepareTransaction bind:this={prepare}/>
-  {#if $wallet.preparedTransaction}
     <ConfirmTransaction />
-  {/if}
 </div>
 
 <style lang="scss">
