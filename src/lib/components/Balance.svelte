@@ -9,17 +9,31 @@
   import Warning from "$lib/components/icons/Warning.svelte";
   import { fade, fly } from "svelte/transition";
   import { prettyNumbers } from "$lib/utils";
-
+  import { fiat } from "$lib/stores/fiat.js";
+  import { onMount } from "svelte";
+  import Auto from "$lib/components/icons/Auto.svelte";
 
   //Variables and default values
   let dc;
   let nodePopup = false;
   let fundsPopup = false;
+  let display;
+  let showFiat = false
+  let xkrBalance;
+  let fiatBalance;
 
+  onMount(() => {
+    display = prettyNumbers($wallet.balance[0] + $wallet.balance[1]).toString().split("");
+  })
 
-  let balance;
   $: {
-    balance = prettyNumbers($wallet.balance[0] + $wallet.balance[1]).toString().split("");
+    xkrBalance = prettyNumbers($wallet.balance[0] + $wallet.balance[1]).toString().split("");
+    fiatBalance = "$" + ($wallet.balance[0] * $fiat / 100000).toFixed(5);
+  }
+
+  const switchValue = () => {
+    showFiat = !showFiat
+    showFiat ? display = fiatBalance : display = xkrBalance
   }
 
 </script>
@@ -33,9 +47,9 @@
 
 <div class="balance" in:fade>
   <div class="summary">
-    <h2 on:click={() => $wallet.balance[0] = 800000}>Balance</h2>
+    <h2 on:click={switchValue}>Balance <span style="opacity: 50%; cursor: pointer" on:click><Auto/></span></h2>
     <div style="display: inline-flex">
-      {#each balance ?? [] as number, i (number + i)}
+      {#each display ?? [] as number, i (number + i)}
         {#key number}
           <p in:fly={{y: 20, delay: i * 100}} style="font-size: 1.75rem; margin-top: 10px; color: var(--primary-color)">{number}</p>
         {/key}
