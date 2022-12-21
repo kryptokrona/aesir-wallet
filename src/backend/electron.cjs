@@ -270,17 +270,17 @@ ipcMain.on("start-wallet", async (e, walletName, password, node) => {
         console.log("walletBlockCount", walletBlockCount);
         console.log("localDaemonBlockCount", localDaemonBlockCount);
         console.log("networkBlockCount", networkBlockCount);
-        console.log("SYNCED ✅");
+        console.log("SYNCED");
         console.log("******** SAVING WALLET ********");
         walletBackend.saveWalletToFile(userDataDir + "/" + walletName + ".wallet", password);
-        mainWindow.webContents.send("node-status", "Synced ✅");
+        mainWindow.webContents.send("node-status", "Synced");
       } else {
         console.log("********SYNCING********");
         console.log("Wallet ", walletBlockCount);
         console.log("LocalD", localDaemonBlockCount);
         console.log("Network", networkBlockCount);
-        console.log("SYNCING 📡");
-        mainWindow.webContents.send("node-status", "Syncing 📡");
+        console.log("SYNCING");
+        mainWindow.webContents.send("node-status", "Syncing");
       }
     } catch (err) {
       console.log(err);

@@ -44,9 +44,9 @@
   </div>
   <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 15px">
     <Globe
-      yellow={$node.nodeStatus === 'Syncing 📡'}
-      red={$node.nodeStatus === 'Not Synced' || $node.nodeStatus === 'Disconnected 🚨' || $node.nodeStatus === 'Dead node 🚨'}
-      blink={$node.nodeStatus !== 'Synced ✅'}
+      yellow={$node.nodeStatus === 'Syncing'}
+      red={$node.nodeStatus === 'Not Synced' || $node.nodeStatus === 'Disconnected' || $node.nodeStatus === 'Dead node'}
+      blink={$node.nodeStatus !== 'Synced'}
       on:click={() => nodePopup = !nodePopup}
     />
     <Warning

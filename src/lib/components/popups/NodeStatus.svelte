@@ -19,7 +19,7 @@
         </div>
         <div>
             <h5 style="margin-bottom: 10px">Node</h5>
-            <input disabled type="text" placeholder="Nickname" bind:value={$node.selectedNode.url}>
+            <input disabled type="text" placeholder="Node name" bind:value={$node.selectedNode.url}>
         </div>
         <div>
             <h5 style="margin-bottom: 10px">Status</h5>
@@ -30,8 +30,8 @@
                 <h5 style="margin-bottom: 10px">Sync</h5>
             </div>
             <div class="goal">
-                <h4>{progress === 100 ? progress.toFixed(0) : progress.toFixed(2) ?? 0.00}%</h4>
-                <div class="progress" class:stripes={progress !== 100} class:synced={(progress === 100)}
+                <h4>{isNaN(progress) ? '-' : progress >= 100 ? `${progress.toFixed(0)}%` : `${progress.toFixed(2)}%`}</h4>
+                <div class="progress" class:stripes={progress < 100} class:synced={(progress >= 100)}
                      style="width: {progress}%;"></div>
             </div>
         </div>
