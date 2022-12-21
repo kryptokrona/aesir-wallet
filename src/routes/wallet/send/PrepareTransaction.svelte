@@ -41,7 +41,9 @@
         position: "top-right",
         style: "border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);"
       });
+
     }
+
     if(validAddress && amount) $wallet.preparedTransaction = await window.api.prepareTransaction(address, amount, paymentId, sendAll);
     if($wallet.preparedTransaction) { address = ''; amount = ''}
   };
@@ -75,6 +77,8 @@
   const sendMaxAmount = () => {
 
     amount = ($wallet.balance[0] / 100000) - 0.1;
+    amount = (amount < 0 ? 0 : amount);
+    sendAll = true;
 
   };
 

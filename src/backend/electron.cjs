@@ -606,7 +606,7 @@ ipcMain.handle('balance-subwallet', async (e) => {
 ipcMain.handle('prepare-transaction', async (e, address, amount, paymentID, sendAll) => {
   console.log(address, amount, paymentID, sendAll);
   const result = await walletBackend.sendTransactionAdvanced(
-    [[address, amount * 100000]],
+    [[address, parseInt(parseFloat(amount).toFixed(5) * 100000)]],
     3,
     {isFixedFee: true, fixedFee: 10000},
     paymentID,
