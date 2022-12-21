@@ -22,18 +22,12 @@
   let xkrBalance;
   let fiatBalance;
 
-  onMount(() => {
-    display = prettyNumbers($wallet.balance[0] + $wallet.balance[1]).toString().split("");
-  })
-
   $: {
-    xkrBalance = prettyNumbers($wallet.balance[0] + $wallet.balance[1]).toString().split("");
-    fiatBalance = "$" + ($wallet.balance[0] * $fiat / 100000).toFixed(5);
-  }
-
-  const switchValue = () => {
-    showFiat = !showFiat
-    showFiat ? display = fiatBalance : display = xkrBalance
+    if(showFiat) {
+      display = "$" + ($wallet.balance[0] * $fiat / 100000).toFixed(5);
+    } else {
+      display = prettyNumbers($wallet.balance[0] + $wallet.balance[1]).toString().split("");
+    }
   }
 
 </script>
@@ -47,7 +41,7 @@
 
 <div class="balance" in:fade>
   <div class="summary">
-    <h2 on:click={switchValue}>Balance <span style="opacity: 50%; cursor: pointer" on:click><Auto/></span></h2>
+    <h2 on:click={() => showFiat = !showFiat}>Balance <span style="opacity: 50%; cursor: pointer" on:click><Auto/></span></h2>
     <div style="display: inline-flex">
       {#each display ?? [] as number, i (number + i)}
         {#key number}
