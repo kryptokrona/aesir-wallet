@@ -38,7 +38,7 @@
         </div>
       </div>
     {:else}
-      <div class="tx no-tx">
+      <div class="tx no-tx" in:fade>
         <p>No prepared transactions 👻</p>
       </div>
     {/if}
