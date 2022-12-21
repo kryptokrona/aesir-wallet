@@ -5,9 +5,6 @@
 
   $:fiatBalance = "$" + ($wallet.balance[0] * $fiat / 100000).toFixed(5);
 
-  $:console.log($fiat)
-  $:console.log($wallet.balance[0])
-
 </script>
 
 <div class="header">

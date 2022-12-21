@@ -28,7 +28,6 @@
   }
 
   const deleteContact = async (contact) => {
-    console.log("DELETE");
     $user.contacts = await window.api.deleteContact(contact);
   };
 
@@ -40,9 +39,7 @@
   };
 
   const importContacts = async () => {
-    console.log("Import contacts");
     $user.contacts = await window.api.importContacts();
-    console.log($user.contacts);
   };
 
   $: $user.contacts;

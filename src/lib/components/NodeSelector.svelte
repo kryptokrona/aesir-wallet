@@ -82,7 +82,6 @@
     nodes = await nodes.json();
     nodes = nodes.nodes;
 
-    console.log(nodes);
 
     let node_requests = [];
     let ssl_nodes = [];

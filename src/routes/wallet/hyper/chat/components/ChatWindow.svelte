@@ -4,9 +4,6 @@
   import { flip } from "svelte/animate";
   import { fade } from "svelte/transition";
   import PaymentRequest from "./PaymentRequest.svelte";
-
-
-  $: console.log($hyper.messages);
 </script>
 
 <div class="outer">

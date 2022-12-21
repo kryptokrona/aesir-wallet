@@ -25,7 +25,6 @@
         await sleep(250);
         await goto("/auth/login-wallet");
       } else if (!data.myWallets) {
-        console.log("runs");
         await sleep(2250);
         loading = false;
         await sleep(250);

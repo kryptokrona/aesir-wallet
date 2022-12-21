@@ -6,7 +6,6 @@
   import { onMount } from "svelte";
   import { fiat } from "$lib/stores/fiat.js";
 
-
   let address;
   let amount;
   let paymentId;
@@ -45,7 +44,6 @@
     }
 
     if(validAddress && amount) $wallet.preparedTransaction = await window.api.prepareTransaction(address, amount, paymentId, sendAll);
-    console.log($wallet.preparedTransaction);
     if($wallet.preparedTransaction) { address = ''; amount = ''}
   };
 

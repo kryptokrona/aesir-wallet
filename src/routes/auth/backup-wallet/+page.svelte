@@ -26,7 +26,6 @@
   onMount(async () => {
     seedWords = await window.api.getSeed();
     seedWordsArray = seedWords.split(" ");
-    console.log(randomNumbersArray);
     do {
       let num = Math.floor(Math.random() * 10 + 1);
       randomNumbersArray.push(num);

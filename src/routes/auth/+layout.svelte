@@ -1,7 +1,5 @@
 <script>
     import { Toaster } from "svelte-french-toast";
-
-    console.log('auth');
 </script>
 
 <Toaster/>

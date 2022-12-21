@@ -17,8 +17,6 @@
   window.api.receive("node-status", (res) => {
     $node.nodeStatus = res;
   });
-
-  console.log($page.url.pathname);
 </script>
 
 <section>
