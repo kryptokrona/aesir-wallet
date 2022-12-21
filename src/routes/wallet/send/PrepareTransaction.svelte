@@ -8,7 +8,7 @@
 
 
   let address;
-  let amount = 0;
+  let amount;
   let paymentId;
   let sendAll;
 
@@ -19,7 +19,7 @@
     if (contactAddress) address = contactAddress;
   });
 
-  $:fiatValue = "$" + ($fiat * amount).toFixed(5);
+  $:fiatValue = amount ? "$" + ($fiat * amount).toFixed(5) : '$0.00'
 
   export const prepareTx = async () => {
     let validAddress = await window.api.validateAddress(address);
@@ -45,6 +45,7 @@
     }
 
     if(validAddress && amount) $wallet.preparedTransaction = await window.api.prepareTransaction(address, amount, paymentId, sendAll);
+    console.log($wallet.preparedTransaction);
     if($wallet.preparedTransaction) { address = ''; amount = ''}
   };
 
@@ -93,9 +94,9 @@
     <input type="text" placeholder="Payment Id (optional)" bind:value={paymentId}>
     <Button on:click={generatePaymentId} text="Generate" width="105" height="36" />
   </div>
-  <div class="field">
-    <input type="number" placeholder="Amount" bind:value={amount}>
-    <p class="fiat-value">{fiatValue}</p>
+  <div class="field" style="float: right">
+    <input type="number" style="width: 60%" placeholder="Amount" bind:value={amount}>
+    <p class="fiat-value" style="width: 40%; text-align: right">{fiatValue}</p>
     <Button on:click={sendMaxAmount} text="Max" width="105" height="36" />
   </div>
 
@@ -108,7 +109,6 @@
     display: flex;
     flex-direction: column;
     gap: 1rem;
-    height: 50%;
   }
 
   .field {
@@ -123,6 +123,7 @@
     input {
       border: none;
       font-size: 1rem;
+      width: 100%;
 
       &::-webkit-outer-spin-button,
       &::-webkit-inner-spin-button {
