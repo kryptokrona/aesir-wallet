@@ -13,6 +13,7 @@
     const deleted = await window.api.deleteTransaction($wallet.preparedTransaction.hash);
     $wallet.preparedTransaction = undefined
   };
+
 </script>
 
 <div class="wrapper">
@@ -25,7 +26,7 @@
         <div style="display: flex; gap: 2rem">
           <div>
             <h4>Total Amount</h4>
-            <p style="color: var(--primary-color)">{prettyNumbers($wallet.preparedTransaction.amount)}</p>
+            <p style="color: var(--primary-color)">{$wallet.preparedTransaction.amount}</p>
           </div>
           <div>
             <h4>Fee</h4>

@@ -618,10 +618,11 @@ ipcMain.handle('prepare-transaction', async (e, address, amount, paymentID, send
   );
 
   if (result.success) {
+
     let transaction = {
       address: address,
       hash: result.transactionHash,
-      amount: amount * 100000,
+      amount: amount,
       fee: result.fee,
       paymentId: paymentID
     }
