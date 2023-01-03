@@ -1,31 +1,33 @@
 <script>
-    import Button from "$lib/components/buttons/Button.svelte";
-    import { fade } from "svelte/transition";
-    import { onMount } from "svelte";
+  import Button from '$lib/components/buttons/Button.svelte';
+  import { fade } from 'svelte/transition';
+  import { onMount } from 'svelte';
+  import { transactions } from '$lib/stores/wallet.js';
 
-    let pageNum = 0
-    let pages
-    let txList = []
+  let pageNum = 0;
+  let pages;
+  let txList = [];
 
-    onMount(() => {
-        getTransactions(pageNum)
-    })
+  onMount(() => {
+    getTransactions(pageNum);
+  });
 
-    async function getTransactions() {
-        let startIndex = pageNum * 10
-        if (pageNum === 0) {
-            startIndex = 0
-        }
-        let txs = await window.api.getTransactions(startIndex)
-        console.log(txs);
-
-        pages = txs.pages
-        txList = txs.pageTx
+  async function getTransactions() {
+    let startIndex = pageNum * 10;
+    if (pageNum === 0) {
+      startIndex = 0;
     }
-    $: pageNum
-    $: txList
-    $: page = pageNum + 1
+    let txs = await window.api.getTransactions(startIndex);
 
+    pages = txs.pages;
+    txList = txs.pageTx;
+    $transactions.txs = txList;
+    $transactions.page = pageNum;
+  }
+
+  $: pageNum;
+  $: txList;
+  $: page = pageNum + 1;
 </script>
 
 <div class="header">
@@ -37,30 +39,24 @@
 </div>
 
 <div>
-
-{#if txList.length > 0}
-  <div class="transactions">
-      {#each txList as tx}
-          <div class="row">
-              <p style="opacity: 80%;">
-                  {tx.hash.substring(0, 8) + '...' + tx.hash.substring(56, tx.hash.length)}
-              </p>
-              <p
-                      class="tx"
-                      style="background: none"
-                      class:sent="{parseFloat(tx.amount) > 0}"
-              >
-                  {parseFloat(tx.amount / 100000).toFixed(5)}
-              </p>
-          </div>
+  {#if txList.length > 0}
+    <div class="transactions">
+      {#each $transactions.txs as tx}
+        <div class="row">
+          <p style="opacity: 80%;">
+            {tx.hash.substring(0, 8) + '...' + tx.hash.substring(56, tx.hash.length)}
+          </p>
+          <p class="tx" style="background: none" class:sent={parseFloat(tx.amount) > 0}>
+            {parseFloat(tx.amount / 100000).toFixed(5)}
+          </p>
+        </div>
       {/each}
-  </div>
-{:else}
-  <div class="notx">
+    </div>
+  {:else}
+    <div class="notx">
       <h3>No transactions</h3>
-  </div>
-{/if}
-
+    </div>
+  {/if}
 </div>
 
 <style lang="scss">
@@ -71,45 +67,44 @@
     width: 100%;
     min-height: 60px;
     border-bottom: 1px solid var(--border-color);
-    padding: 0 2rem 0 2rem
+    padding: 0 2rem 0 2rem;
   }
 
   .transactions {
-      height: 100%;
-      width: 100%;
-      overflow-y: scroll;
-      box-sizing: border-box;
-      --scrollbarBG: transparent;
-      --thumbBG: #3337;
-      scrollbar-width: thin;
-      scrollbar-color: var(--thumbBG) var(--scrollbarBG);
+    height: 100%;
+    width: 100%;
+    overflow-y: scroll;
+    box-sizing: border-box;
+    --scrollbarBG: transparent;
+    --thumbBG: #3337;
+    scrollbar-width: thin;
+    scrollbar-color: var(--thumbBG) var(--scrollbarBG);
+  }
+  .transactions::-webkit-scrollbar {
+    width: 8px;
+  }
+  .transactions::-webkit-scrollbar-track {
+    background: var(--scrollbarBG);
+  }
+  .transactions::-webkit-scrollbar-thumb {
+    background-color: var(--thumbBG);
+    border-radius: 3px;
+    border: 3px solid var(--scrollbarBG);
+  }
+  .row {
+    display: flex;
+    box-sizing: border-box;
+    justify-content: space-between;
+    width: 100%;
+    height: 50px;
+    padding: 0 2rem;
+    border-bottom: 1px solid var(--border-color);
+    &:hover {
+      background-color: var(--border-color);
+      cursor: pointer;
     }
-    .transactions::-webkit-scrollbar {
-      width: 8px;
+    &:active {
+      color: #121212;
     }
-    .transactions::-webkit-scrollbar-track {
-      background: var(--scrollbarBG);
-    }
-    .transactions::-webkit-scrollbar-thumb {
-      background-color: var(--thumbBG);
-      border-radius: 3px;
-      border: 3px solid var(--scrollbarBG);
-    }
-    .row {
-      display: flex;
-      box-sizing: border-box;
-      justify-content: space-between;
-      width: 100%;
-      height: 50px;
-      padding: 0 2rem;
-      border-bottom: 1px solid var(--border-color);
-      &:hover {
-        background-color: var(--border-color);
-        cursor: pointer;
-      }
-      &:active {
-        color: #121212;
-      }
-    }
-
+  }
 </style>
