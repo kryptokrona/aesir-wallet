@@ -5,7 +5,6 @@
   import { wallet, transactions } from '$lib/stores/wallet.js';
   import { user } from '$lib/stores/user.js';
   import { page } from '$app/stores';
-  import { prettyNumbers } from '$lib/utils';
 
   window.api.receive('data', (data) => {
     $node.localDaemonBlockCount = data.localDaemonBlockCount;
@@ -28,7 +27,6 @@
     if ($page.url.pathname === '/wallet/history' && $transactions.page === 0) {
       $transactions.txs.unshift(transaction);
     }
-    console.log('txs updated', $transactions.txs);
     $transactions.txs = $transactions.txs;
   });
 </script>
