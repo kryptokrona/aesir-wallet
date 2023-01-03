@@ -207,7 +207,6 @@ ipcMain.on("start-wallet", async (e, walletName, password, node) => {
   walletBackend = await logIntoWallet(walletName, password);
   if (!walletBackend) return;
 
-
   await walletBackend.start();
   walletBackend.setLogLevel(WB.LogLevel.WARNING);
   walletBackend.enableAutoOptimization(true);
@@ -243,6 +242,7 @@ ipcMain.on("start-wallet", async (e, walletName, password, node) => {
 
   walletBackend.on("incomingtx", (transaction) => {
     console.log(transaction);
+    mainWindow.webContents.send("incoming-tx", transaction, transaction.totalAmount());
     console.log(`🚨 INCOMING TX - AMOUNT: ${WB.prettyPrintAmount(transaction.totalAmount())}`);
   });
 
@@ -265,14 +265,14 @@ ipcMain.on("start-wallet", async (e, walletName, password, node) => {
       const idle = powerMonitor.getSystemIdleTime();
       const data = { walletBlockCount, localDaemonBlockCount, networkBlockCount, balance, idle };
       mainWindow.webContents.send("data", data);
-      if ((localDaemonBlockCount - walletBlockCount) < 2) {
+      if ((networkBlockCount - walletBlockCount) < 2) {
         // Diff between wallet height and node height is 1 or 0, we are synced
         console.log("walletBlockCount", walletBlockCount);
         console.log("localDaemonBlockCount", localDaemonBlockCount);
         console.log("networkBlockCount", networkBlockCount);
         console.log("SYNCED");
         console.log("******** SAVING WALLET ********");
-        walletBackend.saveWalletToFile(userDataDir + "/" + walletName + ".wallet", password);
+        await walletBackend.saveWalletToFile(userDataDir + "/" + walletName + ".wallet", password);
         mainWindow.webContents.send("node-status", "Synced");
       } else {
         console.log("********SYNCING********");
@@ -322,7 +322,6 @@ async function checkTx(tx, keyset) {
   const transactionOutputs = tx.transactionPrefixInfo.vout.entries();
 
   for (const [outputIndex, output] of tx.transactionPrefixInfo.vout.entries()) {
-    console.log("testing key", output.target.data.key);
 
     /* Derive the spend key from the transaction, using the previous
        derivation */
@@ -333,6 +332,7 @@ async function checkTx(tx, keyset) {
       console.log("******************** Found transaction *******************", derivedSpendKey);
       mainWindow.webContents.send("incoming-hash", tx.transactionPrefixInfotxHash);
       notifier.notify({
+        appID: "Kryptokrona Wallet",
         title: "Found a transaction",
         message: `Waiting for confirmation..`,
         icon: "https://cdn.discordapp.com/attachments/788875613753835533/975829842870280282/icon.png",
