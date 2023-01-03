@@ -39,6 +39,9 @@ contextBridge.exposeInMainWorld("api", {
   getWallets: async () => {
     return await ipcRenderer.invoke("get-wallets");
   },
+  getTransactions: async () => {
+    return await ipcRenderer.invoke("get-transactions");
+  },
   walletStart: (walletName, password, node) => {
     ipcRenderer.send("start-wallet", walletName, password, node);
   },

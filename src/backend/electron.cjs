@@ -470,6 +470,24 @@ ipcMain.handle("get-addresses", (e) => {
   if (addresses) return addresses;
 });
 
+//Gets n transactions per page to view in frontend
+ipcMain.handle('get-transactions', async (e, startIndex) => {
+    const showPerPage = 10
+    const allTx = await walletBackend.getTransactions()
+    const pages = Math.ceil(allTx.length / showPerPage)
+    const pageTx = []
+    for (const tx of await walletBackend.getTransactions(startIndex, showPerPage)) {
+
+        pageTx.push({
+            hash: tx.hash,
+            amount: tx.totalAmount(),
+            time: tx.timestamp,
+        })
+    }
+
+    return { pageTx, pages }
+})
+
 ipcMain.handle("get-seed", async (e) => {
   const [seed, err] = await walletBackend.getMnemonicSeed();
   if (!err) {
