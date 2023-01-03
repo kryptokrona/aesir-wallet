@@ -18,7 +18,6 @@
       startIndex = 0;
     }
     let txs = await window.api.getTransactions(startIndex);
-
     pages = txs.pages;
     txList = txs.pageTx;
     $transactions.txs = txList;
@@ -32,9 +31,10 @@
 
 <div class="header">
   <h3 in:fade>History</h3>
+  <p>{page}/{pages}</p>
   <div in:fade>
-    <Button text="-" />
-    <Button text="+" />
+    <Button text="-" on:click={() => getTransactions(pageNum--)} />
+    <Button text="+" on:click={() => getTransactions(pageNum++)} />
   </div>
 </div>
 
