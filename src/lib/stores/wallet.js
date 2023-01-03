@@ -7,3 +7,8 @@ export const wallet = writable({
     addresses: [],
     preparedTransaction: undefined
 })
+
+export const transactions = writable({
+    page: 0,
+    txs: []
+})
