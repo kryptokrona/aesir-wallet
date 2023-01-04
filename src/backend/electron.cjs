@@ -474,6 +474,7 @@ ipcMain.handle("get-addresses", (e) => {
 ipcMain.handle('get-transactions', async (e, startIndex) => {
     const showPerPage = 10
     const allTx = await walletBackend.getTransactions()
+    if (!startIndex) return allTx
     const pages = Math.ceil(allTx.length / showPerPage)
     const pageTx = []
     for (const tx of await walletBackend.getTransactions(startIndex, showPerPage)) {
