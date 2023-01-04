@@ -510,7 +510,8 @@ ipcMain.handle("check-node", async (e, node) => {
   return await new Promise(async (resolve, reject) => {
     console.log(node);
     try {
-      const req = await fetch(`http://${node.url}:${node.port}/getinfo`);
+      console.log(node);
+      const req = await fetch(`${node.ssl ? 'https://' : 'http://' }${node.url}:${node.port}/getinfo`);
       if (!req.ok) {
         return reject("error");
       }
