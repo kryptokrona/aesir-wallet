@@ -1,34 +1,8 @@
-![Yggdrasil Wallet](https://user-images.githubusercontent.com/36674091/198717153-c46bdb04-f3b4-45c0-ace4-0f9a41675911.png)
+<a href="https://github.com/mjovanc/falcon">
+  <img align="right" width="150" height="150" alt="Yggdrasil Kryptokrona Wallet" src="static/icon.png">
+</a>
 
-<p>
-<a href="https://chat.kryptokrona.se">
-    <img src="https://img.shields.io/discord/562673808582901793?label=Discord&logo=Discord&logoColor=white&style=flat">
-</a>
-<a href="https://github.com/kryptokrona/yggdrasil-wallet/issues">
-    <img src="https://img.shields.io/github/issues/kryptokrona/yggdrasil-wallet">
-</a>
-<a href="https://github.com/kryptokrona/yggdrasil-wallet/pulls">
-    <img src="https://img.shields.io/github/issues-pr/kryptokrona/yggdrasil-wallet">
-</a>
-<a href="https://github.com/kryptokrona/yggdrasil-wallet/commits/main">
-    <img src="https://img.shields.io/github/commit-activity/m/kryptokrona/yggdrasil-wallet">
-</a>
-<a href="https://github.com/kryptokrona/yggdrasil-wallet/graphs/contributors">
-    <img src="https://img.shields.io/github/contributors/kryptokrona/yggdrasil-wallet">
-</a>
-<a href="https://github.com/kryptokrona/yggdrasil-wallet/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/kryptokrona/yggdrasil-wallet">
-</a>
-<a href="https://twitter.com/kryptokrona">
-    <img src="https://img.shields.io/twitter/follow/kryptokrona">
-</a>
-<a href="https://github.com/kryptokrona/yggdrasil-wallet/releases/latest">
-    <img src="https://img.shields.io/github/downloads/kryptokrona/yggdrasil-wallet/total">
-</a>
-<a href="https://github.com/kryptokrona/yggdrasil-wallet/releases/latest">
-    <img src="https://img.shields.io/github/downloads/kryptokrona/yggdrasil-wallet/latest/total">
-</a>
-</p>
+# Yggdrasil Wallet
 
 Yggdrasil is the most current Kryptokrona GUI Wallet built with Svelte and Electron.
 
