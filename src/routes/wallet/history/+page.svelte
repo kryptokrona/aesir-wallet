@@ -33,8 +33,12 @@
   <h3 in:fade>History</h3>
   <p>{page}/{pages}</p>
   <div in:fade>
-    <Button text="-" on:click={() => getTransactions(pageNum--)} />
-    <Button text="+" on:click={() => getTransactions(pageNum++)} />
+    {#if pageNum > 0}
+      <Button text="-" on:click={() => getTransactions(pageNum--)} />
+    {/if}
+    {#if pages >= page + 1}
+      <Button text="+" on:click={() => getTransactions(pageNum++)} />
+    {/if}
   </div>
 </div>
 
