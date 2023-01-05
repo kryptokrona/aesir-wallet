@@ -5,19 +5,19 @@
   import { transactions } from '$lib/stores/wallet.js';
 
   let pageNum = 0;
-  let pages;
+  let pages = 1;
   let txList = [];
 
   onMount(() => {
-    getTransactions(pageNum);
+    getTransactions(false);
   });
 
-  async function getTransactions() {
+  async function getTransactions(all = false) {
     let startIndex = pageNum * 10;
     if (pageNum === 0) {
       startIndex = 0;
     }
-    let txs = await window.api.getTransactions(startIndex);
+    let txs = await window.api.getTransactions(startIndex, all);
     pages = txs.pages;
     txList = txs.pageTx;
     $transactions.txs = txList;
@@ -25,7 +25,6 @@
   }
 
   $: pageNum;
-  $: txList;
   $: page = pageNum + 1;
 </script>
 
@@ -43,7 +42,7 @@
 </div>
 
 <div>
-  {#if txList.length > 0}
+  {#if txList.length}
     <div class="transactions">
       {#each $transactions.txs as tx}
         <div class="row">
