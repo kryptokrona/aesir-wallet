@@ -9,17 +9,14 @@
   let txList = [];
 
   onMount(() => {
-    getTransactions(false);
+    getTransactions();
   });
 
   async function getTransactions(all = false) {
     let startIndex = pageNum * 10;
-    if (pageNum === 0) {
-      startIndex = 0;
-    }
     let txs = await window.api.getTransactions(startIndex, all);
-    pages = txs.pages;
     txList = txs.pageTx;
+    pages = txs.pages;
     $transactions.txs = txList;
     $transactions.page = pageNum;
   }
