@@ -1,6 +1,6 @@
 <script>
   import { fade } from "svelte/transition";
-  import { wallet } from "$lib/stores/wallet.js";
+  import { wallet, transactions } from "$lib/stores/wallet.js";
   import { fiat } from "$lib/stores/fiat.js";
   import { Line } from 'svelte-chartjs';
 
@@ -24,6 +24,57 @@
     PointElement,
     CategoryScale
   );
+
+  let transactionsFormatted;
+
+  $:transactionsFormatted;
+
+  import { onMount } from "svelte";
+
+  const formatTransactions = (transactions) => {
+
+
+    let balance = $wallet.balance[0];
+
+    let transactionsFormatted = [];
+
+    for (let i = 0; i < transactions.length; i++) {
+      transactionsFormatted.push([
+        parseFloat(transactions[i].total / 100000).toFixed(5),
+        balance
+      ]);
+      balance -= parseFloat(transactions[i].total / 100000).toFixed(5);
+    }
+    return transactionsFormatted;
+  }
+
+
+  onMount(async () => {
+
+    if ($wallet.balance[0]) {
+
+      $transactions.allTx = await window.api.getTransactions(0,true)
+      console.log('all txs??', $transactions.allTx)
+      // console.log($transactions.allTx[0].toJSON());
+
+      transactionsFormatted = formatTransactions($transactions.allTx);
+      console.log(transactionsFormatted);
+
+    }
+
+  })
+
+  $: if ($wallet.balance[0]) {
+
+    $transactions.allTx = await window.api.getTransactions(0,true)
+    console.log('all txs??', $transactions.allTx)
+    // console.log($transactions.allTx[0].toJSON());
+
+    transactionsFormatted = formatTransactions($transactions.allTx);
+    console.log(transactionsFormatted);
+
+  }
+
 
   const data = {
   labels: ['January', 'February', 'March', 'April', 'May', 'June', 'July'],
