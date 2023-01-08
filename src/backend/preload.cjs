@@ -72,6 +72,9 @@ contextBridge.exposeInMainWorld("api", {
   rewindWallet: (height) => {
     return ipcRenderer.send("rewind-wallet", height);
   },
+  getBalance: async () => {
+    return await ipcRenderer.invoke("get-balance");
+  },
 
 
   getContacts: async () => {

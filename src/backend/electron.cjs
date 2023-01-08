@@ -189,6 +189,10 @@ ipcMain.on("install-update", async (e, data) => {
   autoUpdater.quitAndInstall();
 });
 
+ipcMain.handle("get-balance", async (e, ) => {
+ return await walletBackend.getBalance();
+})
+
 let loggedIn = false;
 let userPassword;
 
