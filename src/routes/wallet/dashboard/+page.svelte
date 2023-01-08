@@ -1,9 +1,9 @@
 <script>
-  import { fade } from "svelte/transition";
-  import { wallet, transactions } from "$lib/stores/wallet.js";
-  import { fiat } from "$lib/stores/fiat.js";
+  import { fade } from 'svelte/transition';
+  import { wallet, transactions } from '$lib/stores/wallet.js';
+  import { fiat } from '$lib/stores/fiat.js';
   import { Line } from 'svelte-chartjs';
-
+  import { onMount } from 'svelte';
   import {
     Chart as ChartJS,
     Title,
@@ -15,119 +15,86 @@
     CategoryScale,
   } from 'chart.js';
 
-  ChartJS.register(
-    Title,
-    Tooltip,
-    Legend,
-    LineElement,
-    LinearScale,
-    PointElement,
-    CategoryScale
-  );
+  ChartJS.register(Title, Tooltip, Legend, LineElement, LinearScale, PointElement, CategoryScale);
 
-  let transactionsFormatted;
+  let transactionsFormatted = [];
+  let allTxs = [];
 
-  $:transactionsFormatted;
+  onMount(async () => {
+    $wallet.balance = await window.api.getBalance();
+    checkAndFormatTxs();
+  });
 
-  import { onMount } from "svelte";
+  async function checkAndFormatTxs() {
+    allTxs = await window.api.getTransactions(0, true);
+    console.log('Checking all txs', allTxs);
+    if ($transactions.allTx === allTxs) return;
+    $transactions.allTx = allTxs;
+
+    transactionsFormatted = formatTransactions(allTxs);
+    console.log('Transactions formatted', transactionsFormatted);
+  }
 
   const formatTransactions = (transactions) => {
-
-
     let balance = $wallet.balance[0];
-
-    let transactionsFormatted = [];
+    transactionsFormatted = [];
 
     for (let i = 0; i < transactions.length; i++) {
-      transactionsFormatted.push([
-        parseFloat(transactions[i].total / 100000).toFixed(5),
-        balance
-      ]);
+      transactionsFormatted.push([parseFloat(transactions[i].total / 100000).toFixed(5), balance]);
       balance -= parseFloat(transactions[i].total / 100000).toFixed(5);
     }
     return transactionsFormatted;
-  }
-
-
-  onMount(async () => {
-
-    if ($wallet.balance[0]) {
-
-      $transactions.allTx = await window.api.getTransactions(0,true)
-      console.log('all txs??', $transactions.allTx)
-      // console.log($transactions.allTx[0].toJSON());
-
-      transactionsFormatted = formatTransactions($transactions.allTx);
-      console.log(transactionsFormatted);
-
-    }
-
-  })
-
-  $: if ($wallet.balance[0]) {
-
-    $transactions.allTx = await window.api.getTransactions(0,true)
-    console.log('all txs??', $transactions.allTx)
-    // console.log($transactions.allTx[0].toJSON());
-
-    transactionsFormatted = formatTransactions($transactions.allTx);
-    console.log(transactionsFormatted);
-
-  }
-
+  };
 
   const data = {
-  labels: ['January', 'February', 'March', 'April', 'May', 'June', 'July'],
-  datasets: [
-    {
-      label: 'My First dataset',
-      fill: true,
-      lineTension: 0.3,
-      backgroundColor: 'rgba(225, 204,230, .3)',
-      borderColor: 'rgb(205, 130, 158)',
-      borderCapStyle: 'butt',
-      borderDash: [],
-      borderDashOffset: 0.0,
-      borderJoinStyle: 'miter',
-      pointBorderColor: 'rgb(205, 130,1 58)',
-      pointBackgroundColor: 'rgb(255, 255, 255)',
-      pointBorderWidth: 10,
-      pointHoverRadius: 5,
-      pointHoverBackgroundColor: 'rgb(0, 0, 0)',
-      pointHoverBorderColor: 'rgba(220, 220, 220,1)',
-      pointHoverBorderWidth: 2,
-      pointRadius: 1,
-      pointHitRadius: 10,
-      data: [65, 59, 80, 81, 56, 55, 40],
-    },
-    {
-      label: 'My Second dataset',
-      fill: true,
-      lineTension: 0.3,
-      backgroundColor: 'rgba(184, 185, 210, .3)',
-      borderColor: 'rgb(35, 26, 136)',
-      borderCapStyle: 'butt',
-      borderDash: [],
-      borderDashOffset: 0.0,
-      borderJoinStyle: 'miter',
-      pointBorderColor: 'rgb(35, 26, 136)',
-      pointBackgroundColor: 'rgb(255, 255, 255)',
-      pointBorderWidth: 10,
-      pointHoverRadius: 5,
-      pointHoverBackgroundColor: 'rgb(0, 0, 0)',
-      pointHoverBorderColor: 'rgba(220, 220, 220, 1)',
-      pointHoverBorderWidth: 2,
-      pointRadius: 1,
-      pointHitRadius: 10,
-      data: [28, 48, 40, 19, 86, 27, 90],
-    },
-  ],
-};
+    labels: ['January', 'February', 'March', 'April', 'May', 'June', 'July'],
+    datasets: [
+      {
+        label: 'My First dataset',
+        fill: true,
+        lineTension: 0.3,
+        backgroundColor: 'rgba(225, 204,230, .3)',
+        borderColor: 'rgb(205, 130, 158)',
+        borderCapStyle: 'butt',
+        borderDash: [],
+        borderDashOffset: 0.0,
+        borderJoinStyle: 'miter',
+        pointBorderColor: 'rgb(205, 130,1 58)',
+        pointBackgroundColor: 'rgb(255, 255, 255)',
+        pointBorderWidth: 10,
+        pointHoverRadius: 5,
+        pointHoverBackgroundColor: 'rgb(0, 0, 0)',
+        pointHoverBorderColor: 'rgba(220, 220, 220,1)',
+        pointHoverBorderWidth: 2,
+        pointRadius: 1,
+        pointHitRadius: 10,
+        data: transactionsFormatted,
+      },
+      {
+        label: 'My Second dataset',
+        fill: true,
+        lineTension: 0.3,
+        backgroundColor: 'rgba(184, 185, 210, .3)',
+        borderColor: 'rgb(35, 26, 136)',
+        borderCapStyle: 'butt',
+        borderDash: [],
+        borderDashOffset: 0.0,
+        borderJoinStyle: 'miter',
+        pointBorderColor: 'rgb(35, 26, 136)',
+        pointBackgroundColor: 'rgb(255, 255, 255)',
+        pointBorderWidth: 10,
+        pointHoverRadius: 5,
+        pointHoverBackgroundColor: 'rgb(0, 0, 0)',
+        pointHoverBorderColor: 'rgba(220, 220, 220, 1)',
+        pointHoverBorderWidth: 2,
+        pointRadius: 1,
+        pointHitRadius: 10,
+        data: [28, 48, 40, 19, 86, 27, 90],
+      },
+    ],
+  };
 
-
-
-  $:fiatBalance = "$" + ($wallet.balance[0] * $fiat / 100000).toFixed(5);
-
+  $: fiatBalance = '$' + (($wallet.balance[0] * $fiat) / 100000).toFixed(5);
 </script>
 
 <div class="header">
@@ -140,10 +107,9 @@
     <p>{fiatBalance}</p>
   </div>
   <div>
-  <Line {data} options={{ responsive: true }} />
+    <Line {data} options={{ responsive: true }} />
   </div>
 </div>
-
 
 <style lang="scss">
   .header {
@@ -153,7 +119,7 @@
     width: 100%;
     min-height: 60px;
     border-bottom: 1px solid var(--border-color);
-    padding: 0 2rem 0 2rem
+    padding: 0 2rem 0 2rem;
   }
   .card-wrapper {
     margin: 10px;
