@@ -11,5 +11,5 @@ export const wallet = writable({
 export const transactions = writable({
     page: 0,
     txs: [],
-    allTx: false,
+    allTx: [],
 })
