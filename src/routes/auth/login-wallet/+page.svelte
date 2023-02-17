@@ -11,12 +11,15 @@
     import {sleep} from "$lib/utils";
     import {user} from "$lib/stores/user.js";
     import {dev} from "$app/environment";
+    import toast from "svelte-french-toast";
+    import NodeSelector from "$lib/components/NodeSelector.svelte";
 
     let animate = false
     let loading = false
     let password = ''
     let nodeOnline
     let wrongPassword
+    let openNodeSelector
 
     onMount(async () => {
         if(dev) {
@@ -50,6 +53,14 @@
         nodeOnline = await window.api.checkNode($node.selectedNode)
         if (nodeOnline) {
             window.api.walletStart($wallet.currentWallet, password, $node.selectedNode)
+        } else if (!nodeOnline) {
+            loading= false
+            password = ''
+            toast.error("Node error", {
+                position: "top-right",
+                style: "border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);"
+            });
+            openNodeSelector = true
         }
     }
 
@@ -57,6 +68,12 @@
         if (e.key === 'Enter' && password.length >=3) {
             login()
         }
+    }
+
+
+    const handleNodeChange = (node) => {
+        window.api.setNode(node)
+        openNodeSelector = false
     }
 
 </script>
@@ -67,22 +84,26 @@
     <StartFlash/>
 {/if}
 
-<div style="display: flex; flex-direction: column; gap: 4rem;  align-items: center" in:fade={{duration: 200, delay: 400, easing: quadIn}}>
-    <div></div>
-    <div class="field" class:shake={wrongPassword}>
-        <input placeholder="Password..." type="password" bind:value={password}/>
-        <button on:click={login}>
-            {#if loading}
-                <Moon color="#ffffff" size="20" unit="px"/>
-            {:else}
-                <ArrowRight green={password.length >= 3}/>
-            {/if}
-        </button>
+{#if openNodeSelector}
+    <NodeSelector on:connect={(e) => handleNodeChange(e.detail.node)}/>
+    {:else }
+    <div style="display: flex; flex-direction: column; gap: 4rem;  align-items: center" in:fade={{duration: 200, delay: 400, easing: quadIn}}>
+        <div></div>
+        <div class="field" class:shake={wrongPassword}>
+            <input placeholder="Password..." type="password" bind:value={password}/>
+            <button on:click={login}>
+                {#if loading}
+                    <Moon color="#ffffff" size="20" unit="px"/>
+                {:else}
+                    <ArrowRight green={password.length >= 3}/>
+                {/if}
+            </button>
+        </div>
+        <div>
+            <p style="opacity: 50%">v1.0.0</p>
+        </div>
     </div>
-    <div>
-        <p style="opacity: 50%">v1.0.0</p>
-    </div>
-</div>
+{/if}
 
 <style lang="scss">
   .field {

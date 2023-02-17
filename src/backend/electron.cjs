@@ -508,27 +508,20 @@ ipcMain.handle("get-node", async (e) => {
 });
 
 ipcMain.handle("check-node", async (e, node) => {
-  return await new Promise(async (resolve, reject) => {
-    console.log(node);
     try {
-      console.log(node);
       const req = await fetch(`${node.ssl ? 'https://' : 'http://' }${node.url}:${node.port}/getinfo`);
       if (!req.ok) {
-        return reject("error");
+        return false
       }
 
       const res = await req.json();
-      if (res.status !== "OK") {
-        return reject("error");
-      }
 
-      return resolve("success");
+      return res.status === "OK";
 
     } catch (e) {
       console.log(e);
-      return reject("error");
+      return false
     }
-  });
 });
 
 ipcMain.handle('change-node', async (e, node) => {
@@ -537,6 +530,10 @@ ipcMain.handle('change-node', async (e, node) => {
   await walletBackend.swapNode(daemon)
   nodes.set("node", { url: node.url, port: node.port, ssl: node.ssl });
   return node
+})
+
+ipcMain.handle('set-node', (e, node) => {
+  nodes.set("node", { url: node.url, port: node.port, ssl: node.ssl });
 })
 
 ipcMain.handle("check-touchId", (e) => {

@@ -35,6 +35,9 @@ contextBridge.exposeInMainWorld("api", {
   changeNode: async node => {
     return await ipcRenderer.invoke("change-node", node)
   },
+  setNode: async node => {
+    return await ipcRenderer.invoke("set-node", node)
+  },
 
   getWallets: async () => {
     return await ipcRenderer.invoke("get-wallets");
