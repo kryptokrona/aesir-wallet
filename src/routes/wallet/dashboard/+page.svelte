@@ -1,97 +1,44 @@
 <script>
   import { fade } from 'svelte/transition';
-  import { wallet, transactions } from '$lib/stores/wallet.js';
+  import { wallet } from '$lib/stores/wallet.js';
   import { fiat } from '$lib/stores/fiat.js';
-  import { Line } from 'svelte-chartjs';
   import { onMount } from 'svelte';
-  import {
-    Chart as ChartJS,
-    Title,
-    Tooltip,
-    Legend,
-    LineElement,
-    LinearScale,
-    PointElement,
-    CategoryScale,
-  } from 'chart.js';
+  import { LinkedChart, LinkedLabel } from 'svelte-tiny-linked-charts';
 
-  ChartJS.register(Title, Tooltip, Legend, LineElement, LinearScale, PointElement, CategoryScale);
-
-  let transactionsFormatted = [];
-  let allTxs = [];
+  var incommingTransactions = [];
+  var outgoingTransactions = [];
+  var outgoingDates = [];
+  var incommingDates = [];
+  var showIncommingTransactions = true;
 
   onMount(async () => {
     $wallet.balance = await window.api.getBalance();
-    checkAndFormatTxs();
+    await formatTransactions();
   });
 
-  async function checkAndFormatTxs() {
-    allTxs = await window.api.getTransactions(0, true);
-    console.log('Checking all txs', allTxs);
-    if ($transactions.allTx === allTxs) return;
-    $transactions.allTx = allTxs;
+  const formatTransactions = async () => {
+    let transactions = await window.api.getTransactions(0, true);
 
-    transactionsFormatted = formatTransactions(allTxs);
-    console.log('Transactions formatted', transactionsFormatted);
-  }
-
-  const formatTransactions = (transactions) => {
-    let balance = $wallet.balance[0];
-    transactionsFormatted = [];
+    incommingTransactions = [];
+    outgoingTransactions = [];
 
     for (let i = 0; i < transactions.length; i++) {
-      transactionsFormatted.push([parseFloat(transactions[i].total / 100000).toFixed(5), balance]);
-      balance -= parseFloat(transactions[i].total / 100000).toFixed(5);
+      let value = parseFloat(transactions[i].total / 100000).toFixed(3);
+      if (value > 0) {
+        incommingTransactions.push(value);
+        incommingDates.push(new Date(transactions[i].timestamp * 1000).toUTCString());
+      } else {
+        outgoingTransactions.push((value * -1).toFixed(3));
+        outgoingDates.push(new Date(transactions[i].timestamp * 1000).toUTCString());
+      }
     }
-    return transactionsFormatted;
-  };
 
-  const data = {
-    labels: ['January', 'February', 'March', 'April', 'May', 'June', 'July'],
-    datasets: [
-      {
-        label: 'My First dataset',
-        fill: true,
-        lineTension: 0.3,
-        backgroundColor: 'rgba(225, 204,230, .3)',
-        borderColor: 'rgb(205, 130, 158)',
-        borderCapStyle: 'butt',
-        borderDash: [],
-        borderDashOffset: 0.0,
-        borderJoinStyle: 'miter',
-        pointBorderColor: 'rgb(205, 130,1 58)',
-        pointBackgroundColor: 'rgb(255, 255, 255)',
-        pointBorderWidth: 10,
-        pointHoverRadius: 5,
-        pointHoverBackgroundColor: 'rgb(0, 0, 0)',
-        pointHoverBorderColor: 'rgba(220, 220, 220,1)',
-        pointHoverBorderWidth: 2,
-        pointRadius: 1,
-        pointHitRadius: 10,
-        data: transactionsFormatted,
-      },
-      {
-        label: 'My Second dataset',
-        fill: true,
-        lineTension: 0.3,
-        backgroundColor: 'rgba(184, 185, 210, .3)',
-        borderColor: 'rgb(35, 26, 136)',
-        borderCapStyle: 'butt',
-        borderDash: [],
-        borderDashOffset: 0.0,
-        borderJoinStyle: 'miter',
-        pointBorderColor: 'rgb(35, 26, 136)',
-        pointBackgroundColor: 'rgb(255, 255, 255)',
-        pointBorderWidth: 10,
-        pointHoverRadius: 5,
-        pointHoverBackgroundColor: 'rgb(0, 0, 0)',
-        pointHoverBorderColor: 'rgba(220, 220, 220, 1)',
-        pointHoverBorderWidth: 2,
-        pointRadius: 1,
-        pointHitRadius: 10,
-        data: [28, 48, 40, 19, 86, 27, 90],
-      },
-    ],
+    outgoingTransactions.reverse();
+    incommingTransactions.reverse();
+    incommingDates.reverse();
+    outgoingDates.reverse();
+    incommingDates = incommingDates;
+    outgoingDates = outgoingDates;
   };
 
   $: fiatBalance = '$' + (($wallet.balance[0] * $fiat) / 100000).toFixed(5);
@@ -106,8 +53,72 @@
     <h3>Fiat value</h3>
     <p>{fiatBalance}</p>
   </div>
-  <div>
-    <Line {data} options={{ responsive: true }} />
+  <div style="margin-top: 10px; position: relative">
+    {#if incommingDates.length > 0 || outgoingDates.length > 0}
+      <div style="text-align: center; margin-bottom: 50px">
+        <button
+          on:click={() => (showIncommingTransactions = true)}
+          class="chart-category"
+          style="width: 10px; height: 10px; background-color: #0eff6b; border: none; "
+          id="incomming"
+        />
+        <label class="chart-category" for="incomming" style="margin-right: 8px">incomming</label>
+
+        <button
+          on:click={() => (showIncommingTransactions = false)}
+          class="chart-category"
+          style="width: 10px; height: 10px; background-color: #5a8bdb; border: none; "
+          id="outgoing"
+        />
+        <label class="chart-category" for="outgoing">outgoing</label>
+      </div>
+
+      <div style="margin-left: 40px;">
+        {#if showIncommingTransactions}
+          <div style="text-align: center; position: absolute; left: 0; right: 0; top: 20px; margin: auto;">
+            <LinkedLabel linked="incomming" />
+          </div>
+          <div>
+            <LinkedChart
+              values={incommingTransactions}
+              labels={incommingDates}
+              linked="incomming"
+              valuePosition="floating"
+              showValue={true}
+              grow={true}
+              fill="#0eff6b"
+              tabindex="0"
+              height="300"
+              width="450"
+              align="left"
+              gap="4"
+              valuePrepend="xkr"
+            />
+          </div>
+        {:else}
+          <div style="text-align: center; position: absolute; left: 0; right: 0; top: 20px; margin: auto;">
+            <LinkedLabel linked="outgoing" />
+          </div>
+          <div>
+            <LinkedChart
+              values={outgoingTransactions}
+              labels={outgoingDates}
+              linked="outgoing"
+              valuePosition="floating"
+              showValue={true}
+              grow={true}
+              fill="#5a8bdb"
+              tabindex="0"
+              height="300"
+              width="450"
+              align="left"
+              gap="4"
+              valuePrepend="xkr"
+            />
+          </div>
+        {/if}
+      </div>
+    {/if}
   </div>
 </div>
 
@@ -123,5 +134,10 @@
   }
   .card-wrapper {
     margin: 10px;
+  }
+
+  .chart-category:hover {
+    cursor: pointer;
+    filter: brightness(140%);
   }
 </style>

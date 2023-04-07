@@ -86,7 +86,9 @@ h1, h2, h3, h4, h5, h6 {
 p {
   font-family: "Roboto Mono", monospace;
 }
-
+label {
+  font-family: "Roboto Mono", monospace;
+}
 .draggable {
   -webkit-user-select: none;
   user-select: none;
@@ -217,4 +219,8 @@ input {
   100% {
     transform: translate(0);
   }
+}
+
+.tiny-linked-charts-value {
+  font-family: 'Roboto Mono', monospace;
 }
