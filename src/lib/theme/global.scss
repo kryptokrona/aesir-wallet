@@ -83,7 +83,7 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--title-color)
 }
 
-p {
+p, label {
   font-family: "Roboto Mono", monospace;
 }
 
@@ -217,4 +217,8 @@ input {
   100% {
     transform: translate(0);
   }
+}
+
+.tiny-linked-charts-value {
+  font-family: "Roboto Mono", monospace;
 }
