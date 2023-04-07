@@ -1,35 +1,48 @@
 <script>
-  import { fade } from "svelte/transition";
-  import Dashboard from "$lib/components/icons/Navbar/Dashboard.svelte";
-  import Send from "$lib/components/icons/Navbar/Send.svelte";
-  import Wallets from "$lib/components/icons/Navbar/Wallets.svelte";
-  import Transactions from "$lib/components/icons/Navbar/Transactions.svelte";
-  import Settings from "$lib/components/icons/Navbar/Settings.svelte";
-  import Logout from "$lib/components/icons/Navbar/Logout.svelte";
-  import { goto } from "$app/navigation";
-  import Logo from "$lib/components/icons/Logo.svelte";
-  import Contacts from "$lib/components/icons/Navbar/Contacts.svelte";
-  import Lightning from "$lib/components/icons/Navbar/Lightning.svelte";
-  import { hyper } from "$lib/stores/hyper.js";
+  import { fade } from 'svelte/transition';
+  import Dashboard from '$lib/components/icons/Navbar/Dashboard.svelte';
+  import Send from '$lib/components/icons/Navbar/Send.svelte';
+  import Wallets from '$lib/components/icons/Navbar/Wallets.svelte';
+  import Transactions from '$lib/components/icons/Navbar/Transactions.svelte';
+  import Settings from '$lib/components/icons/Navbar/Settings.svelte';
+  import Logout from '$lib/components/icons/Navbar/Logout.svelte';
+  import { goto } from '$app/navigation';
+  import Logo from '$lib/components/icons/Logo.svelte';
+  import Contacts from '$lib/components/icons/Navbar/Contacts.svelte';
+  import Lightning from '$lib/components/icons/Navbar/Lightning.svelte';
+  import { hyper } from '$lib/stores/hyper.js';
+  import Tooltip from '../Tooltip.svelte';
 </script>
+
 <nav in:fade>
   <div>
-    <button on:click={() => goto('/wallet/dashboard')}>
-      <Dashboard />
-    </button>
-    <button on:click={() => goto('/wallet/send')}>
-      <Send />
-    </button>
-    <button on:click={() => goto('/wallet/contacts')}>
-      <Contacts />
-    </button>
-    <button on:click={() => goto('/wallet/receive')}>
-      <Wallets />
-    </button>
-    <button on:click={() => goto('/wallet/history')}>
-      <Transactions />
-    </button>
-<!--    <button on:click={() => {
+    <Tooltip title="Dashboard" stylized={true}>
+      <button on:click={() => goto('/wallet/dashboard')}>
+        <Dashboard />
+      </button>
+    </Tooltip>
+    <Tooltip title="Send" stylized={true}>
+      <button on:click={() => goto('/wallet/send')}>
+        <Send />
+      </button>
+    </Tooltip>
+    <Tooltip title="Contacts" stylized={true}>
+      <button on:click={() => goto('/wallet/contacts')}>
+        <Contacts />
+      </button>
+    </Tooltip>
+    <Tooltip title="Recieve" stylized={true}>
+      <button on:click={() => goto('/wallet/receive')}>
+        <Wallets />
+      </button>
+    </Tooltip>
+    <Tooltip title="History" stylized={true}>
+      <button on:click={() => goto('/wallet/history')}>
+        <Transactions />
+      </button>
+    </Tooltip>
+
+    <!--    <button on:click={() => {
             if($hyper.peer >= 2) goto('/wallet/hyper/chat')
             if($hyper.peer < 2) goto('/wallet/hyper')
         }}>
@@ -37,18 +50,24 @@
     </button>-->
   </div>
 
-  <div class="draggable drag"></div>
+  <div class="draggable drag" />
 
   <div>
-    <button on:click={() => goto('/wallet/settings/node')}>
-      <Settings />
-    </button>
-    <button on:click={() => goto('/auth/login-wallet')}>
-      <Logout />
-    </button>
-    <button on:click={() => goto('/auth/backup-wallet')}>
-      <Logo size="22" />
-    </button>
+    <Tooltip title="Settings" stylized={true}>
+      <button on:click={() => goto('/wallet/settings/node')}>
+        <Settings />
+      </button>
+    </Tooltip>
+    <Tooltip title="Logout" stylized={true}>
+      <button on:click={() => goto('/auth/login-wallet')}>
+        <Logout />
+      </button>
+    </Tooltip>
+    <Tooltip title="Wallet backup" stylized={true}>
+      <button on:click={() => goto('/auth/backup-wallet')}>
+        <Logo size="22" />
+      </button>
+    </Tooltip>
   </div>
 </nav>
 
