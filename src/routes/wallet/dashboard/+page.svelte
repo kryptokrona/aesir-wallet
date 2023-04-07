@@ -40,9 +40,6 @@
     outgoingDates.reverse();
     incommingDates = incommingDates;
     outgoingDates = outgoingDates;
-
-    console.log(incommingDates);
-    console.log(outgoingDates);
   };
 
   $: fiatBalance = '$' + (($wallet.balance[0] * $fiat) / 100000).toFixed(5);
