@@ -5,6 +5,7 @@
   import { onMount } from 'svelte';
   import { LinkedChart, LinkedLabel } from 'svelte-tiny-linked-charts';
 
+  const MAX_PAGES = 10;
   var incommingTransactions = [];
   var outgoingTransactions = [];
   var outgoingDates = [];
@@ -17,30 +18,55 @@
     await formatTransactions();
   });
 
-  const formatTransactions = async () => {
-    let transactions = await window.api.getTransactions(0, true);
+  async function getTransactions(transactions, pageNum) {
+    let startIndex = pageNum * 10;
+    let txs = await window.api.getTransactions(startIndex);
+    transactions = transactions.concat(txs.pageTx);
+
+    if (pageNum < txs.pages && MAX_PAGES > pageNum) {
+      return await getTransactions(transactions, pageNum + 1);
+    }
+    return transactions;
+  }
+
+  async function formatTransactions() {
+    let transactions = [];
+    transactions = await getTransactions(transactions, 0);
 
     incommingTransactions = [];
     outgoingTransactions = [];
 
     for (let i = 0; i < transactions.length; i++) {
-      let value = parseFloat(transactions[i].total / 100000).toFixed(3);
-      if (value > 0) {
-        incommingTransactions.push(value);
-        incommingDates.push(new Date(transactions[i].timestamp * 1000).toUTCString());
+      let value = transactions[i].amount / 100000;
+      let date = new Date(transactions[i].time * 1000).toUTCString();
+
+      if (value >= 0) {
+        let existingDateIndex = incommingDates.findIndex((d) => d == date);
+        if (existingDateIndex > -1) {
+          incommingTransactions[existingDateIndex] += value;
+        } else {
+          incommingTransactions.push(value);
+          incommingDates.push(date);
+        }
       } else {
-        outgoingTransactions.push((value * -1).toFixed(3));
-        outgoingDates.push(new Date(transactions[i].timestamp * 1000).toUTCString());
+        let existingDateIndex = outgoingDates.findIndex((d) => d == date);
+        if (existingDateIndex > -1) {
+          outgoingTransactions[existingDateIndex] += value * -1;
+        } else {
+          outgoingTransactions.push(value * -1);
+          outgoingDates.push(date);
+        }
       }
     }
 
+    outgoingTransactions = outgoingTransactions.map((t) => t.toFixed(3));
+    incommingTransactions = incommingTransactions.map((t) => t.toFixed(3));
     outgoingTransactions.reverse();
     incommingTransactions.reverse();
     incommingDates.reverse();
     outgoingDates.reverse();
     incommingDates = incommingDates;
-    outgoingDates = outgoingDates;
-  };
+  }
 
   $: fiatBalance = '$' + (($wallet.balance[0] * $fiat) / 100000).toFixed(5);
 </script>
@@ -55,7 +81,7 @@
     <p>{fiatBalance}</p>
   </div>
   <div style="margin-top: 10px; position: relative">
-    {#if incommingDates.length > 0 || outgoingDates.length > 0}
+    {#if incommingDates.length > 0}
       <div style="text-align: center; margin-bottom: 50px">
         <button
           on:click={() => (showIncommingTransactions = true)}
@@ -76,7 +102,9 @@
 
       <div style="margin-left: 40px;">
         {#if showIncommingTransactions}
-          <div style="text-align: center; position: absolute; left: 0; right: 0; top: 20px; margin: auto;">
+          <div
+            style="text-align: center; position: absolute; left: 0; right: 0; top: 25px; margin: auto; font-family: Roboto Mono, monospace; font-size: 14px;"
+          >
             <LinkedLabel linked="incomming" />
           </div>
           <div>
@@ -86,18 +114,20 @@
               linked="incomming"
               valuePosition="floating"
               showValue={true}
-              grow={true}
               fill="#0eff6b"
               tabindex="0"
               height="300"
-              width="450"
+              width="440"
               align="left"
               gap="4"
-              valuePrepend="xkr"
+              valueAppend="xkr"
+              grow={true}
             />
           </div>
         {:else}
-          <div style="text-align: center; position: absolute; left: 0; right: 0; top: 20px; margin: auto;">
+          <div
+            style="text-align: center; position: absolute; left: 0; right: 0; top: 25px; margin: auto; font-family: Roboto Mono, monospace; font-size: 14px;"
+          >
             <LinkedLabel linked="outgoing" />
           </div>
           <div>
@@ -107,14 +137,14 @@
               linked="outgoing"
               valuePosition="floating"
               showValue={true}
-              grow={true}
               fill="#5a8bdb"
               tabindex="0"
               height="300"
-              width="450"
+              width="440"
               align="left"
               gap="4"
-              valuePrepend="xkr"
+              valueAppend="xkr"
+              grow={true}
             />
           </div>
         {/if}
