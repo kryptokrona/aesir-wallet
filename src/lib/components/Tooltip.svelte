@@ -39,6 +39,7 @@
     color: black;
   }
   .tooltip-stylized {
+    z-index: 999;
     border-radius: 4px;
     padding: 6px;
     position: absolute;
