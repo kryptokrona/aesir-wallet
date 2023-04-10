@@ -3,6 +3,10 @@
 </a>
 
 # Yggdrasil Wallet
+[![build](https://img.shields.io/github/actions/workflow/status/kryptokrona/yggdrasil-wallet/main-ci.yml?branch=main)](https://github.com/kryptokrona/yggdrasil-wallet/actions/workflows/main-ci.yml)
+[![release](https://img.shields.io/github/v/release/kryptokrona/yggdrasil-wallet)](https://img.shields.io/github/v/release/kryptokrona/yggdrasil-wallet)
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![discord](https://img.shields.io/discord/562673808582901793?label=discord)](https://discord.gg/VTgsTGS9b7)
 
 Yggdrasil is the most current Kryptokrona GUI Wallet built with Svelte and Electron.
 
