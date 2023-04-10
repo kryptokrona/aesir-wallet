@@ -12,7 +12,6 @@ Yggdrasil is the most current Kryptokrona GUI Wallet built with Svelte and Elect
 
 # Table of Contents
 
-- [Table of Contents](#table-of-contents)
 - [Development Resources](#development-resources)
 - [Technologies](#technologies)
 - [Getting Started](#getting-started)
