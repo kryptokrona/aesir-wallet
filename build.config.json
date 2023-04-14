@@ -15,9 +15,9 @@
     }
   },
   "files": [
-    "src/electron.cjs",
-    "src/preload.cjs",
-    "src/hyper/*",
+    "src/backend/electron.cjs",
+    "src/backend/preload.cjs",
+    "src/backend/hyper/*",
     {
       "from": "build",
       "to": ""
