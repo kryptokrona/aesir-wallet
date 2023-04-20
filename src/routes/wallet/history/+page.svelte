@@ -3,6 +3,7 @@
   import { fade } from 'svelte/transition';
   import { onMount } from 'svelte';
   import { transactions } from '$lib/stores/wallet.js';
+  import { goto } from '$app/navigation';
 
   let pageNum = 0;
   let pages = 1;
@@ -42,7 +43,7 @@
   {#if txList.length}
     <div class="transactions">
       {#each $transactions.txs as tx}
-        <div class="row">
+        <div class="row" on:click={() => goto(`/wallet/transaction/${tx.hash}?prev=history`)}>
           <p style="opacity: 80%;">
             {tx.hash.substring(0, 8) + '...' + tx.hash.substring(56, tx.hash.length)}
           </p>
