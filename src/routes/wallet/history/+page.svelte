@@ -43,7 +43,7 @@
 </div>
 
 <div>
-  {#if txList.length > 0}
+  {#if txList?.length > 0}
     <div class="transactions">
       {#each $transactions.txs as tx}
         <div class="row">
