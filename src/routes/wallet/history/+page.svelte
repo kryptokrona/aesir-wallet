@@ -108,4 +108,8 @@
       color: #121212;
     }
   }
+
+  .notx {
+    padding: 30px;
+  }
 </style>
