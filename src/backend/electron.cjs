@@ -251,6 +251,7 @@ ipcMain.on("start-wallet", async (e, walletName, password, node) => {
 
   });
 
+  walletSaver(userDataDir, walletName, password)
   mainWindow.webContents.send("wallet-started");
 
   while (true) {
@@ -271,8 +272,7 @@ ipcMain.on("start-wallet", async (e, walletName, password, node) => {
         console.log("localDaemonBlockCount", localDaemonBlockCount);
         console.log("networkBlockCount", networkBlockCount);
         console.log("SYNCED");
-        console.log("******** SAVING WALLET ********");
-        await walletBackend.saveWalletToFile(userDataDir + "/" + walletName + ".wallet", password);
+        
         mainWindow.webContents.send("node-status", "Synced");
       } else {
         console.log("********SYNCING********");
@@ -287,6 +287,17 @@ ipcMain.on("start-wallet", async (e, walletName, password, node) => {
     }
   }
 });
+
+async function walletSaver(userDataDir, walletName, password) {
+  setInterval( async () => {
+   await saveWallet(userDataDir, walletName, password)
+  }, 60000)
+}
+
+async function saveWallet(userDataDir, walletName, password) {
+  console.log("******** SAVING WALLET ********");
+  await walletBackend.saveWalletToFile(userDataDir + "/" + walletName + ".wallet", password);
+}
 
 let known_pool_txs = [];
 
@@ -386,7 +397,7 @@ ipcMain.handle("create-wallet", async (e, walletName, password, node) => {
 
     [walletBackend, error] = await WB.WalletBackend.importWalletFromSeed(daemon, height, seed);
 
-    walletBackend.saveWalletToFile(userDataDir + "/" + walletName + ".wallet", password);
+    await saveWallet(userDataDir, walletName, password)
     await keytar.setPassword(`yggdrasilwallet?=${walletName}`, walletName, password);
 
     let knownWallets = await wallets.get("wallets") ?? [];
@@ -439,7 +450,7 @@ ipcMain.handle("import-seed", async (e, seed, walletName, password, height, node
     return false;
   }
 
-  const saved = walletBackend.saveWalletToFile(userDataDir + "/" + walletName + ".wallet", password);
+  const saved = await saveWallet(userDataDir, walletName, password)
 
   if (!saved) {
     console.log("Failed to save wallet!");
@@ -608,8 +619,7 @@ ipcMain.handle('create-subwallet', async (e) => {
   if (!error) {
     console.log(`Created subwallet with address of ${address}`);
   }
-  console.log('******** SAVING WALLET ********');
-  walletBackend.saveWalletToFile(userDataDir + '/' + walletName + '.wallet', password)
+  await saveWallet(userDataDir, walletName, password)
 })
 
 ipcMain.handle('delete-subwallet', async (e) => {
