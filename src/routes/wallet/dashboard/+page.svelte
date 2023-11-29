@@ -55,10 +55,16 @@
       },
     });
     console.log(data);
+    const theme = localStorage.getItem('themes');
+    console.log(document.documentElement + '.' + theme);
+    console.log(theme);
+    let color = getComputedStyle(document.documentElement).getPropertyValue('--primary-color');
+    console.log(color);
+    color = color.trim();
     const areaSeries = chart.addAreaSeries({
-      topColor: '#2962FF',
-      bottomColor: 'rgba(41, 98, 255, 0.28)',
-      lineColor: '#2962FF',
+      topColor: color,
+      bottomColor: color + '28',
+      lineColor: color,
       lineWidth: 2,
       crossHairMarkerVisible: false,
     });
