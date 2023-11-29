@@ -72,9 +72,7 @@
   const getNodeList = async () => {
     let nodes = await fetch('https://raw.githubusercontent.com/kryptokrona/kryptokrona-public-nodes/main/nodes.json');
     nodes = await nodes.json();
-    console.log('Nodes resp', nodes);
     nodes = nodes.nodes;
-    console.log('Nodes resp', nodes);
     return nodes;
   };
 
