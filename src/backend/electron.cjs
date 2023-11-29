@@ -489,11 +489,11 @@ ipcMain.handle('get-transactions', async (e, startIndex, all = false) => {
     const pages = Math.ceil(allTx.length / showPerPage)
     const pageTx = []
     for (const tx of await walletBackend.getTransactions(startIndex, showPerPage)) {
-
         pageTx.push({
             hash: tx.hash,
             amount: tx.totalAmount(),
             time: tx.timestamp,
+            height: tx.blockHeight
         })
     }
 

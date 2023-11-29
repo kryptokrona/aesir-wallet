@@ -29,6 +29,11 @@
     const url = `https://xkr.network/transaction?hash=${hash}`;
     window.api.openLink(url);
   }
+
+  function getBlockDetails(hash) {
+    //We need the block hash for this
+    return;
+  }
 </script>
 
 <div class="header">
@@ -43,18 +48,23 @@
 </div>
 <div class="wrapper">
   {#if transaction}
-    <div style="margin-top: .5em">
+    <div>
+      <h4>Amount</h4>
       <p class="amount" class:incoming={transaction.incoming}>
         {#if transaction.incoming}+{/if}{transaction.amount / 100000} XKR
       </p>
     </div>
-    <div style="margin-top: .5em">
+    <div style="margin-top: .8em">
       <h4>Hash</h4>
       <p style="cursor: pointer;" on:click={() => getTxDetails(transaction.hash)}>{transaction.hash}</p>
     </div>
-    <div style="margin-top: .5em">
+    <div style="margin-top: .8em">
       <h4>Timestamp</h4>
       <p>{new Date(transaction.time * 1000).toLocaleString()}</p>
+    </div>
+    <div style="margin-top: .8em">
+      <h4>Block</h4>
+      <p on:click={() => getBlockDetails(transaction.height)}>{transaction.height}</p>
     </div>
   {/if}
 </div>
@@ -73,7 +83,7 @@
     word-break: break-all;
     width: 100%;
     height: 100%;
-    padding: 30px;
+    padding: 25px;
   }
   .wrapper p {
     -moz-user-select: text;
