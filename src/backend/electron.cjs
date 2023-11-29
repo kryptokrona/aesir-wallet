@@ -701,3 +701,10 @@ ipcMain.on('disconnect-hyper', async (e, domain) => {
 ipcMain.on('send-message', async (e, data) => {
   sendMessage(data)
 })
+
+///////////// OPEN URL IN EXTERNAL BROWSER
+
+ipcMain.on('open-link', async (e, url) => {
+  const {shell} = require('electron')
+  shell.openExternal(url)
+})

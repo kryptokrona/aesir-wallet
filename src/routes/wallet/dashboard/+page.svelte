@@ -4,9 +4,10 @@
   import Transaction from '$lib/components/layout/Transaction.svelte';
   import { goto } from '$app/navigation';
   import { createChart } from 'lightweight-charts';
+  import { transactions } from '$lib/stores/wallet';
 
   const MAX_PAGES = 2;
-  let transactions = [];
+  let transactionsList = [];
   let latestFour = [];
   let dates = [];
   let chart;
@@ -19,8 +20,8 @@
   async function renderchart() {
     let data = [];
     let runningBalance = 0.0;
-    for (const tx in transactions) {
-      const thisTx = transactions[tx];
+    for (const tx in transactionsList) {
+      const thisTx = transactionsList[tx];
       runningBalance += thisTx.amount;
       let dateFormatted = new Date(thisTx.time * 1000).toISOString().split('T')[0];
       let formattedTx = { time: dateFormatted, value: runningBalance / 100000 };
@@ -56,10 +57,7 @@
     });
     console.log(data);
     const theme = localStorage.getItem('themes');
-    console.log(document.documentElement + '.' + theme);
-    console.log(theme);
     let color = getComputedStyle(document.documentElement).getPropertyValue('--primary-color');
-    console.log(color);
     color = color.trim();
     const areaSeries = chart.addAreaSeries({
       topColor: color,
@@ -75,23 +73,23 @@
     areaSeries.setData(summarizedData);
     chart.timeScale().fitContent();
   }
-  async function getTransactions(transactions, pageNum) {
+  async function getTransactions(transactionsList, pageNum) {
     let startIndex = pageNum * 10;
     let txs = await window.api.getTransactions(startIndex);
-    transactions = transactions.concat(txs.pageTx);
+    transactionsList = transactionsList.concat(txs.pageTx);
     if (pageNum < txs.pages && MAX_PAGES > pageNum) {
-      return await getTransactions(transactions, pageNum + 1);
+      return await getTransactions(transactionsList, pageNum + 1);
     }
-    return transactions;
+    $transactions.txs = transactionsList;
+    return transactionsList;
   }
 
   async function formatTransactions() {
-    transactions = await getTransactions([], 0);
-    latestFour = transactions.slice(0, Math.min(4, transactions.length));
-    transactions.reverse();
-    dates = transactions.map((t) => new Date(t.time * 1000).toLocaleString());
+    transactionsList = await getTransactions([], 0);
+    latestFour = transactionsList.slice(0, Math.min(4, transactionsList.length));
+    transactionsList.reverse();
+    dates = transactionsList.map((t) => new Date(t.time * 1000).toLocaleString());
     dates = dates;
-    console.log(transactions);
   }
 </script>
 

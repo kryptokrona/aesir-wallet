@@ -4,9 +4,9 @@
   import { page } from '$app/stores';
   import { fade } from 'svelte/transition';
   import ArrowLeft from '$lib/components/icons/ArrowLeft.svelte';
+  import { transactions } from '$lib/stores/wallet.js';
   import { goto } from '$app/navigation';
   let transaction;
-
   export let previousPage = '/wallet/dashboard';
 
   onMount(async () => {
@@ -18,23 +18,16 @@
   });
 
   async function getTransaction(hash) {
-    let endpoint = `https://blocksum.org/api/json_rpc`; // TODO, change endpoint?
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      cache: 'no-cache',
-      redirect: 'follow',
-      referrerPolicy: 'no-referrer',
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 'getTransaction',
-        method: 'f_transaction_json',
-        params: {
-          hash: hash,
-        },
-      }),
-    });
-    let data = await response.json();
-    transaction = data.result;
+    let thisTX = $transactions.txs.find((a) => a.hash === hash);
+    if (thisTX.amount < 0) thisTX.incoming = false;
+    else thisTX.incoming = true;
+    transaction = thisTX;
+    return;
+  }
+
+  function getTxDetails(hash) {
+    const url = `https://xkr.network/transaction?hash=${hash}`;
+    window.api.openLink(url);
   }
 </script>
 
@@ -50,28 +43,19 @@
 </div>
 <div class="wrapper">
   {#if transaction}
-    <div>
-      <h4>Hash</h4>
-      <p>{transaction.txDetails.hash}</p>
+    <div style="margin-top: .5em">
+      <p class="amount" class:incoming={transaction.incoming}>
+        {#if transaction.incoming}+{/if}{transaction.amount / 100000} XKR
+      </p>
     </div>
-    {#if transaction.block}
-      <div style="margin-top: .5em">
-        <h4>Block hash</h4>
-        <p>{transaction.block.hash}</p>
-      </div>
-      <div style="margin-top: .5em">
-        <h4>Block height</h4>
-        <p>{transaction.block.height}</p>
-      </div>
-      <div style="margin-top: .5em">
-        <h4>Block difficulty</h4>
-        <p>{transaction.block.difficulty}</p>
-      </div>
-      <div style="margin-top: .5em">
-        <h4>Timestamp</h4>
-        <p>{new Date(transaction.block.timestamp * 1000).toLocaleString()}</p>
-      </div>
-    {/if}
+    <div style="margin-top: .5em">
+      <h4>Hash</h4>
+      <p style="cursor: pointer;" on:click={() => getTxDetails(transaction.hash)}>{transaction.hash}</p>
+    </div>
+    <div style="margin-top: .5em">
+      <h4>Timestamp</h4>
+      <p>{new Date(transaction.time * 1000).toLocaleString()}</p>
+    </div>
   {/if}
 </div>
 
@@ -121,5 +105,15 @@
     &:hover {
       background: var(--button-hover-bg-color);
     }
+  }
+
+  .amount {
+    font-size: 22px;
+    color: var(--warn-color);
+    font-family: 'Roboto Mono';
+  }
+
+  .incoming {
+    color: var(--success-color);
   }
 </style>

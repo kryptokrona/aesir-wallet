@@ -108,7 +108,9 @@ contextBridge.exposeInMainWorld("api", {
   },
   validatePaymentId: async (paymentId) => {
     return await ipcRenderer.invoke('validate-paymentId', paymentId)
-  }
-
+  },
+  openLink: (url) => {
+    return ipcRenderer.send("open-link", url);
+  },
 
 });
