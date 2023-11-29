@@ -124,6 +124,6 @@
   }
 
   .incoming {
-    color: var(--success-color);
+    color: var(--primary-color);
   }
 </style>
