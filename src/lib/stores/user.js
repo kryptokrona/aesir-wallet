@@ -7,4 +7,4 @@ export const user = writable({
     idleTime: 0,
 })
 
-export const theme = writable(localStorage.getItem("theme") ?? 'blue');
+export const theme = writable(localStorage.getItem("themes") ?? 'blue');
