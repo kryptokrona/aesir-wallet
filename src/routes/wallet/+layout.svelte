@@ -24,7 +24,7 @@
       hash: tx.hash,
       time: tx.timestamp,
     };
-    if ($page.url.pathname === '/wallet/history' && $transactions.page === 0) {
+    if ($page.url.pathname === '/wallet/dashboard' && $transactions.page === 0) {
       $transactions.txs.unshift(transaction);
     }
     $transactions.txs = $transactions.txs;
