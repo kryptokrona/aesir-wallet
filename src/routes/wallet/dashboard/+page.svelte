@@ -23,27 +23,36 @@
     for (const tx in transactionsList) {
       const thisTx = transactionsList[tx];
       runningBalance += thisTx.amount;
-      let dateFormatted = new Date(thisTx.time * 1000).toISOString().split('T')[0];
+      let dateFormatted = new Date(thisTx.time * 1000).toISOString();
       let formattedTx = { time: dateFormatted, value: runningBalance / 100000 };
       data.push(formattedTx);
     }
 
-    const summarizedData = data.reduce((acc, curr) => {
-      const existingItem = acc.find((item) => item.time === curr.time);
+    const summarizedData = Object.values(
+      data.reduce((acc, entry) => {
+        const date = entry.time.split('T')[0]; // Extract only the date part
 
-      if (existingItem) {
-        existingItem.value += curr.value;
-      } else {
-        acc.push({ time: curr.time, value: curr.value });
-      }
+        // If the date is not in acc or the current entry has a later time, update the entry
+        if (!acc[date] || entry.time > acc[date].time) {
+          acc[date] = entry;
+        }
 
-      return acc;
-    }, []);
+        return acc;
+      }, {}),
+    );
+
+    const theme = localStorage.getItem('themes');
+    let color = getComputedStyle(document.documentElement).getPropertyValue('--primary-color');
+    color = color.trim();
+    let text_color = getComputedStyle(document.documentElement).getPropertyValue('--text-color');
+    text_color = text_color.trim();
+    let border_color = getComputedStyle(document.documentElement).getPropertyValue('--border-color');
+    border_color = border_color.trim();
 
     const chart = createChart(document.getElementById('transactions-chart'), {
       layout: {
         background: { color: '#00000000' },
-        textColor: '#ffffff55',
+        textColor: text_color,
       },
       grid: {
         vertLines: { color: '#00000000' },
@@ -55,20 +64,20 @@
         },
       },
     });
-    console.log(data);
-    const theme = localStorage.getItem('themes');
-    let color = getComputedStyle(document.documentElement).getPropertyValue('--primary-color');
-    color = color.trim();
+
     const areaSeries = chart.addAreaSeries({
       topColor: color,
       bottomColor: color + '28',
       lineColor: color,
       lineWidth: 2,
       crossHairMarkerVisible: false,
+      lineType: 2,
+      priceLineVisible: false,
+      lineVisible: false,
     });
 
     areaSeries.priceScale().applyOptions({ visible: false });
-    // areaSeries.timeScale().applyOptions({ visible: false });
+    chart.timeScale().applyOptions({ borderColor: border_color });
 
     areaSeries.setData(summarizedData);
     chart.timeScale().fitContent();
@@ -98,8 +107,10 @@
     <div class="header">
       <h3 in:fade>Dashboard</h3>
     </div>
-    {#if dates.length > 0}
+    {#if dates.length > 2}
       <div id="transactions-chart" style="width: 100%; height: 300px" />
+    {/if}
+    {#if dates.length > 0}
       <div class="transactions">
         {#each latestFour as tx}
           <div class="row" on:click={() => goto(`/wallet/transaction/${tx.hash}`)}>
