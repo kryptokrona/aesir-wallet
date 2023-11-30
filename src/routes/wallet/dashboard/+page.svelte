@@ -8,7 +8,6 @@
 
   const MAX_PAGES = 2;
   let transactionsList = [];
-  let latestFour = [];
   let dates = [];
   let chart;
 
@@ -95,7 +94,7 @@
 
   async function formatTransactions() {
     transactionsList = await getTransactions([], 0);
-    latestFour = transactionsList.slice(0, Math.min(4, transactionsList.length));
+    $transactions.latest = transactionsList.slice(0, Math.min(4, transactionsList.length));
     transactionsList.reverse();
     dates = transactionsList.map((t) => new Date(t.time * 1000).toLocaleString());
     dates = dates;
@@ -112,7 +111,7 @@
     {/if}
     {#if dates.length > 0}
       <div class="transactions">
-        {#each latestFour as tx}
+        {#each $transactions.latest as tx}
           <div class="row" on:click={() => goto(`/wallet/transaction/${tx.hash}`)}>
             <p style="opacity: 80%;">
               {tx.hash.substring(0, 8) + '...' + tx.hash.substring(56, tx.hash.length)}

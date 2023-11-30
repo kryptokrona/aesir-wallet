@@ -23,11 +23,16 @@
       amount: val,
       hash: tx.hash,
       time: tx.timestamp,
+      height: tx.blockHeight,
     };
-    if ($page.url.pathname === '/wallet/dashboard' && $transactions.page === 0) {
-      $transactions.txs.unshift(transaction);
+
+    if ($page.url.pathname === '/wallet/dashboard') {
+      //Add to dashboard to update latest four txs.
+      $transactions.latest.unshift(transaction);
     }
-    $transactions.txs = $transactions.txs;
+    //Add to history page
+    $transactions.txs.unshift(transaction);
+    $transactions = $transactions;
   });
 </script>
 
