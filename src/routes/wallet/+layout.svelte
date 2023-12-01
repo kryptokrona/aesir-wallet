@@ -18,12 +18,33 @@
     $node.nodeStatus = res;
   });
 
+  window.api.receive('incoming-hash', (tx) => {
+    let transaction = {
+      amount: tx.amount,
+      hash: tx.hash,
+      time: Date.now(),
+      height: 'Unconfirmed',
+      confirmed: false,
+    };
+
+    $transactions.txs.unshift(transaction);
+    $transactions.latest.unshift(transaction);
+    $transactions.pending.unshift(transaction);
+    updateTxs();
+  });
+
   window.api.receive('incoming-tx', (tx, val) => {
+    //Delete from pending list on dashboard
+    if ($transactions.pending.some((a) => a.hash === tx.hash)) {
+      deletePendingTx(tx.hash);
+    }
+
     let transaction = {
       amount: val,
       hash: tx.hash,
       time: tx.timestamp,
       height: tx.blockHeight,
+      confirmed: true,
     };
 
     if ($page.url.pathname === '/wallet/dashboard') {
@@ -32,8 +53,20 @@
     }
     //Add to history page
     $transactions.txs.unshift(transaction);
-    $transactions = $transactions;
+    updateTxs();
   });
+
+  function updateTxs() {
+    $transactions = $transactions;
+    console.log('$transactions.latest', $transactions.latest);
+  }
+
+  function deletePendingTx(hash) {
+    $transactions.latest = $transactions.latest.filter((a) => a.hash !== hash);
+    $transactions.pending = $transactions.pending.filter((a) => a.hash !== hash);
+    $transactions.txs = $transactions.txs.filter((a) => a.hash !== hash);
+    updateTxs();
+  }
 </script>
 
 <section>
