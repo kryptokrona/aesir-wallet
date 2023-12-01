@@ -19,6 +19,7 @@
 
   async function getTransaction(hash) {
     let thisTX = $transactions.txs.find((a) => a.hash === hash);
+    if (!thisTX) thisTX = $transactions.pending.find((a) => a.hash === hash);
     if (thisTX.amount < 0) thisTX.incoming = false;
     else thisTX.incoming = true;
     transaction = thisTX;
