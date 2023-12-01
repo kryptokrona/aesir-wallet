@@ -19,6 +19,8 @@
   });
 
   window.api.receive('incoming-hash', (tx) => {
+    //If amount is 0, the wallet is optimizing
+    if (tx.amount === 0) return;
     let transaction = {
       amount: tx.amount,
       hash: tx.hash,
