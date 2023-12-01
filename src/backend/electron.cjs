@@ -323,7 +323,6 @@ async function backgroundSyncTransactions(keyset, node) {
     console.log("Sync error");
   }
 }
-
 //Checks if we can unlock transactions
 async function checkTx(tx, keyset) {
   if (tx.transactionPrefixInfo.extra.length >= 200) return
@@ -331,26 +330,31 @@ async function checkTx(tx, keyset) {
   const txPublicKey = tx.transactionPrefixInfo.extra.substring(2, 66);
   const derivation = await crypto.generateKeyDerivation(txPublicKey, keyset.privateViewKey);
   const transactionOutputs = tx.transactionPrefixInfo.vout.entries();
-
+  const hash = tx.transactionPrefixInfotxHash
+  let found = false
+  let amount = 0
   for (const [outputIndex, output] of tx.transactionPrefixInfo.vout.entries()) {
 
     /* Derive the spend key from the transaction, using the previous
        derivation */
     const derivedSpendKey = await crypto.underivePublicKey(derivation, outputIndex, output.target.data.key);
-
     /* See if the derived spend key matches any of our spend keys */
     if (keyset.publicSpendKey === derivedSpendKey) {
-      console.log("******************** Found transaction *******************", derivedSpendKey);
-      mainWindow.webContents.send("incoming-hash", tx.transactionPrefixInfotxHash);
-      notifier.notify({
-        appID: "Kryptokrona Wallet",
-        title: "Found a transaction",
-        message: `Waiting for confirmation..`,
-        icon: "https://cdn.discordapp.com/attachments/788875613753835533/975829842870280282/icon.png",
-        wait: true
-      });
+      found = true
+      amount += output.amount
     }
   }
+  if (found) {
+    mainWindow.webContents.send("incoming-hash", {hash, amount});
+    notifier.notify({
+      appID: "Kryptokrona Wallet",
+      title: "Found a transaction",
+      message: `Waiting for confirmation..`,
+      icon: path.join(__dirname, "../",  "../", "static", "icon.png"),
+      wait: true
+    });
+  }
+  
 }
 
 ipcMain.on("reset-wallet", (e, height) => {
@@ -493,7 +497,8 @@ ipcMain.handle('get-transactions', async (e, startIndex, all = false) => {
             hash: tx.hash,
             amount: tx.totalAmount(),
             time: tx.timestamp,
-            height: tx.blockHeight
+            height: tx.blockHeight,
+            confirmed: true
         })
     }
 
