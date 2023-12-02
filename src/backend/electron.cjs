@@ -216,15 +216,6 @@ ipcMain.on("start-wallet", async (e, walletName, password, node) => {
   const balance = await walletBackend.getBalance();
   mainWindow.webContents.send("data", { walletBlockCount, localDaemonBlockCount, networkBlockCount, balance });
 
-  const privateViewKey = walletBackend.getPrivateViewKey();
-  const myAddress = walletBackend.getPrimaryAddress();
-  const [publicSpendKey, privateSpendKey, err] = await walletBackend.getSpendKeys(myAddress);
-  const keyset = { publicSpendKey, privateSpendKey, privateViewKey };
-
-  if (err) {
-    console.log("Failed to get spend keys for address: " + err.toString());
-  }
-
   //////////////// EVENTS
   walletBackend.on("desync", (walletHeight, networkHeight) => {
     console.log(`Wallet is no longer synced! Wallet height: ${walletHeight}, Network height: ${networkHeight}`);
@@ -246,6 +237,17 @@ ipcMain.on("start-wallet", async (e, walletName, password, node) => {
     console.log(`🚨 INCOMING TX - AMOUNT: ${WB.prettyPrintAmount(transaction.totalAmount())}`);
   });
 
+  walletBackend.on("unconfirmedtx", (amount, hash) => { 
+    mainWindow.webContents.send("incoming-hash", {hash, amount});
+    notifier.notify({
+      appID: "Kryptokrona Wallet",
+      title: "Found a transaction",
+      message: `Waiting for confirmation..`,
+      icon: path.join(__dirname, "../",  "../", "static", "icon.png"),
+      wait: true
+    });
+  });
+
   walletBackend.on("heightchange", async (walletBlockCount, localDaemonBlockCount, networkBlockCount) => {
     miscs.set("node-stats", { walletBlockCount, localDaemonBlockCount, networkBlockCount });
 
@@ -259,7 +261,6 @@ ipcMain.on("start-wallet", async (e, walletName, password, node) => {
     try {
       //Start syncing
       await sleep(5 * 1000);
-      backgroundSyncTransactions(keyset, node);
       const [walletBlockCount, localDaemonBlockCount, networkBlockCount] = walletBackend.getSyncStatus();
       const balance = await walletBackend.getBalance();
       console.log('Balance: ', balance);
@@ -300,62 +301,6 @@ async function saveWallet(userDataDir, walletName, password) {
 }
 
 let known_pool_txs = [];
-
-async function backgroundSyncTransactions(keyset, node) {
-
-  let message_was_unknown;
-  try {
-    const resp = await fetch(`${node.ssl ? 'https://' : 'http://'}${node.url}:${node.port}/get_pool_changes_lite`, {
-      method: "POST",
-      body: JSON.stringify({ knownTxsIds: known_pool_txs })
-    });
-    let json = await resp.json();
-    json = JSON.stringify(json).replaceAll(".txPrefix", "").replaceAll("transactionPrefixInfo.txHash", "transactionPrefixInfotxHash");
-    json = JSON.parse(json);
-    let txs = json.addedTxs;
-
-    txs.forEach(tx => {
-      checkTx(tx, keyset);
-    });
-
-  } catch (err) {
-    console.log(err);
-    console.log("Sync error");
-  }
-}
-//Checks if we can unlock transactions
-async function checkTx(tx, keyset) {
-  if (tx.transactionPrefixInfo.extra.length >= 200) return
-  known_pool_txs.push(tx.transactionPrefixInfotxHash);
-  const txPublicKey = tx.transactionPrefixInfo.extra.substring(2, 66);
-  const derivation = await crypto.generateKeyDerivation(txPublicKey, keyset.privateViewKey);
-  const transactionOutputs = tx.transactionPrefixInfo.vout.entries();
-  const hash = tx.transactionPrefixInfotxHash
-  let found = false
-  let amount = 0
-  for (const [outputIndex, output] of tx.transactionPrefixInfo.vout.entries()) {
-
-    /* Derive the spend key from the transaction, using the previous
-       derivation */
-    const derivedSpendKey = await crypto.underivePublicKey(derivation, outputIndex, output.target.data.key);
-    /* See if the derived spend key matches any of our spend keys */
-    if (keyset.publicSpendKey === derivedSpendKey) {
-      found = true
-      amount += output.amount
-    }
-  }
-  if (found) {
-    mainWindow.webContents.send("incoming-hash", {hash, amount});
-    notifier.notify({
-      appID: "Kryptokrona Wallet",
-      title: "Found a transaction",
-      message: `Waiting for confirmation..`,
-      icon: path.join(__dirname, "../",  "../", "static", "icon.png"),
-      wait: true
-    });
-  }
-  
-}
 
 ipcMain.on("reset-wallet", (e, height) => {
 
@@ -493,6 +438,8 @@ ipcMain.handle('get-transactions', async (e, startIndex, all = false) => {
     const pages = Math.ceil(allTx.length / showPerPage)
     const pageTx = []
     for (const tx of await walletBackend.getTransactions(startIndex, showPerPage)) {
+      //Exclude optimize txs
+      if (tx.totalAmount() === 0) continue
         pageTx.push({
             hash: tx.hash,
             amount: tx.totalAmount(),
