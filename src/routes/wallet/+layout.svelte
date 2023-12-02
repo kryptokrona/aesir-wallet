@@ -19,12 +19,13 @@
   });
 
   window.api.receive('incoming-hash', (tx) => {
-    //If amount is 0, the wallet is optimizing
-    if (tx.amount === 0) return;
+    //We already know this pending tx
+    if ($transactions.pending.some((a) => a.hash === tx.hash)) return;
+
     let transaction = {
       amount: tx.amount,
       hash: tx.hash,
-      time: Date.now(),
+      time: Date.now() / 1000,
       height: 'Unconfirmed',
       confirmed: false,
     };
