@@ -630,6 +630,7 @@ ipcMain.handle('prepare-transaction', async (e, address, amount, paymentID, send
 ipcMain.handle('send-transaction', async (e, hash) => {
   const result = await walletBackend.sendPreparedTransaction(hash)
   if (!result.success) errorMessage('Error: Could not send transaction')
+  successMessage('Transaction sent!')
   mainWindow.webContents.send("outgoing-tx")
   return result.success;
 })
