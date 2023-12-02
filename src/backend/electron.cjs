@@ -230,7 +230,7 @@ ipcMain.on("start-wallet", async (e, walletName, password, node) => {
     console.log("Regained connection to daemon!");
     mainWindow.webContents.send("node-status", "Connected");
   });
-
+  
   walletBackend.on("incomingtx", (transaction) => {
     console.log(transaction);
     mainWindow.webContents.send("incoming-tx", transaction, transaction.totalAmount());
@@ -386,6 +386,14 @@ async function logIntoWallet(walletName, password) {
   }
 }
 
+function errorMessage(message) {
+  mainWindow.webContents.send("error-message", message);
+}
+
+function successMessage(message) {
+  mainWindow.webContents.send("success-message", message);
+}
+
 ipcMain.handle("import-seed", async (e, seed, walletName, password, height, node) => {
   console.log(seed, walletName, password, height);
 
@@ -433,11 +441,18 @@ ipcMain.handle("get-addresses", (e) => {
 //Gets n transactions per page to view in frontend
 ipcMain.handle('get-transactions', async (e, startIndex, all = false) => {
     const showPerPage = 10
+    let txs = []
     const allTx = await walletBackend.getTransactions()
-    if (all) return allTx
     const pages = Math.ceil(allTx.length / showPerPage)
     const pageTx = []
-    for (const tx of await walletBackend.getTransactions(startIndex, showPerPage)) {
+    if (all) txs = allTx
+    else txs = await walletBackend.getTransactions(startIndex, showPerPage)
+    for (const tx of txs) {
+      //Unconfirmed txs do not have a blockheight or timestamp yet.
+      if (tx.timestamp === 0) {
+        tx.timestamp = Date.now() / 1000
+        tx.blockHeight = "Unconfirmed"
+      }
       //Exclude optimize txs
       if (tx.totalAmount() === 0) continue
         pageTx.push({
@@ -608,12 +623,14 @@ ipcMain.handle('prepare-transaction', async (e, address, amount, paymentID, send
     known_pool_txs.push(result.transactionHash)
     return transaction
   } else {
-    console.log(`Failed to prepare transaction: ${result.error.toString()}`);
+    errorMessage(result.error.toString())
   }
 })
 
 ipcMain.handle('send-transaction', async (e, hash) => {
   const result = await walletBackend.sendPreparedTransaction(hash)
+  if (!result.success) errorMessage('Error: Could not send transaction')
+  successMessage('Transaction sent!')
   return result.success;
 })
 
