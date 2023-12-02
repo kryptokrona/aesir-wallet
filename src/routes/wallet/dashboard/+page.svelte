@@ -21,6 +21,10 @@
     await formatAndRender(true);
   });
 
+  window.api.receive('outgoing-tx', async () => {
+    await formatAndRender(true);
+  });
+
   async function formatAndRender(update) {
     await formatTransactions();
     await renderchart(update);

@@ -230,7 +230,7 @@ ipcMain.on("start-wallet", async (e, walletName, password, node) => {
     console.log("Regained connection to daemon!");
     mainWindow.webContents.send("node-status", "Connected");
   });
-  
+
   walletBackend.on("incomingtx", (transaction) => {
     console.log(transaction);
     mainWindow.webContents.send("incoming-tx", transaction, transaction.totalAmount());
@@ -630,7 +630,7 @@ ipcMain.handle('prepare-transaction', async (e, address, amount, paymentID, send
 ipcMain.handle('send-transaction', async (e, hash) => {
   const result = await walletBackend.sendPreparedTransaction(hash)
   if (!result.success) errorMessage('Error: Could not send transaction')
-  successMessage('Transaction sent!')
+  mainWindow.webContents.send("outgoing-tx")
   return result.success;
 })
 
