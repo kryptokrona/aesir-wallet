@@ -9,14 +9,24 @@
   const MAX_PAGES = 2;
   let transactionsList = [];
   let dates = [];
+  let txChart;
   let chart;
+  let area;
 
   onMount(async () => {
-    await formatTransactions();
-    await renderchart();
+    await formatAndRender(false);
   });
 
-  async function renderchart() {
+  window.api.receive('incoming-tx', async () => {
+    await formatAndRender(true);
+  });
+
+  async function formatAndRender(update) {
+    await formatTransactions();
+    await renderchart(update);
+  }
+
+  async function renderchart(update) {
     let data = [];
     let runningBalance = 0.0;
     for (const tx in transactionsList) {
@@ -30,7 +40,6 @@
     const summarizedData = Object.values(
       data.reduce((acc, entry) => {
         const date = entry.time.split('T')[0]; // Extract only the date part
-
         // If the date is not in acc or the current entry has a later time, update the entry
         if (!acc[date] || entry.time > acc[date].time) {
           acc[date] = entry;
@@ -40,7 +49,7 @@
       }, {}),
     );
 
-    const theme = localStorage.getItem('themes');
+    //Get colors
     let color = getComputedStyle(document.documentElement).getPropertyValue('--primary-color');
     color = color.trim();
     let text_color = getComputedStyle(document.documentElement).getPropertyValue('--text-color');
@@ -48,42 +57,48 @@
     let border_color = getComputedStyle(document.documentElement).getPropertyValue('--border-color');
     border_color = border_color.trim();
 
-    const chart = createChart(document.getElementById('transactions-chart'), {
-      layout: {
-        background: { color: '#00000000' },
-        textColor: text_color,
-      },
-      grid: {
-        vertLines: { color: '#00000000' },
-        horzLines: { color: '#00000000' },
-      },
-      rightPriceScale: {
-        scaleMargins: {
-          bottom: 0.15,
+    if (!update) [chart, area] = createNewChart();
+
+    function createNewChart() {
+      const newChart = createChart(txChart, {
+        layout: {
+          background: { color: '#00000000' },
+          textColor: text_color,
         },
-      },
-    });
+        grid: {
+          vertLines: { color: '#00000000' },
+          horzLines: { color: '#00000000' },
+        },
+        rightPriceScale: {
+          scaleMargins: {
+            bottom: 0.15,
+          },
+        },
+      });
 
-    const areaSeries = chart.addAreaSeries({
-      topColor: color,
-      bottomColor: color + '28',
-      lineColor: color,
-      lineWidth: 2,
-      crossHairMarkerVisible: false,
-      lineType: 2,
-      priceLineVisible: false,
-      lineVisible: false,
-    });
+      const areaSeries = newChart.addAreaSeries({
+        topColor: color,
+        bottomColor: color + '28',
+        lineColor: color,
+        lineWidth: 2,
+        crossHairMarkerVisible: false,
+        lineType: 2,
+        priceLineVisible: false,
+        lineVisible: false,
+      });
 
-    areaSeries.priceScale().applyOptions({ visible: false });
+      return [newChart, areaSeries];
+    }
+
+    area.priceScale().applyOptions({ visible: false });
     chart.timeScale().applyOptions({ borderColor: border_color });
 
-    areaSeries.setData(summarizedData);
+    area.setData(summarizedData);
     chart.timeScale().fitContent();
   }
   async function getTransactions(transactionsList, pageNum) {
     let startIndex = pageNum * 10;
-    let txs = await window.api.getTransactions(startIndex);
+    let txs = await window.api.getTransactions(startIndex, true);
     transactionsList = transactionsList.concat(txs.pageTx);
     if (pageNum < txs.pages && MAX_PAGES > pageNum) {
       return await getTransactions(transactionsList, pageNum + 1);
@@ -114,7 +129,7 @@
       <h3 in:fade>Dashboard</h3>
     </div>
     {#if dates.length > 2}
-      <div id="transactions-chart" style="width: 100%; height: 300px" />
+      <div bind:this={txChart} id="transactions-chart" style="width: 100%; height: 300px" />
     {/if}
     {#if dates.length > 0}
       <div class="transactions">
