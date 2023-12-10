@@ -61,8 +61,9 @@
     let border_color = getComputedStyle(document.documentElement).getPropertyValue('--border-color');
     border_color = border_color.trim();
 
-    if (!update) [chart, area] = createNewChart();
+    if (transactionsList.length < 3) return;
 
+    if (!update) [chart, area] = createNewChart();
     function createNewChart() {
       const newChart = createChart(txChart, {
         layout: {
@@ -100,13 +101,11 @@
     area.setData(summarizedData);
     chart.timeScale().fitContent();
   }
+
   async function getTransactions(transactionsList, pageNum) {
     let startIndex = pageNum * 10;
     let txs = await window.api.getTransactions(startIndex, true);
     transactionsList = transactionsList.concat(txs.pageTx);
-    if (pageNum < txs.pages && MAX_PAGES > pageNum) {
-      return await getTransactions(transactionsList, pageNum + 1);
-    }
     $transactions.txs = transactionsList;
     return transactionsList;
   }
