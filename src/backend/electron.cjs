@@ -407,14 +407,8 @@ ipcMain.handle("import-seed", async (e, seed, walletName, password, height, node
     return false;
   }
 
-  const saved = await saveWallet(userDataDir, walletName, password)
+  await saveWallet(userDataDir, walletName, password)
 
-  if (!saved) {
-    console.log("Failed to save wallet!");
-    return false;
-  }
-
-  //TODO fix a save wallet function
   let knownWallets = await wallets.get("wallets") ?? [];
   knownWallets.unshift({ wallet: walletName.toLowerCase() });
   await wallets.set("wallets", knownWallets);

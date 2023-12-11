@@ -1,50 +1,51 @@
 <script>
-  import { fade, fly } from "svelte/transition";
-  import toast from "svelte-french-toast";
-  import { onMount } from "svelte";
-  import { wordlist } from '$lib/stores/wordlist.js'
-  import { Moon } from "svelte-loading-spinners";
-  import ArrowRight from "$lib/components/icons/ArrowRight.svelte";
-  import { goto } from "$app/navigation";
-  import Backward from "$lib/components/icons/Backward.svelte";
-  import NodeSelector from "$lib/components/NodeSelector.svelte";
-  import { node } from "$lib/stores/node.js";
+  import { fade, fly } from 'svelte/transition';
+  import toast from 'svelte-french-toast';
+  import { onMount } from 'svelte';
+  import { wordlist } from '$lib/stores/wordlist.js';
+  import { Moon } from 'svelte-loading-spinners';
+  import ArrowRight from '$lib/components/icons/ArrowRight.svelte';
+  import { goto } from '$app/navigation';
+  import Backward from '$lib/components/icons/Backward.svelte';
+  import NodeSelector from '$lib/components/NodeSelector.svelte';
+  import { node } from '$lib/stores/node.js';
 
   let step = 1;
   let seedWordsStr;
-  let seedWordsArray = Array(25).fill("");
+  let seedWordsArray = Array(25).fill('');
   let inputs;
 
   let loading;
-  let password = "";
+  let password = '';
   let blockHeight;
-  let walletName = "";
+  let walletName = '';
 
   onMount(() => {
-    inputs = document.querySelectorAll("input");
+    inputs = document.querySelectorAll('input');
     inputs[0].focus();
   });
 
   const paste = async () => {
-    seedWordsArray = Array(25).fill("");
+    seedWordsArray = Array(25).fill('');
     seedWordsStr = await navigator.clipboard.readText();
-    let arr = seedWordsStr.split(" ");
+    let arr = seedWordsStr.split(' ');
     arr = arr.filter((e) => {
       return e;
     });
 
-
     if (arr.length === 25) {
       seedWordsArray = arr;
-      seedWordsStr = arr.join(" ");
-      toast.success("Pasted", {
-        position: "top-right",
-        style: "border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);"
+      seedWordsStr = arr.join(' ');
+      toast.success('Pasted', {
+        position: 'top-right',
+        style:
+          'border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);',
       });
     } else {
-      toast.error("Error", {
-        position: "top-right",
-        style: "border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);"
+      toast.error('Error', {
+        position: 'top-right',
+        style:
+          'border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);',
       });
     }
   };
@@ -53,12 +54,22 @@
     $node.selectedNode = selectedNode;
 
     if (await window.api.checkNode(selectedNode)) {
+      //If you manually enter the words
+      if (seedWordsStr === undefined) {
+        seedWordsStr = seedWordsArray.join(' ');
+      }
       console.log(seedWordsStr, walletName, password, parseInt(blockHeight), selectedNode);
-      const walletImport = await window.api.importSeed(seedWordsStr, walletName, password, parseInt(blockHeight), selectedNode);
-      if (walletImport) await goto("/");
-      seedWordsStr = "";
-      walletName = "";
-      blockHeight = "";
+      const walletImport = await window.api.importSeed(
+        seedWordsStr,
+        walletName,
+        password,
+        parseInt(blockHeight),
+        selectedNode,
+      );
+      if (walletImport) await goto('/');
+      seedWordsStr = '';
+      walletName = '';
+      blockHeight = '';
     }
   };
 
@@ -66,17 +77,16 @@
   let ctrl;
 
   const keyDown = (e) => {
-    if (e.key === "Meta") meta = true;
-    if (e.key === "v" && meta) paste();
+    if (e.key === 'Meta') meta = true;
+    if (e.key === 'v' && meta) paste();
   };
   const keyUp = () => {
     ctrl = false;
     meta = false;
   };
-
 </script>
 
-<svelte:window on:keydown="{keyDown}" on:keyup={keyUp} />
+<svelte:window on:keydown={keyDown} on:keyup={keyUp} />
 
 {#if step === 1}
   <section in:fade>
@@ -85,13 +95,16 @@
       {#each seedWordsArray ?? [] as word, i}
         <div style="display: flex; flex-direction: column; align-items: center">
           <p style="margin-bottom: 5px">{i + 1}</p>
-          <input id={i} class="card"
-                 class:correct={wordlist.includes(seedWordsArray[i])}
-                 bind:value={seedWordsArray[i]}
-                 on:input={e => {
-                           if(wordlist.includes(seedWordsArray[i])) inputs[i + 1].focus()
-                           if(!e.target.value) inputs[i -1].focus()
-                       }} />
+          <input
+            id={i}
+            class="card"
+            class:correct={wordlist.includes(seedWordsArray[i])}
+            bind:value={seedWordsArray[i]}
+            on:input={(e) => {
+              if (wordlist.includes(seedWordsArray[i])) inputs[i + 1].focus();
+              if (!e.target.value) inputs[i - 1].focus();
+            }}
+          />
         </div>
       {/each}
       <button class="card" on:click={() => goto('/auth/create-wallet')}>Back</button>
@@ -103,7 +116,7 @@
   <section>
     <h1>Name wallet</h1>
     <div class="field">
-      <input in:fly={{y: 20}} placeholder="Name.." type="text" bind:value={walletName} />
+      <input in:fly={{ y: 20 }} placeholder="Name.." type="text" bind:value={walletName} />
       <button on:click on:click={() => step++}>
         {#if loading}
           <Moon color="#ffffff" size="20" unit="px" />
@@ -112,7 +125,13 @@
         {/if}
       </button>
     </div>
-    <div style="margin-top: 2rem" in:fade on:click={() => {if(step > 1) step--}}>
+    <div
+      style="margin-top: 2rem"
+      in:fade
+      on:click={() => {
+        if (step > 1) step--;
+      }}
+    >
       <Backward />
     </div>
   </section>
@@ -120,7 +139,7 @@
   <section>
     <h1>Create password</h1>
     <div class="field">
-      <input in:fly={{y: 20}} placeholder="Password.." type="password" bind:value={password} />
+      <input in:fly={{ y: 20 }} placeholder="Password.." type="password" bind:value={password} />
       <button on:click on:click={() => step++}>
         {#if loading}
           <Moon color="#ffffff" size="20" unit="px" />
@@ -129,7 +148,13 @@
         {/if}
       </button>
     </div>
-    <div style="margin-top: 2rem" in:fade on:click={() => {if(step > 1) step--}}>
+    <div
+      style="margin-top: 2rem"
+      in:fade
+      on:click={() => {
+        if (step > 1) step--;
+      }}
+    >
       <Backward />
     </div>
   </section>
@@ -137,7 +162,7 @@
   <section>
     <h1>Scan from block height</h1>
     <div class="field">
-      <input in:fly={{y: 20}} placeholder="Block height" type="text" bind:value={blockHeight} />
+      <input in:fly={{ y: 20 }} placeholder="Block height" type="text" bind:value={blockHeight} />
       <button on:click={() => step++}>
         {#if loading}
           <Moon color="#ffffff" size="20" unit="px" />
@@ -146,14 +171,26 @@
         {/if}
       </button>
     </div>
-    <div style="margin-top: 2rem" in:fade on:click={() => {if(step > 1) step--}}>
+    <div
+      style="margin-top: 2rem"
+      in:fade
+      on:click={() => {
+        if (step > 1) step--;
+      }}
+    >
       <Backward />
     </div>
   </section>
 {:else if step === 5}
   <section>
     <NodeSelector on:connect={(e) => importSeed(e)} />
-    <div style="margin-top: 2rem" in:fade on:click={() => {if(step > 1) step--}}>
+    <div
+      style="margin-top: 2rem"
+      in:fade
+      on:click={() => {
+        if (step > 1) step--;
+      }}
+    >
       <Backward />
     </div>
   </section>
