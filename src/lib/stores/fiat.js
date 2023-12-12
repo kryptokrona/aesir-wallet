@@ -1,25 +1,30 @@
-import { writable } from "svelte/store";
+import { get, writable } from "svelte/store";
+
+export const fiatPrice = writable({
+})
+
+export const fiatCurrency = writable({
+    picked: "usd",
+})
 
 export async function getCoinPriceFromAPI() {
+
+
+    const picked = get(fiatCurrency).picked.toLowerCase();
     /* Note: Coingecko has to support your coin for this to work */
-    let uri = "https://api.coinpaprika.com/v1/tickers/xkr-kryptokrona";
+    let uri = `https://api.coingecko.com/api/v3/simple/price?ids=kryptokrona&vs_currencies=${picked}`;
 
     try {
-        const data = await fetch({
-            json: true,
-            method: 'GET',
-            timeout: 20000,
-            url: uri,
-        });
 
         const resp = await fetch(uri);
         let json = await resp.json();
-        console.log(json);
-        const coinData = json.quotes.USD.price;
+        const coinData = json.kryptokrona[picked]
 
         console.log('Updated coin price from API');
         console.log('PRICE:' + coinData);
-        fiat.set(coinData);
+
+        fiatPrice.set(coinData)
+
     } catch (error) {
         console.log('Failed to get price from API: ' + error.toString());
         return undefined;
@@ -28,5 +33,4 @@ export async function getCoinPriceFromAPI() {
 
 getCoinPriceFromAPI();
 
-export const fiat = writable({
-})
+

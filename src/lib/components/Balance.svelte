@@ -1,51 +1,60 @@
 <script>
   // Copyright (c) 2022, The Kryptokrona Developers
 
-  import NodeStatus from "$lib/components/popups/NodeStatus.svelte";
-  import FundsStatus from "$lib/components/popups/FundsStatus.svelte";
-  import { wallet } from "$lib/stores/wallet.js";
-  import { node } from "$lib/stores/node.js";
-  import Globe from "$lib/components/icons/Globe.svelte";
-  import Warning from "$lib/components/icons/Warning.svelte";
-  import { fade, fly } from "svelte/transition";
-  import { prettyNumbers } from "$lib/utils";
-  import { fiat } from "$lib/stores/fiat.js";
-  import { onMount } from "svelte";
-  import Auto from "$lib/components/icons/Auto.svelte";
+  import NodeStatus from '$lib/components/popups/NodeStatus.svelte';
+  import FundsStatus from '$lib/components/popups/FundsStatus.svelte';
+  import { wallet } from '$lib/stores/wallet.js';
+  import { node } from '$lib/stores/node.js';
+  import Globe from '$lib/components/icons/Globe.svelte';
+  import Warning from '$lib/components/icons/Warning.svelte';
+  import { fade, fly } from 'svelte/transition';
+  import { prettyNumbers } from '$lib/utils';
+  import { fiatPrice, fiatCurrency } from '$lib/stores/fiat.js';
+  import { onMount } from 'svelte';
+  import Auto from '$lib/components/icons/Auto.svelte';
 
   //Variables and default values
   let dc;
   let nodePopup = false;
   let fundsPopup = false;
   let display;
-  let showFiat = false
+  let showFiat = false;
   let xkrBalance;
   let fiatBalance;
 
   $: {
-    if(showFiat) {
-      display = "$" + ($wallet.balance[0] * $fiat / 100000).toFixed(5);
+    if (showFiat) {
+      fiatBalance = (($wallet.balance[0] * $fiatPrice) / 100000).toFixed(5);
+      if ($fiatCurrency.picked === 'USD') display = '$' + fiatBalance;
+      else display = fiatBalance + $fiatCurrency.picked.toUpperCase();
     } else {
-      display = prettyNumbers($wallet.balance[0] + $wallet.balance[1]).toString().split("");
+      display = prettyNumbers($wallet.balance[0] + $wallet.balance[1])
+        .toString()
+        .split('');
     }
   }
-
 </script>
 
 {#if nodePopup}
-  <NodeStatus on:click={() => nodePopup = !nodePopup} />
+  <NodeStatus on:click={() => (nodePopup = !nodePopup)} />
 {:else if fundsPopup}
-  <FundsStatus on:click={() => fundsPopup = !fundsPopup} />
+  <FundsStatus on:click={() => (fundsPopup = !fundsPopup)} />
 {/if}
-
 
 <div class="balance" in:fade>
   <div class="summary">
-    <h2 on:click={() => showFiat = !showFiat}>Balance <span style="opacity: 50%; cursor: pointer" on:click><Auto/></span></h2>
+    <h2 on:click={() => (showFiat = !showFiat)}>
+      Balance <span style="opacity: 50%; cursor: pointer" on:click><Auto /></span>
+    </h2>
     <div style="display: inline-flex">
       {#each display ?? [] as number, i (number + i)}
         {#key number}
-          <p in:fly={{y: 20, delay: i * 100}} style="font-size: 1.75rem; margin-top: 10px; color: var(--primary-color)">{number}</p>
+          <p
+            in:fly={{ y: 20, delay: i * 100 }}
+            style="font-size: 1.75rem; margin-top: 10px; color: var(--primary-color)"
+          >
+            {number}
+          </p>
         {/key}
       {/each}
     </div>
@@ -55,13 +64,14 @@
       yellow={$node.nodeStatus === 'Syncing'}
       red={$node.nodeStatus === 'Not Synced' || $node.nodeStatus === 'Disconnected' || $node.nodeStatus === 'Dead node'}
       blink={$node.nodeStatus !== 'Synced'}
-      on:click={() => nodePopup = !nodePopup}
+      on:click={() => (nodePopup = !nodePopup)}
     />
     <Warning
-      blink={($wallet.balance[1] !== 0)}
-      grey={($wallet.balance[1] === 0)}
-      yellow={($wallet.balance[1] !== 0)}
-      red={dc} on:click={() => fundsPopup = !fundsPopup}
+      blink={$wallet.balance[1] !== 0}
+      grey={$wallet.balance[1] === 0}
+      yellow={$wallet.balance[1] !== 0}
+      red={dc}
+      on:click={() => (fundsPopup = !fundsPopup)}
     />
   </div>
 </div>
@@ -80,7 +90,6 @@
     p {
       margin: 0;
     }
-
 
     .breakdown {
       display: flex;

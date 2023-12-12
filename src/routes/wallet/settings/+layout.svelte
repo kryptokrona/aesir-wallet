@@ -8,7 +8,11 @@
 <div class="header">
   <h3 in:fade>Settings</h3>
   <div in:fade>
-    <!-- <Button text="General" on:click={() => goto('/wallet/settings/general')} active={$page.url.pathname === '/wallet/settings/general'}/> -->
+    <Button
+      text="Balance"
+      on:click={() => goto('/wallet/settings/general')}
+      active={$page.url.pathname === '/wallet/settings/general'}
+    />
     <Button
       text="Node"
       on:click={() => goto('/wallet/settings/node')}
