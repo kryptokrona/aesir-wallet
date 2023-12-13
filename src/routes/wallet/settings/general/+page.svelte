@@ -7,6 +7,7 @@
 
   function pick(it) {
     $fiat.ticker = it;
+    localStorage.setItem('fiat', it);
     getCoinPriceFromAPI();
   }
 </script>

@@ -121,11 +121,9 @@ export async function getCoinPriceFromAPI() {
 
     let ticker
     const local = localStorage.getItem('fiat')
-    
+
     if (local === undefined) ticker = get(fiat).ticker.toLowerCase();
     else ticker = local
-   
-
 
     /* Note: Coingecko has to support your coin for this to work */
     let uri = `https://api.coingecko.com/api/v3/simple/price?ids=kryptokrona&vs_currencies=${ticker}`;
@@ -139,8 +137,7 @@ export async function getCoinPriceFromAPI() {
 
         fiat.set({balance, ticker, currencies: currencies})
         
-        localStorage.setItem('fiat',  ticker);
-
+        localStorage.setItem('fiat', ticker);
         console.log('Updated coin price from API');
         console.log('BALANCE:' + balance);
 
