@@ -20,26 +20,18 @@
   let display;
   let showFiat = false;
   let fiatBalance;
-  function changeTicker(it) {
-    let ticker;
 
-    switch (it) {
-      case 'usd':
-        ticker = '$';
-        return [ticker, true];
-      case 'eur':
-        ticker = '€';
-        return [ticker, true];
-      default:
-        ticker = it;
-        return [ticker, false];
-    }
+  function changeTicker(it) {
+    let change = true;
+    let currency = $fiat.currencies.find((a) => a.ticker === it);
+    if (currency.symbolLocation === 'postfix') change = false;
+    return [currency.symbol, change];
   }
 
   $: {
     if (showFiat) {
       fiatBalance = (($wallet.balance[0] * $fiat.balance) / 100000).toFixed(5);
-      let [ticker, change] = changeTicker($fiat.picked);
+      let [ticker, change] = changeTicker($fiat.ticker);
       if (change) display = ticker + fiatBalance;
       else display = fiatBalance + '///' + ticker.toUpperCase();
     } else {
