@@ -4,7 +4,7 @@
   import toast from 'svelte-french-toast';
   import { fade } from 'svelte/transition';
   import { onMount } from 'svelte';
-  import { fiatPrice } from '$lib/stores/fiat.js';
+  import { fiat } from '$lib/stores/fiat.js';
 
   let address;
   let amount;
@@ -18,7 +18,7 @@
     if (contactAddress) address = contactAddress;
   });
 
-  $: fiatValue = amount ? '$' + ($fiatPrice * amount).toFixed(5) : '$0.00';
+  $: fiatValue = amount ? '$' + ($fiat.balance * amount).toFixed(5) : '$0.00';
 
   export const prepareTx = async () => {
     let validAddress = await window.api.validateAddress(address);

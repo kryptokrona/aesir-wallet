@@ -9,7 +9,7 @@
   import Warning from '$lib/components/icons/Warning.svelte';
   import { fade, fly } from 'svelte/transition';
   import { prettyNumbers } from '$lib/utils';
-  import { fiatPrice, fiatCurrency } from '$lib/stores/fiat.js';
+  import { fiat } from '$lib/stores/fiat.js';
   import { onMount } from 'svelte';
   import Auto from '$lib/components/icons/Auto.svelte';
 
@@ -19,14 +19,29 @@
   let fundsPopup = false;
   let display;
   let showFiat = false;
-  let xkrBalance;
   let fiatBalance;
+  function changeTicker(it) {
+    let ticker;
+
+    switch (it) {
+      case 'usd':
+        ticker = '$';
+        return [ticker, true];
+      case 'eur':
+        ticker = '€';
+        return [ticker, true];
+      default:
+        ticker = it;
+        return [ticker, false];
+    }
+  }
 
   $: {
     if (showFiat) {
-      fiatBalance = (($wallet.balance[0] * $fiatPrice) / 100000).toFixed(5);
-      if ($fiatCurrency.picked === 'USD') display = '$' + fiatBalance;
-      else display = fiatBalance + $fiatCurrency.picked.toUpperCase();
+      fiatBalance = (($wallet.balance[0] * $fiat.balance) / 100000).toFixed(5);
+      let [ticker, change] = changeTicker($fiat.picked);
+      if (change) display = ticker + fiatBalance;
+      else display = fiatBalance + '///' + ticker.toUpperCase();
     } else {
       display = prettyNumbers($wallet.balance[0] + $wallet.balance[1])
         .toString()
@@ -49,12 +64,16 @@
     <div style="display: inline-flex">
       {#each display ?? [] as number, i (number + i)}
         {#key number}
-          <p
-            in:fly={{ y: 20, delay: i * 100 }}
-            style="font-size: 1.75rem; margin-top: 10px; color: var(--primary-color)"
-          >
-            {number}
-          </p>
+          {#if number !== '/'}
+            <p
+              in:fly={{ y: 20, delay: i * 100 }}
+              style="font-size: 1.75rem; margin-top: 10px; color: var(--primary-color)"
+            >
+              {number}
+            </p>
+          {:else}
+            <div style="width: 5px;" />
+          {/if}
         {/key}
       {/each}
     </div>

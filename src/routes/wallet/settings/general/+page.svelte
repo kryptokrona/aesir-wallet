@@ -1,12 +1,12 @@
 <script>
-  import { fiatCurrency, getCoinPriceFromAPI } from '$lib/stores/fiat.js';
+  import { fiat, getCoinPriceFromAPI } from '$lib/stores/fiat.js';
 
   const fiatList = ['usd', 'sek', 'nok', 'dkk', 'eur'];
 
   //**TODO */ Style this component
 
-  function pickCurrency(picked) {
-    $fiatCurrency.picked = picked;
+  function pick(it) {
+    $fiat.picked = it;
     getCoinPriceFromAPI();
   }
 </script>
@@ -15,7 +15,7 @@
   <h2>Choose a currency to display in your Balance</h2>
   <br />
   {#each fiatList as currency}
-    <p on:click={() => pickCurrency(currency)}>{currency.toUpperCase()}</p>
+    <p on:click={() => pick(currency)}>{currency.toUpperCase()}</p>
   {/each}
 </div>
 
