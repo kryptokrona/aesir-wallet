@@ -13,8 +13,11 @@
     getTransactions();
   });
 
-  async function getTransactions(all = false) {
+  async function getTransactions() {
+    const all = false;
     let startIndex = pageNum * 10;
+    if (pageNum === 0) startIndex = pageNum;
+
     let txs = await window.api.getTransactions(startIndex, all);
     txList = txs.pageTx;
     pages = txs.pages;
