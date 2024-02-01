@@ -315,11 +315,14 @@ ipcMain.on("rewind-wallet", async (e, height) => {
 });
 
 ipcMain.handle("create-wallet", async (e, walletName, password, node) => {
+  
   try {
 
     if (!daemon) {
       daemon = new WB.Daemon(node.url, node.port, node.ssl);
     }
+
+    walletName = walletName.toLowerCase()
 
     walletBackend = await WB.WalletBackend.createWallet(daemon);
 
