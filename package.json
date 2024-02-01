@@ -6,7 +6,7 @@
     "version": "1.0.0",
     "private": true,
     "description": "a wallet for Kryptokrona",
-    "repository": "https://github.com/Swepool/yggdrasil",
+    "repository": "https://github.com/kryptokrona/yggdrasil-wallet",
     "main": "src/backend/electron.cjs",
     "type": "module",
     "npmRebuild": false,
@@ -29,7 +29,7 @@
         "publish": [
             {
                 "provider": "github",
-                "owner": "swepool",
+                "owner": "kryptokrona",
                 "repo": "yggdrasil"
             }
         ],
@@ -55,7 +55,7 @@
         "hyperswarm": "^4.7.7",
         "keytar": "^7.9.0",
         "kryptokrona-crypto": "^1.0.1",
-        "kryptokrona-wallet-backend-js": "^2.5.1",
+        "kryptokrona-wallet-backend-js": "^2.5.2",
         "lightweight-charts": "^4.1.1",
         "ndjson": "^2.0.0",
         "node-notifier": "^10.0.1",
