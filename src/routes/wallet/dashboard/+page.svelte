@@ -152,6 +152,10 @@
           </div>
         {/each}
       </div>
+    {:else}
+      <div class="notx">
+        <h3>No transactions</h3>
+      </div>
     {/if}
   </div>
 </div>
@@ -194,5 +198,8 @@
 
   .unconfirmed {
     color: var(--alert-color);
+  }
+  .notx {
+    padding: 30px;
   }
 </style>
