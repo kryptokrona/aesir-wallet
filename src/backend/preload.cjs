@@ -76,6 +76,9 @@ contextBridge.exposeInMainWorld("api", {
     return ipcRenderer.send("rewind-wallet", height);
   },
 
+  errorMessage: (message) => {
+    ipcRenderer.send("errormessage", message);
+  },
 
   getContacts: async () => {
     return await ipcRenderer.invoke("get-contacts");

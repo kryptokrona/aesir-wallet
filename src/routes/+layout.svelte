@@ -10,7 +10,6 @@
   import { page } from '$app/stores';
   import Updater from '$lib/components/updater/Updater.svelte';
   import { hyper } from '$lib/stores/hyper.js';
-
   let ready = false;
 
   onMount(async () => {

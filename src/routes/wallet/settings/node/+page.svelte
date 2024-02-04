@@ -1,8 +1,8 @@
 <script>
-  import NodeSelector from "$lib/components/NodeSelector.svelte";
-  import { node } from "$lib/stores/node.js";
-  import { fade } from "svelte/transition";
-  import Button from "$lib/components/buttons/Button.svelte";
+  import NodeSelector from '$lib/components/NodeSelector.svelte';
+  import { node } from '$lib/stores/node.js';
+  import { fade } from 'svelte/transition';
+  import Button from '$lib/components/buttons/Button.svelte';
 
   let showSelector = false;
 
@@ -11,11 +11,10 @@
     showSelector = false;
   };
 
-
   let progress;
   $: progress = (($node.walletBlockCount / $node.networkBlockCount) * 100).toFixed(2);
 
-isNaN()
+  isNaN();
 </script>
 
 <div class="wrapper">
@@ -37,7 +36,7 @@ isNaN()
       <h3>{isNaN(progress) ? '-' : `${progress === '100.00' ? '100%' : `${progress}%`}`}</h3>
     </div>
     <div>
-      <Button text="Change node" on:click={() => showSelector = !showSelector} />
+      <Button text="Change node" on:click={() => (showSelector = !showSelector)} />
     </div>
   </div>
 </div>

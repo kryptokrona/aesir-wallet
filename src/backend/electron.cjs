@@ -303,7 +303,7 @@ async function saveWallet(userDataDir, walletName, password) {
 let known_pool_txs = [];
 
 ipcMain.on("reset-wallet", (e, height) => {
-
+  successMessage(`Scanning from height ${height}`)
   walletBackend.reset(parseInt(height));
 
 });
@@ -384,6 +384,7 @@ async function logIntoWallet(walletName, password) {
     return false;
   } else {
     loggedIn = true;
+    successMessage('Starting wallet...')
     userPassword = await crypto.cn_fast_hash(toHex(password));
     return walletBackend;
   }
@@ -504,6 +505,7 @@ ipcMain.handle('change-node', async (e, node) => {
   daemon = new WB.Daemon(node.url, node.port, node.ssl)
   await walletBackend.swapNode(daemon)
   nodes.set("node", { url: node.url, port: node.port, ssl: node.ssl });
+  successMessage('Connecting to node')
   return node
 })
 
@@ -650,6 +652,11 @@ ipcMain.handle('validate-paymentId', async (e, paymentId) => {
   return WB.validatePaymentID(paymentId);
 })
 
+///////////// STATUS MESSAGES
+
+ipcMain.on('errormessage', async (e, message) => {
+  errorMessage(message)
+})
 
 ///////////// HYPER CORE
 
