@@ -309,7 +309,7 @@ ipcMain.on("reset-wallet", (e, height) => {
 });
 
 ipcMain.on("rewind-wallet", async (e, height) => {
-
+  successMessage(`Rewind wallet from height ${height}`)
   walletBackend.rewind(parseInt(height));
 
 });

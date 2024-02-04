@@ -7,15 +7,21 @@
   let height = 0;
 
   const resetWallet = () => {
-    if (height > $node.networkBlockCount) {
-      window.api.errorMessage('Cannot scan from height');
-      return;
-    }
+    if (!checkHeight(height)) return;
     window.api.resetWallet(height);
   };
 
   const rewindWallet = () => {
+    if (!checkHeight(height)) return;
     window.api.rewindWallet(height);
+  };
+
+  const checkHeight = (h) => {
+    if (h > $node.networkBlockCount) {
+      window.api.errorMessage('Cannot scan from height');
+      return false;
+    }
+    return true;
   };
 </script>
 
