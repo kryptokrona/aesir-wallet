@@ -162,7 +162,7 @@
     justify-content: center;
     align-items: center;
     gap: 2rem;
-    max-width: 840px;
+    max-width: 500px;
   }
 
   .node-list {

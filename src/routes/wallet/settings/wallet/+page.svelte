@@ -23,6 +23,12 @@
     }
     return true;
   };
+
+  const getPrivKeys = async () => {
+    const keys = await window.api.getPrivateKeys();
+    navigator.clipboard.writeText(keys[0]);
+    window.api.successMessage('Private key copied');
+  };
 </script>
 
 <div class="wrapper">
@@ -33,7 +39,7 @@
     <br />
 
     <Button text="Export mnemonic" on:click={() => goto('/auth/backup-wallet')} />
-    <Button text="Export private key" on:click={console.log('Clicked')} />
+    <Button text="Export private key" on:click={getPrivKeys} />
   </div>
 
   <div class="card-wrapper">

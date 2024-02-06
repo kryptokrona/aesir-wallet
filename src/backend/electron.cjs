@@ -475,6 +475,10 @@ ipcMain.handle("get-seed", async (e) => {
   }
 });
 
+ipcMain.handle('get-privkeys', async () => {
+  return walletBackend.getPrimaryAddressPrivateKeys()
+})
+
 ipcMain.handle("get-node", async (e) => {
   const userNode = await nodes.get("node");
   if (userNode) {
@@ -658,6 +662,11 @@ ipcMain.on('errormessage', async (e, message) => {
   errorMessage(message)
 })
 
+ipcMain.on('successmessage', async (e, message) => {
+  successMessage(message)
+})
+
+successMessage
 ///////////// HYPER CORE
 
 const sender = (channel, data) => {

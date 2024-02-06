@@ -69,6 +69,9 @@ contextBridge.exposeInMainWorld("api", {
   getSeed: () => {
     return ipcRenderer.invoke("get-seed");
   },
+  getPrivateKeys: async () => {
+    return await ipcRenderer.invoke('get-privkeys')
+  },
   resetWallet: (height) => {
     return ipcRenderer.send("reset-wallet", height);
   },
@@ -78,6 +81,10 @@ contextBridge.exposeInMainWorld("api", {
 
   errorMessage: (message) => {
     ipcRenderer.send("errormessage", message);
+  },
+
+  successMessage: (message) => {
+    ipcRenderer.send("successmessage", message);
   },
 
   getContacts: async () => {
@@ -92,6 +99,7 @@ contextBridge.exposeInMainWorld("api", {
   importContacts: async () => {
     return await ipcRenderer.invoke('import-contacts')
   },
+
 
 
   prepareTransaction: async (address, amount, paymentID, sendAll) => {
