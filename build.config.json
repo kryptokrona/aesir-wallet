@@ -1,7 +1,6 @@
 {
   "appId": "org.kryptokrona.yggdrasil",
   "productName": "Yggdrasil",
-  "afterSign": "./afterSignHook.cjs",
   "directories": {
       "output": "dist"
   },
