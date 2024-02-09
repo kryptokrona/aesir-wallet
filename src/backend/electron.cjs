@@ -193,7 +193,9 @@ let loggedIn = false;
 let userPassword;
 
 //////// START WALLET
-ipcMain.on("start-wallet", async (e, walletName, password, node) => {
+ipcMain.on("start-wallet", async (e, walletName, password, node, file) => {
+
+  console.log("statrt", walletName, node, file)
 
   if (!daemon) {
     daemon = new WB.Daemon(node.url, node.port);
@@ -203,8 +205,18 @@ ipcMain.on("start-wallet", async (e, walletName, password, node) => {
     await verifyPassword(password);
     return;
   }
+  
+  let knownWallets = await getMyWallets()
+  //Save opened wallet file path if we did not create a new one on first start and name it if it's not known
+  if (file) {
+    if (!knownWallets.some(a => a.wallet === walletName)) {
+      console.log("Dont know this wallet, setting path")
+      knownWallets.unshift({ wallet: walletName.toLowerCase(), path: file });
+      wallets.set("wallets", knownWallets);
+    }
+  }
 
-  walletBackend = await logIntoWallet(walletName, password);
+  [walletBackend] = await logIntoWallet(walletName, password);
   if (!walletBackend) return;
 
   await walletBackend.start();
@@ -253,7 +265,8 @@ ipcMain.on("start-wallet", async (e, walletName, password, node) => {
 
   });
 
-  walletSaver(userDataDir, walletName, password)
+  const walletPath = await getWalletPath(walletName)
+  walletSaver(walletPath, password)
   mainWindow.webContents.send("wallet-started");
 
   while (true) {
@@ -289,15 +302,19 @@ ipcMain.on("start-wallet", async (e, walletName, password, node) => {
   }
 });
 
-async function walletSaver(userDataDir, walletName, password) {
+async function getMyWallets() {
+  return await wallets.get("wallets") ?? [];
+}
+
+async function walletSaver(walletPath, password) {
   setInterval( async () => {
-   await saveWallet(userDataDir, walletName, password)
+   await saveWallet(walletPath, password)
   }, 60000)
 }
 
-async function saveWallet(userDataDir, walletName, password) {
+async function saveWallet(walletPath, password) {
   console.log("******** SAVING WALLET ********");
-  await walletBackend.saveWalletToFile(userDataDir + "/" + walletName + ".wallet", password);
+  await walletBackend.saveWalletToFile(walletPath, password);
 }
 
 let known_pool_txs = [];
@@ -344,17 +361,15 @@ ipcMain.handle("create-wallet", async (e, walletName, password, node) => {
       height = res.height - 100;
 
     } catch(err){
-      height = 1250000;
+      height = 1650000;
     }
 
     [walletBackend, error] = await WB.WalletBackend.importWalletFromSeed(daemon, height, seed);
+  
+    const walletPath = await saveWalletInfo(walletName)
 
-    await saveWallet(userDataDir, walletName, password)
+    await saveWallet(walletPath, password)
     await keytar.setPassword(`yggdrasilwallet?=${walletName}`, walletName, password);
-
-    let knownWallets = await wallets.get("wallets") ?? [];
-    knownWallets.unshift({ wallet: walletName.toLowerCase() });
-    await wallets.set("wallets", knownWallets);
 
   } catch (e) {
     console.log(e);
@@ -376,17 +391,35 @@ const verifyPassword = async (password) => {
   }
 };
 
+async function saveWalletInfo(walletName) {
+  let walletPath = userDataDir + "/" + walletName + ".wallet"
+  let knownWallets = await getMyWallets()
+  knownWallets.unshift({ wallet: walletName.toLowerCase(), path: walletPath });
+  await wallets.set("wallets", knownWallets);
+  return walletPath
+}
+
+async function getWalletPath(walletName) {
+  let knownWallets = await getMyWallets()
+  const thisWallet = knownWallets.find(a => a.wallet === walletName)
+  
+  //If no path is found, save the wallet in AppData folder
+  if (thisWallet?.path === undefined) return userDataDir + "/" + walletName + ".wallet"
+  return thisWallet.path
+}
+
 async function logIntoWallet(walletName, password) {
-  const [walletBackend, error] = await WB.WalletBackend.openWalletFromFile(daemon, userDataDir + "/" + walletName + ".wallet", password);
+  const thisPath = await getWalletPath(walletName)
+  const [walletBackend, error] = await WB.WalletBackend.openWalletFromFile(daemon, thisPath, password);
   if (error) {
     console.log("Failed to open wallet: " + error.toString());
     mainWindow.webContents.send("wrong-password");
-    return false;
+    return [false];
   } else {
     loggedIn = true;
     successMessage('Starting wallet...')
     userPassword = await crypto.cn_fast_hash(toHex(password));
-    return walletBackend;
+    return [walletBackend];
   }
 }
 
@@ -411,11 +444,10 @@ ipcMain.handle("import-seed", async (e, seed, walletName, password, height, node
     return false;
   }
 
-  await saveWallet(userDataDir, walletName, password)
+  await saveWalletInfo(walletName)
+  const walletPath = await getWalletPath(walletName)
+  await saveWallet(walletPath, password)
 
-  let knownWallets = await wallets.get("wallets") ?? [];
-  knownWallets.unshift({ wallet: walletName.toLowerCase() });
-  await wallets.set("wallets", knownWallets);
 
   console.log("*******IMPORTED WALLET FROM SEED********");
   nodes.set("node", { url: node.url, port: node.port, ssl: node.ssl });

@@ -1,83 +1,116 @@
 <script>
-    import StartFlash from "$lib/components/layout/StartFlash.svelte";
-    import {onMount} from "svelte";
-    import ArrowRight from "$lib/components/icons/ArrowRight.svelte";
-    import {fade, fly} from 'svelte/transition'
-    import Backward from "$lib/components/icons/Backward.svelte";
-    import NodeSelector from "$lib/components/NodeSelector.svelte";
-    import {wallet} from "$lib/stores/wallet.js";
-    import {node} from "$lib/stores/node.js";
-    import {sleep} from "$lib/utils";
-    import {goto} from "$app/navigation";
+  import StartFlash from '$lib/components/layout/StartFlash.svelte';
+  import { onMount } from 'svelte';
+  import ArrowRight from '$lib/components/icons/ArrowRight.svelte';
+  import { fade, fly } from 'svelte/transition';
+  import Backward from '$lib/components/icons/Backward.svelte';
+  import NodeSelector from '$lib/components/NodeSelector.svelte';
+  import { wallet } from '$lib/stores/wallet.js';
+  import { node } from '$lib/stores/node.js';
+  import { sleep } from '$lib/utils';
+  import { goto } from '$app/navigation';
 
-    let animate = false
-    onMount(() => {
-        animate = true
-    })
+  let animate = false;
+  onMount(() => {
+    animate = true;
+  });
 
-    let step = 1
-    let password = ''
-    let walletName = ''
+  let step = 1;
+  let password = '';
+  let walletName = '';
+  let files;
+  let fileList;
 
-    const createWallet = async (e, selectedNode = e.detail.node) => {
-        $node.selectedNode = selectedNode
+  const createWallet = async (e, selectedNode = e.detail.node) => {
+    $node.selectedNode = selectedNode;
 
-        if (await window.api.checkNode(selectedNode)) {
-            const myWallets = await window.api.walletCreate(walletName, password, selectedNode)
+    if (await window.api.checkNode(selectedNode)) {
+      const myWallets = await window.api.walletCreate(walletName, password, selectedNode);
 
-            if (myWallets) {
-                $wallet.wallets = myWallets
-                $wallet.currentWallet = myWallets[0].wallet
-                window.api.walletStart($wallet.currentWallet, password, selectedNode)
-                password = ''
-                walletName = ''
-                await sleep(300)
-                await goto('/auth/backup-wallet')
-            }
-        }
+      if (myWallets) {
+        $wallet.wallets = myWallets;
+        $wallet.currentWallet = myWallets[0].wallet;
+        window.api.walletStart($wallet.currentWallet, password, selectedNode, false);
+        password = '';
+        walletName = '';
+        await sleep(300);
+        await goto('/auth/backup-wallet');
+      }
     }
+  };
 
+  const openFromFile = () => {
+    fileList.click();
+  };
+
+  const selectedFile = async () => {
+    let file = files[0];
+    $wallet.currentWallet = file.name.split('.')[0];
+    $wallet.file = true;
+    $wallet.path = file.path;
+    await goto(`./login-wallet`);
+  };
 </script>
 
 {#if animate}
-    <StartFlash/>
+  <StartFlash />
 {/if}
 
 <section in:fade>
-    <div style="margin-bottom: 2rem"></div>
-    {#if step === 1}
-        <h2>Create wallet</h2>
-        <div class="field">
-            <input in:fly={{y: 20}} placeholder="Wallet name.." type="text" autofocus bind:value={walletName}/>
-            <button class="enabled" on:click={() => step++}>
-                <ArrowRight green={walletName.length >= 3}/>
-            </button>
-        </div>
-        <p class="import" on:click={() => goto('/auth/import-wallet')}>Import wallet</p>
-    {:else if step === 2}
-        <h2>Secure wallet</h2>
-        <div class="field">
-            <input in:fly={{y: 20}} placeholder="Password.." type="password" autofocus bind:value={password}/>
-            <button on:click={() => step++}>
-                <ArrowRight green={password.length >= 3}/>
-            </button>
-        </div>
-        <p>v1.0.0</p>
-    {:else if step === 3}
-        <NodeSelector on:connect={(e) => createWallet(e)}/>
-    {/if}
-    {#if step !== 1}
-        <div style="margin-top: 2rem" in:fade on:click={() => {if(step > 1) step--}}>
-            <Backward/>
-        </div>
-    {:else}
-        <div style="margin-top: 2rem; opacity: 0%">
-            <Backward/>
-        </div>
-    {/if}
+  <div style="margin-bottom: 2rem" />
+  {#if step === 1}
+    <h2>Create wallet</h2>
+    <div class="field">
+      <input in:fly={{ y: 20 }} placeholder="Wallet name.." type="text" autofocus bind:value={walletName} />
+      <button class="enabled" on:click={() => step++}>
+        <ArrowRight green={walletName.length >= 3} />
+      </button>
+    </div>
+    <p class="import" on:click={() => openFromFile()}>Open file</p>
+
+    <p class="import" on:click={() => goto('/auth/import-wallet')}>Import wallet</p>
+
+    <input
+      bind:this={fileList}
+      bind:files
+      class="open"
+      type="file"
+      on:change={() => selectedFile()}
+      style="width: 0;"
+    />
+  {:else if step === 2}
+    <h2>Secure wallet</h2>
+    <div class="field">
+      <input in:fly={{ y: 20 }} placeholder="Password.." type="password" autofocus bind:value={password} />
+      <button on:click={() => step++}>
+        <ArrowRight green={password.length >= 3} />
+      </button>
+    </div>
+    <p>v1.0.0</p>
+  {:else if step === 3}
+    <NodeSelector on:connect={(e) => createWallet(e)} />
+  {/if}
+  {#if step !== 1}
+    <div
+      style="margin-top: 2rem"
+      in:fade
+      on:click={() => {
+        if (step > 1) step--;
+      }}
+    >
+      <Backward />
+    </div>
+  {:else}
+    <div style="margin-top: 2rem; opacity: 0%">
+      <Backward />
+    </div>
+  {/if}
 </section>
 
 <style lang="scss">
+  .open {
+    opacity: 0;
+  }
   section {
     width: 100%;
     height: 100%;
@@ -146,4 +179,3 @@
     }
   }
 </style>
-

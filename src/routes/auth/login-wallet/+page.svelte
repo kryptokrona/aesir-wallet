@@ -1,108 +1,137 @@
 <script>
-    import ArrowRight from "$lib/components/icons/ArrowRight.svelte";
-    import {fade} from 'svelte/transition'
-    import {quadIn} from "svelte/easing";
-    import StartFlash from "$lib/components/layout/StartFlash.svelte";
-    import {onMount} from "svelte";
-    import {goto} from "$app/navigation";
-    import {Moon} from "svelte-loading-spinners";
-    import {wallet} from "$lib/stores/wallet.js";
-    import {node} from "$lib/stores/node.js";
-    import {sleep} from "$lib/utils";
-    import {user} from "$lib/stores/user.js";
-    import {dev} from "$app/environment";
-    import toast from "svelte-french-toast";
-    import NodeSelector from "$lib/components/NodeSelector.svelte";
+  import ArrowRight from '$lib/components/icons/ArrowRight.svelte';
+  import { fade } from 'svelte/transition';
+  import { quadIn } from 'svelte/easing';
+  import StartFlash from '$lib/components/layout/StartFlash.svelte';
+  import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
+  import { Moon } from 'svelte-loading-spinners';
+  import { wallet } from '$lib/stores/wallet.js';
+  import { node } from '$lib/stores/node.js';
+  import { sleep } from '$lib/utils';
+  import { user } from '$lib/stores/user.js';
+  import { dev } from '$app/environment';
+  import toast from 'svelte-french-toast';
+  import NodeSelector from '$lib/components/NodeSelector.svelte';
 
-    let animate = false
-    let loading = false
-    let password = ''
-    let nodeOnline
-    let wrongPassword
-    let openNodeSelector
+  let animate = false;
+  let loading = false;
+  let password = '';
+  let nodeOnline;
+  let wrongPassword;
+  let openNodeSelector;
+  let files;
+  let fileList;
 
-    onMount(async () => {
-        if(dev) {
-            $node.selectedNode = await window.api.getNode()
-            $wallet.wallets = await window.api.getWallets()
-            $user.touchId = await window.api.checkTouchId()
-            $wallet.currentWallet = $wallet.wallets[0].wallet
-        }
-
-        animate = true
-
-        window.api.receive('wrong-password', async () => {
-            await sleep(250)
-            password = ''
-            wrongPassword = true
-            loading = false
-        })
-
-        window.api.receive('wallet-started', async () => {
-            await goto('/wallet/dashboard')
-            password = ''
-            loading = false
-        })
-
-    })
-
-    const login = async () => {
-        loading = true
-        animate = false
-        wrongPassword = false
-        nodeOnline = await window.api.checkNode($node.selectedNode)
-        if (nodeOnline) {
-            window.api.walletStart($wallet.currentWallet, password, $node.selectedNode)
-        } else if (!nodeOnline) {
-            loading= false
-            password = ''
-            toast.error("Node error", {
-                position: "top-right",
-                style: "border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);"
-            });
-            openNodeSelector = true
-        }
+  onMount(async () => {
+    if (dev) {
+      $node.selectedNode = await window.api.getNode();
+      $wallet.wallets = await window.api.getWallets();
+      $user.touchId = await window.api.checkTouchId();
+      $wallet.currentWallet = $wallet.wallets[0].wallet;
     }
 
-    const keyDown = (e) => {
-        if (e.key === 'Enter' && password.length >=3) {
-            login()
-        }
+    animate = true;
+
+    window.api.receive('wrong-password', async () => {
+      await sleep(250);
+      password = '';
+      wrongPassword = true;
+      loading = false;
+    });
+
+    window.api.receive('wallet-started', async () => {
+      await goto('/wallet/dashboard');
+      password = '';
+      loading = false;
+    });
+  });
+
+  const login = async () => {
+    loading = true;
+    animate = false;
+    wrongPassword = false;
+
+    nodeOnline = await window.api.checkNode($node.selectedNode);
+    if (nodeOnline) {
+      window.api.walletStart($wallet.currentWallet, password, $node.selectedNode, $wallet.path);
+    } else if (!nodeOnline) {
+      loading = false;
+      password = '';
+      toast.error('Node error', {
+        position: 'top-right',
+        style:
+          'border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);',
+      });
+      openNodeSelector = true;
     }
+  };
 
-
-    const handleNodeChange = (node) => {
-        window.api.setNode(node)
-        openNodeSelector = false
+  const keyDown = (e) => {
+    if (e.key === 'Enter' && password.length >= 3) {
+      login();
     }
+  };
 
+  const handleNodeChange = (node) => {
+    window.api.setNode(node);
+    openNodeSelector = false;
+  };
+
+  const openFromFile = () => {
+    fileList.click();
+  };
+
+  const selectedFile = async () => {
+    console.log('Selected');
+    let file = files[0];
+    $wallet.currentWallet = file.name.split('.')[0];
+    $wallet.file = true;
+    $wallet.path = file.path;
+
+    console.log('New selected', $wallet);
+  };
 </script>
 
-<svelte:window on:keyup|preventDefault="{keyDown}" />
+<svelte:window on:keyup|preventDefault={keyDown} />
 
 {#if animate}
-    <StartFlash/>
+  <StartFlash />
 {/if}
 
 {#if openNodeSelector}
-    <NodeSelector on:connect={(e) => handleNodeChange(e.detail.node)}/>
-    {:else }
-    <div style="display: flex; flex-direction: column; gap: 4rem;  align-items: center" in:fade={{duration: 200, delay: 400, easing: quadIn}}>
-        <div></div>
-        <div class="field" class:shake={wrongPassword}>
-            <input placeholder="Password..." type="password" bind:value={password}/>
-            <button on:click={login}>
-                {#if loading}
-                    <Moon color="#ffffff" size="20" unit="px"/>
-                {:else}
-                    <ArrowRight green={password.length >= 3}/>
-                {/if}
-            </button>
-        </div>
-        <div>
-            <p style="opacity: 50%">v1.0.0</p>
-        </div>
+  <NodeSelector on:connect={(e) => handleNodeChange(e.detail.node)} />
+{:else}
+  <div
+    style="display: flex; flex-direction: column; gap: 4rem;  align-items: center"
+    in:fade={{ duration: 200, delay: 400, easing: quadIn }}
+  >
+    <div />
+    <div class="field" class:shake={wrongPassword}>
+      <input placeholder="Password..." type="password" bind:value={password} />
+      <button on:click={login}>
+        {#if loading}
+          <Moon color="#ffffff" size="20" unit="px" />
+        {:else}
+          <ArrowRight green={password.length >= 3} />
+        {/if}
+      </button>
     </div>
+    <div>
+      <p style="opacity: 50%">v1.0.0</p>
+
+      <p class="import" on:click={() => openFromFile()}>Open another wallet</p>
+
+      <input
+        bind:this={fileList}
+        bind:files
+        class="open"
+        type="file"
+        on:change={() => selectedFile()}
+        style="width: 0;"
+      />
+    </div>
+  </div>
 {/if}
 
 <style lang="scss">
@@ -153,5 +182,18 @@
       }
     }
   }
-</style>
 
+  .import {
+    text-decoration: underline;
+    opacity: 50%;
+    transition: 150ms ease-in-out;
+    cursor: pointer;
+    &:hover {
+      opacity: 100%;
+    }
+  }
+
+  .open {
+    opacity: 0;
+  }
+</style>

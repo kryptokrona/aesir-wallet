@@ -1,11 +1,11 @@
 <script>
-  import { onMount } from "svelte";
-  import { goto } from "$app/navigation";
-  import { sleep } from "$lib/utils";
-  import { node } from "$lib/stores/node.js";
-  import { user } from "$lib/stores/user.js";
-  import { wallet } from "$lib/stores/wallet.js";
-  import Logo from "$lib/components/icons/Logo.svelte";
+  import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
+  import { sleep } from '$lib/utils';
+  import { node } from '$lib/stores/node.js';
+  import { user } from '$lib/stores/user.js';
+  import { wallet } from '$lib/stores/wallet.js';
+  import Logo from '$lib/components/icons/Logo.svelte';
 
   let loading = true;
   let wallets;
@@ -17,21 +17,20 @@
 
     window.api.startApp();
 
-    window.api.receive("started-app", async data => {
+    window.api.receive('started-app', async (data) => {
       if (data.myWallets) {
         $wallet.currentWallet = $wallet.wallets[0].wallet;
         await sleep(2250);
         loading = false;
         await sleep(250);
-        await goto("/auth/login-wallet");
+        await goto('/auth/login-wallet');
       } else if (!data.myWallets) {
         await sleep(2250);
         loading = false;
         await sleep(250);
-        await goto("/auth/create-wallet");
+        await goto('/auth/create-wallet');
       }
     });
-
   });
 </script>
 
@@ -58,21 +57,21 @@
 
     &::before {
       content: '';
-      transform: rotate(0deg)
+      transform: rotate(0deg);
     }
 
     &::after {
       content: '';
-      transform: rotate(180deg)
+      transform: rotate(180deg);
     }
   }
 
   @-webkit-keyframes rotation {
     0% {
-      transform: rotate(0deg)
+      transform: rotate(0deg);
     }
     100% {
-      transform: rotate(180deg)
+      transform: rotate(180deg);
     }
   }
 </style>
