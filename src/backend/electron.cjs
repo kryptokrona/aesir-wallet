@@ -195,8 +195,6 @@ let userPassword;
 //////// START WALLET
 ipcMain.on("start-wallet", async (e, walletName, password, node, file) => {
 
-  console.log("statrt", walletName, node, file)
-
   if (!daemon) {
     daemon = new WB.Daemon(node.url, node.port);
   }
@@ -210,7 +208,6 @@ ipcMain.on("start-wallet", async (e, walletName, password, node, file) => {
   //Save opened wallet file path if we did not create a new one on first start and name it if it's not known
   if (file) {
     if (!knownWallets.some(a => a.wallet === walletName)) {
-      console.log("Dont know this wallet, setting path")
       knownWallets.unshift({ wallet: walletName.toLowerCase(), path: file });
       wallets.set("wallets", knownWallets);
     }

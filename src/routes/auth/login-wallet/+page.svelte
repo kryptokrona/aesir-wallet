@@ -119,7 +119,7 @@
     </div>
     <div>
       <p style="opacity: 50%">v1.0.0</p>
-
+      <p>{$wallet.currentWallet}.wallet</p>
       <p class="import" on:click={() => openFromFile()}>Open another wallet</p>
 
       <input
