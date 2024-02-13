@@ -10,7 +10,12 @@
     $node.localDaemonBlockCount = data.localDaemonBlockCount;
     $node.networkBlockCount = data.networkBlockCount;
     $node.walletBlockCount = data.walletBlockCount;
-    $wallet.balance = data.balance;
+
+    //Check to avoid triggering UI update if the balance is the same
+    if (data.balance[0] != localStorage.getItem('balance')) {
+      $wallet.balance = data.balance;
+    }
+
     $user.idleTime = data.idle ?? 0;
     localStorage.setItem('balance', data.balance[0]);
   });
