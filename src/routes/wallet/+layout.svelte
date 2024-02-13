@@ -12,6 +12,7 @@
     $node.walletBlockCount = data.walletBlockCount;
     $wallet.balance = data.balance;
     $user.idleTime = data.idle ?? 0;
+    localStorage.setItem('balance', data.balance[0]);
   });
 
   window.api.receive('node-status', (res) => {

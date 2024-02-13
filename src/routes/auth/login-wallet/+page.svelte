@@ -44,6 +44,9 @@
       await goto('/wallet/dashboard');
       password = '';
       loading = false;
+      //Set stored balance to avoid showing zero balance while loading
+      $wallet.balance = [localStorage.getItem('balance'), 0] ?? [0, 0];
+      $wallet.started = true;
     });
   });
 
@@ -120,7 +123,9 @@
     <div>
       <p style="opacity: 50%">v1.0.0</p>
       <p>{$wallet.currentWallet}.wallet</p>
-      <p class="import" on:click={() => openFromFile()}>Open another wallet</p>
+      {#if !$wallet.started}
+        <p class="import" on:click={() => openFromFile()}>Open another wallet</p>
+      {/if}
 
       <input
         bind:this={fileList}

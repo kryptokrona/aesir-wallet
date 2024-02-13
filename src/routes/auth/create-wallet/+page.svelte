@@ -37,6 +37,8 @@
         await goto('/auth/backup-wallet');
       }
     }
+
+    $wallet.started = true
   };
 
   const openFromFile = () => {
