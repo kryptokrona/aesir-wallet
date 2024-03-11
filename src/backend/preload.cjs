@@ -100,8 +100,6 @@ contextBridge.exposeInMainWorld("api", {
     return await ipcRenderer.invoke('import-contacts')
   },
 
-
-
   prepareTransaction: async (address, amount, paymentID, sendAll) => {
     return await ipcRenderer.invoke('prepare-transaction', address, amount, paymentID, sendAll)
   },
@@ -115,7 +113,7 @@ contextBridge.exposeInMainWorld("api", {
     return await ipcRenderer.invoke('validate-address', address)
   },
   generatePaymentId: async () => {
-    return await ipcRenderer.invoke('validate-paymentId')
+    return await ipcRenderer.invoke('generate-paymentId')
   },
   validatePaymentId: async (paymentId) => {
     return await ipcRenderer.invoke('validate-paymentId', paymentId)

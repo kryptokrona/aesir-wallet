@@ -12,6 +12,7 @@ const Store = require("electron-store");
 const { autoUpdater } = require("electron-updater");
 const fs = require("fs");
 const { createSwarm, destroySwarm, sendMessage } = require("./hyper/index.cjs");
+const { error } = require("console");
 
 
 try {
@@ -631,6 +632,12 @@ ipcMain.handle('balance-subwallet', async (e) => {
 
 ipcMain.handle('prepare-transaction', async (e, address, amount, paymentID, sendAll) => {
   console.log(address, amount, paymentID, sendAll);
+  if (paymentID !== undefined) {
+    if (!WB.validatePaymentID(paymentID)) {
+      errorMessage('The paymentId is not correct')
+      return
+    }
+  }
   const result = await walletBackend.sendTransactionAdvanced(
     [[address, parseInt(parseFloat(amount).toFixed(5) * 100000)]],
     3,
@@ -661,7 +668,10 @@ ipcMain.handle('prepare-transaction', async (e, address, amount, paymentID, send
 
 ipcMain.handle('send-transaction', async (e, hash) => {
   const result = await walletBackend.sendPreparedTransaction(hash)
-  if (!result.success) errorMessage('Error: Could not send transaction')
+  if (!result.success) {
+    errorMessage('Error: Could not send transaction')
+    return
+  }
   successMessage('Transaction sent!')
   mainWindow.webContents.send("outgoing-tx")
   return result.success;
@@ -676,8 +686,8 @@ ipcMain.handle('validate-address', async (e, address) => {
   return await WB.validateAddress(address, true)
 })
 
-ipcMain.handle('generate-paymentId', async (e, paymentId) => {
-  return WB.validatePaymentID(paymentId);
+ipcMain.handle('generate-paymentId', async (e) => {
+  return (await crypto.generateKeys()).public_key
 })
 
 

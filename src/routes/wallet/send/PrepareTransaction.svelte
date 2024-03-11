@@ -50,10 +50,13 @@
     if ($wallet.preparedTransaction) {
       address = '';
       amount = '';
+      paymentId = '';
     }
   };
 
-  const generatePaymentId = () => {};
+  const generatePaymentId = async () => {
+    paymentId = await window.api.generatePaymentId();
+  };
 
   //Validate and paste address
   const pasteAddress = async () => {
