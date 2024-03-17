@@ -21,26 +21,17 @@ html {
 
 ::-webkit-scrollbar {
   width: 6px;
-  height: 6px;
+  height: 100%;
+  background-color: rgba(80, 80, 80, 0.11);
 }
 
-::-webkit-scrollbar-button:start:decrement,
-::-webkit-scrollbar-button:end:increment  {
-  height: 30px;
-  display: block;
-  background-color: transparent;
+::-webkit-scrollbar-thumb {
+  background-color: #c1c1c1;
+  border-radius: 6px;
 }
 
-::-webkit-scrollbar-track-piece  {
-  background-color: #eee;
-  -webkit-border-radius: 6px;
-}
-
-::-webkit-scrollbar-thumb:vertical {
-  height: 50px;
-  background-color: #999;
-  //border: 1px solid #eee;
-  -webkit-border-radius: 6px;
+::-webkit-scrollbar-thumb:hover {
+  background-color: #a8a8a8;
 }
 
 *,
