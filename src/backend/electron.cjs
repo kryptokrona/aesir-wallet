@@ -213,7 +213,7 @@ ipcMain.on("start-wallet", async (e, walletName, password, node, file) => {
     }
   }
 
-  [walletBackend] = await logIntoWallet(walletName, password);
+  walletBackend = await logIntoWallet(walletName, password);
   if (!walletBackend) return;
 
   await walletBackend.start();
@@ -361,7 +361,6 @@ ipcMain.handle("create-wallet", async (e, walletName, password, node) => {
       height = 1650000;
     }
 
-    [walletBackend, error] = await WB.WalletBackend.importWalletFromSeed(daemon, height, seed);
   
     const walletPath = await saveWalletInfo(walletName)
 
@@ -399,8 +398,7 @@ async function saveWalletInfo(walletName) {
 async function getWalletPath(walletName) {
   let knownWallets = await getMyWallets()
   const thisWallet = knownWallets.find(a => a.wallet === walletName)
-  
-  //If no path is found, save the wallet in AppData folder
+
   if (thisWallet?.path === undefined) return userDataDir + "/" + walletName + ".wallet"
   return thisWallet.path
 }
@@ -416,7 +414,7 @@ async function logIntoWallet(walletName, password) {
     loggedIn = true;
     successMessage('Starting wallet...')
     userPassword = await crypto.cn_fast_hash(toHex(password));
-    return [walletBackend];
+    return walletBackend;
   }
 }
 
