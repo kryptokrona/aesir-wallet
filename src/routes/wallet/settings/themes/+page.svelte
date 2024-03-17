@@ -8,7 +8,7 @@
 </script>
 
 <div class="wrapper">
-  <div class="grid">
+  <div class="Box">
     <div class="card blue" on:click={() => setTheme('blue')}>
       <div class="header blue-header">
         <h3>I'm blue</h3>
@@ -31,7 +31,7 @@
       <div class="header flashbang-header">
         <h3>Flashbang</h3>
       </div>
-      <div style="margin: 15px 15px">
+      <div style="margin: 20px 20px">
         <Logo size="50" color="#ff5e00" />
       </div>
     </div>
@@ -45,8 +45,9 @@
     padding: 30px;
   }
 
-  .grid {
-    display: grid;
+  .Box {
+    display: flex;
+    flex-direction: column;
     grid-template-columns: repeat(12, minmax(0, 1fr));
     grid-gap: 1rem;
   }
@@ -56,7 +57,6 @@
     height: 145px;
     border: 1px solid red;
     border-radius: 5px;
-    grid-column: span 6 / span 6;
 
     .header {
       display: flex;
@@ -67,23 +67,24 @@
   }
   .card:hover {
     cursor: pointer;
+    filter: brightness(1.3);
   }
   .blue {
-    border: 1px solid rgba(255, 255, 255, 0.8);
+    border: 1px solid var(--border-color);
     background-color: #1a1c23;
   }
   .blue-header {
-    border-bottom: 1px solid rgba(255, 255, 255, 0.8);
+    border-bottom: 1px solid var(--border-color);
   }
   .blue-header h3 {
     color: rgba(255, 255, 255, 1);
   }
   .dark {
-    border: 1px solid rgba(255, 255, 255, 0.8);
+    border: 1px solid var(--border-color);
     background-color: #121212;
   }
   .dark-header {
-    border-bottom: 1px solid rgba(255, 255, 255, 0.8);
+    border-bottom: 1px solid var(--border-color);
   }
   .dark-header h3 {
     color: rgba(255, 255, 255, 1);

@@ -11,7 +11,6 @@ const keytar = require("keytar");
 const Store = require("electron-store");
 const { autoUpdater } = require("electron-updater");
 const fs = require("fs");
-const { createSwarm, destroySwarm, sendMessage } = require("./hyper/index.cjs");
 const { error } = require("console");
 
 
@@ -708,21 +707,6 @@ ipcMain.on('successmessage', async (e, message) => {
 successMessage
 ///////////// HYPER CORE
 
-const sender = (channel, data) => {
-  mainWindow.webContents.send(channel, data)
-}
-
-ipcMain.on('connect-hyper', async (e, secret) => {
-  createSwarm(sender, secret)
-})
-
-ipcMain.on('disconnect-hyper', async (e, domain) => {
-  destroySwarm(sender)
-})
-
-ipcMain.on('send-message', async (e, data) => {
-  sendMessage(data)
-})
 
 ///////////// OPEN URL IN EXTERNAL BROWSER
 

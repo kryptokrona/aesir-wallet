@@ -9,8 +9,6 @@
   import { goto } from '$app/navigation';
   import Logo from '$lib/components/icons/Logo.svelte';
   import Contacts from '$lib/components/icons/Navbar/Contacts.svelte';
-  import Lightning from '$lib/components/icons/Navbar/Lightning.svelte';
-  import { hyper } from '$lib/stores/hyper.js';
   import Tooltip from '../Tooltip.svelte';
 </script>
 
@@ -41,13 +39,6 @@
         <Transactions />
       </button>
     </Tooltip>
-
-    <!--    <button on:click={() => {
-            if($hyper.peer >= 2) goto('/wallet/hyper/chat')
-            if($hyper.peer < 2) goto('/wallet/hyper')
-        }}>
-      <Lightning fill={$hyper.peer >= 2} connected={$hyper.peer >= 2} />
-    </button>-->
   </div>
 
   <div class="draggable drag" />
