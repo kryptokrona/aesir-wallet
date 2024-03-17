@@ -9,7 +9,7 @@
   <h3 in:fade>Settings</h3>
   <div in:fade>
     <Button
-      text="Balance"
+      text="General"
       on:click={() => goto('/wallet/settings/general')}
       active={$page.url.pathname === '/wallet/settings/general'}
     />

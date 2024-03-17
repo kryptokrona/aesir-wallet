@@ -45,7 +45,7 @@
 
   <div>
     <Tooltip title="Settings" stylized={true}>
-      <button on:click={() => goto('/wallet/settings/node')}>
+      <button on:click={() => goto('/wallet/settings/general')}>
         <Settings />
       </button>
     </Tooltip>

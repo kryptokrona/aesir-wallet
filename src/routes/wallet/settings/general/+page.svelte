@@ -29,7 +29,7 @@
   .wrapper {
     width: 100%;
     height: calc(100% - 10px);
-    padding: 15px;
+    padding: 30px;
   }
 
   p {
