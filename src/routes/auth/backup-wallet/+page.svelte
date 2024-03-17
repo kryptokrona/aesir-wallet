@@ -1,78 +1,54 @@
 <script>
-  //TODO check all words before continue to dashboard
-  import { onMount } from "svelte";
-  import { fade, fly } from "svelte/transition";
-  import { goto } from "$app/navigation";
-  import toast from "svelte-french-toast";
-  import { wallet } from "$lib/stores/wallet.js";
-  import { saveAs } from "file-saver";
+  import { onMount } from "svelte"
+  import { fade, fly } from "svelte/transition"
+  import { goto } from "$app/navigation"
+  import toast from "svelte-french-toast"
+  import { wallet } from "$lib/stores/wallet.js"
+  import { saveAs } from "file-saver"
 
-  let step = 1;
-  let seedWords;
-  let seedWordsArray;
-  let randomNumbersArray = [];
+  let step = 1
+  let seedWords
+  let seedWordsArray
+  let randomNumbersArray = new Set()
 
-  let checkArray = [
-    { "word": "" },
-    { "word": "" },
-    { "word": "" },
-    { "word": "" },
-    { "word": "" },
-    { "word": "" },
-    { "word": "" },
-    { "word": "" }
-  ];
+  let checkArray = new Array(8).fill({ "word": "" })
 
-  function checkAllWords() {
-    return randomNumbersArray.every((num, i) => checkArray[i].word === seedWordsArray[num - 1]);
+  const toastStyle = {
+    position: "top-right",
+    style: "border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color)"
   }
 
-  async function validateAndProceed() {
+  const checkAllWords = () => [...randomNumbersArray].every((num, i) => checkArray[i].word === seedWordsArray[num - 1])
+
+  const validateAndProceed = () => {
     if (checkAllWords()) {
-      toast.success("Success!", {
-        position: "top-right",
-        style: "border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);"
-      });
-      await goto('/wallet/dashboard'); // Use await if goto returns a promise
+      toast.success("Success!", toastStyle)
+      goto('/wallet/dashboard')
     } else {
-      toast.error("Some words are incorrect. Please check and try again.", {
-        position: "top-right",
-        style: "border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);"
-      });
+      toast.error("Some words are incorrect. Please check and try again.", toastStyle)
     }
   }
 
   onMount(async () => {
-    seedWords = await window.api.getSeed();
-    seedWordsArray = seedWords.split(" ");
-    do {
-      let num = Math.floor(Math.random() * 10 + 1);
-      randomNumbersArray.push(num);
-      randomNumbersArray = randomNumbersArray.filter((item, index) => {
-        return randomNumbersArray.indexOf(item) === index;
-      });
-    } while (randomNumbersArray.length < 8);
-  });
+    seedWords = await window.api.getSeed()
+    seedWordsArray = seedWords.split(" ")
+    while (randomNumbersArray.size < 8) {
+      randomNumbersArray.add(Math.floor(Math.random() * 10) + 1)
+    }
+    randomNumbersArray = [...randomNumbersArray]
+  })
 
   const copy = () => {
-    navigator.clipboard.writeText(seedWords);
-    toast.success("Copied", {
-      position: "top-right",
-      style: "border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);"
-    });
-  };
+    navigator.clipboard.writeText(seedWords)
+    toast.success("Copied", toastStyle)
+  }
 
-  //TODO improve the export, make a great design and add keys as well
   const exportTxt = () => {
-    let text = `Seed for wallet ${$wallet.currentWallet}: ${seedWords}`;
-    const blob = new Blob([text], {
-      type: "text"
-    });
-    saveAs(blob, `wallet-${$wallet.currentWallet}`);
-  };
-
-
+    const blob = new Blob([`Seed for wallet ${$wallet.currentWallet}: ${seedWords}`], { type: "text/plain" })
+    saveAs(blob, `wallet-${$wallet.currentWallet}`)
+  }
 </script>
+
 
 {#if step === 1}
   <section in:fade>
