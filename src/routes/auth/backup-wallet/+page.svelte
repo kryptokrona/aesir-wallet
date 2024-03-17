@@ -23,6 +23,25 @@
     { "word": "" }
   ];
 
+  function checkAllWords() {
+    return randomNumbersArray.every((num, i) => checkArray[i].word === seedWordsArray[num - 1]);
+  }
+
+  async function validateAndProceed() {
+    if (checkAllWords()) {
+      toast.success("Success!", {
+        position: "top-right",
+        style: "border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);"
+      });
+      await goto('/wallet/dashboard'); // Use await if goto returns a promise
+    } else {
+      toast.error("Some words are incorrect. Please check and try again.", {
+        position: "top-right",
+        style: "border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);"
+      });
+    }
+  }
+
   onMount(async () => {
     seedWords = await window.api.getSeed();
     seedWordsArray = seedWords.split(" ");
@@ -83,9 +102,11 @@
                  bind:value={checkArray[i].word}>
         </div>
       {/each}
-      <div></div>
       <button class="card" style="margin-top: 1rem" on:click={() => step--}>Back</button>
-      <button class="card" style="margin-top: 1rem" on:click={() => goto('/wallet/dashboard')}>Continue</button>
+      <div />
+      <button class="card" style="margin-top: 1rem" on:click={() => goto('/wallet/dashboard')}>Skip</button>
+      <button class="card" style="margin-top: 1rem" on:click={validateAndProceed}>Check
+      </button>
     </div>
   </section>
 {/if}

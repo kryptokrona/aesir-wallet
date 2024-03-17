@@ -45,7 +45,7 @@
       password = '';
       loading = false;
       //Set stored balance to avoid showing zero balance while loading
-      $wallet.balance = [localStorage.getItem('balance'), 0] ?? [0, 0];
+      $wallet.balance = [parseInt(localStorage.getItem('balance')), 0] ?? [0, 0];
       $wallet.started = true;
     });
   });
@@ -106,7 +106,7 @@
   <NodeSelector on:connect={(e) => handleNodeChange(e.detail.node)} />
 {:else}
   <div
-    style="display: flex; flex-direction: column; gap: 4rem;  align-items: center"
+    style="display: flex; flex-direction: column; gap: 2rem;  align-items: center"
     in:fade={{ duration: 200, delay: 400, easing: quadIn }}
   >
     <div />
@@ -120,12 +120,14 @@
         {/if}
       </button>
     </div>
-    <div>
+    <div class="info">
+      <div style="text-align: center">
+        <p>{$wallet.currentWallet}.wallet</p>
+        {#if !$wallet.started}
+          <p class="import" on:click={() => openFromFile()}>Open another wallet</p>
+        {/if}
+      </div>
       <p style="opacity: 50%">v1.0.0</p>
-      <p>{$wallet.currentWallet}.wallet</p>
-      {#if !$wallet.started}
-        <p class="import" on:click={() => openFromFile()}>Open another wallet</p>
-      {/if}
 
       <input
         bind:this={fileList}
@@ -200,5 +202,18 @@
 
   .open {
     opacity: 0;
+  }
+
+  .info {
+    position: absolute;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    align-items: center;
+
+    p{
+      margin: 0;
+    }
   }
 </style>
