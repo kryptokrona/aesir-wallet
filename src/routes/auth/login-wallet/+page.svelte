@@ -127,7 +127,6 @@
           <p class="import" on:click={() => openFromFile()}>Open another wallet</p>
         {/if}
       </div>
-      <p style="opacity: 50%">v1.0.0</p>
 
       <input
         bind:this={fileList}
@@ -206,7 +205,7 @@
 
   .info {
     position: absolute;
-    bottom: 0;
+    bottom: 30px;
     display: flex;
     flex-direction: column;
     gap: 1rem;

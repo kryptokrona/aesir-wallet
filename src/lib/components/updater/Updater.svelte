@@ -10,8 +10,8 @@
     </div>
 {:else if $updater.step === 2}
     <div class="updater" on:click={() => $updater.step++}>
-        <div class="progress" style="width: 78%"></div>
-        <p class="percentage">78%</p>
+        <div class="progress" style="width: {$updater.percentageDownloaded}"></div>
+        <p class="percentage">{$updater.percentageDownloaded}%</p>
     </div>
 {:else if $updater.step === 3}
     <div class="updater" style="cursor: pointer;">
@@ -27,8 +27,8 @@
     align-items: center;
     justify-content: center;
     border-radius: 5px;
-    background-color: var(--button-bg-color);
-    border: 1px solid var(--border-color);
+    background-color: var(--toast-bg-color);
+    border: 1px solid var(--toast-b-color);
     width: 180px;
     height: 40px;
     gap: 0.5rem;
@@ -39,11 +39,6 @@
     transform: translate(-50%);
     color: var(--button-text-color);
     transition: 150ms ease-in-out;
-
-    &:hover {
-      background-color: var(--button-hover-bg-color);
-      color: var(--button-hover-text-color);
-    }
 
     p {
       margin: 0;

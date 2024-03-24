@@ -83,6 +83,11 @@
     --thumbBG: #3337;
     scrollbar-width: thin;
     scrollbar-color: var(--thumbBG) var(--scrollbarBG);
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+
   }
   .transactions::-webkit-scrollbar {
     width: 8px;
@@ -100,11 +105,12 @@
     box-sizing: border-box;
     justify-content: space-between;
     width: 100%;
-    height: 50px;
+    height: 52.1px;
     padding: 0 2rem;
     border-bottom: 1px solid var(--border-color);
     &:hover {
       background-color: var(--border-color);
+      border-bottom: 1px solid transparent;
       cursor: pointer;
     }
     &:active {

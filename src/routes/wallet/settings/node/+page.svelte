@@ -21,7 +21,7 @@
   <div class="gird">
     <div>
       <h4>Node</h4>
-      <h3>{$node.selectedNode.url}</h3>
+      <h3>{$node.selectedNode.url ?? ''}</h3>
     </div>
     <div>
       <h4>Wallet height</h4>
