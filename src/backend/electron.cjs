@@ -286,6 +286,9 @@ ipcMain.on("start-wallet", async (e, walletName, password, node, file) => {
         
         mainWindow.webContents.send("node-status", "Synced");
       } else {
+        if (walletBlockCount === 0) {
+          await walletBackend.reset(networkBlockCount - 100)
+      }
         console.log("********SYNCING********");
         console.log("Wallet ", walletBlockCount);
         console.log("LocalD", localDaemonBlockCount);
