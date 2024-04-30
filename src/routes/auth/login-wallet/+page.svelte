@@ -125,6 +125,7 @@
         <p>{$wallet.currentWallet}.wallet</p>
         {#if !$wallet.started}
           <p class="import" on:click={() => openFromFile()}>Open another wallet</p>
+          <p class="import" on:click={() => goto('/auth/create-wallet')}>Create a new wallet</p>
         {/if}
       </div>
 
@@ -211,7 +212,7 @@
     gap: 1rem;
     align-items: center;
 
-    p{
+    p {
       margin: 0;
     }
   }
