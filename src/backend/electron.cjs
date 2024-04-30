@@ -1,6 +1,6 @@
 const windowStateManager = require("electron-window-state");
 const contextMenu = require("electron-context-menu");
-const { app, BrowserWindow, ipcMain, systemPreferences, powerMonitor, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, systemPreferences, powerMonitor, dialog, globalShortcut } = require("electron");
 const serve = require("electron-serve");
 const path = require("path");
 const WB = require("kryptokrona-wallet-backend-js");
@@ -94,6 +94,16 @@ function createMainWindow() {
   mainWindow.once("close", () => {
     mainWindow = null;
   });
+
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.control && input.key.toLowerCase() === 'r') {
+        event.preventDefault()
+    }
+  })
+
+  mainWindow.setMenu(null)
+
+  globalShortcut.unregisterAll()
 
   if (dev) loadVite(port);
   else serveURL(mainWindow);

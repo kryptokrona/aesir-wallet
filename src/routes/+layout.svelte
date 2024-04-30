@@ -12,6 +12,8 @@
   import { hyper } from '$lib/stores/hyper.js';
   let ready = false;
 
+  document.addEventListener('contextmenu', (event) => event.preventDefault());
+
   onMount(async () => {
     document.documentElement.className = $theme;
 
