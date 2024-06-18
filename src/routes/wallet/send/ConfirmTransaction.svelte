@@ -1,6 +1,6 @@
-<script>
+<script lang="ts">
   import { wallet } from "$lib/stores/wallet.js";
-  import { prettyNumbers } from "$lib/utils/index.js";
+  import { prettyNumbers } from "$lib/helpers";
   import Button from "$lib/components/buttons/Button.svelte";
   import { fade } from 'svelte/transition'
 

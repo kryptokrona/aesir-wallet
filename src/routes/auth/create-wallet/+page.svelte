@@ -7,7 +7,7 @@
   import NodeSelector from '$lib/components/NodeSelector.svelte';
   import { wallet } from '$lib/stores/wallet.js';
   import { node } from '$lib/stores/node.js';
-  import { sleep } from '$lib/utils';
+  import { sleep } from '$lib/helpers';
   import { goto } from '$app/navigation';
 
   let animate = false;
