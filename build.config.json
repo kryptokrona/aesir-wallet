@@ -1,6 +1,6 @@
 {
-  "appId": "org.kryptokrona.yggdrasil",
-  "productName": "Yggdrasil",
+  "appId": "org.kryptokrona.aesir",
+  "productName": "Aesir",
   "directories": {
       "output": "dist"
   },
