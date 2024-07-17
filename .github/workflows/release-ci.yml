@@ -51,7 +51,7 @@ jobs:
           node-version: 18.13.0
 
       - name: Install dependencies
-        run: npm install --quiet
+        run: sudo -H pip install setuptools && npm install --quiet
 
       - name: Build ${{ matrix.config.name }}
         if: matrix.config.os == 'windows-latest'
