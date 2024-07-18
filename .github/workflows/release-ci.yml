@@ -52,11 +52,6 @@ jobs:
             os: macos-latest,
             platform: x64
           }
-          - {
-            name: "macOS arm64",
-            os: macos-latest,
-            platform: arm64
-          }
 
     env:
       PLATFORM: ${{ matrix.config.platform }}
@@ -108,15 +103,26 @@ jobs:
           asset_name: Aesir_${{ env.VERSION }}_amd64.deb
           asset_content_type: application/octet-stream
 
-      - name: Upload Release Asset macOS
+      - name: Upload Release Asset macOS x64
         if: matrix.config.os == 'macos-latest'
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: dist/Aesir-${{ env.VERSION }}-${{ matrix.config.platform }}.dmg
-          asset_name: Aesir_${{ env.VERSION }}_${{ matrix.config.platform }}.dmg
+          asset_path: dist/Aesir-${{ env.VERSION }}.dmg
+          asset_name: Aesir_${{ env.VERSION }}_x64.dmg
+          asset_content_type: application/octet-stream
+
+      - name: Upload Release Asset macOS arm64
+        if: matrix.config.os == 'macos-latest'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: dist/Aesir-${{ env.VERSION }}-arm64.dmg
+          asset_name: Aesir_${{ env.VERSION }}_arm64.dmg
           asset_content_type: application/octet-stream
 
       - name: Upload Release Asset Windows
