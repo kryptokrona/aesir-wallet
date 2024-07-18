@@ -1,7 +1,7 @@
 {
-    "appId": "com.electron.yggdrasil",
-    "name": "yggdrasil",
-    "productName": "Yggdrasil",
+    "appId": "com.electron.aesir",
+    "name": "aesir",
+    "productName": "Aesir",
     "author": "Kryptokrona Developers <info@kryptokrona.org>",
     "email": "info@kryptokrona.org",
     "version": "1.0.0",

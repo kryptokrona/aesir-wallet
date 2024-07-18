@@ -31,6 +31,7 @@ jobs:
   build:
     name: "Build: ${{ matrix.config.name }} / ${{ matrix.config.platform }}"
     runs-on: ${{ matrix.config.os }}
+    needs: [create-release]
 
     strategy:
       fail-fast: true
@@ -95,24 +96,36 @@ jobs:
 
       - name: Check artifacts --DEBUG--
         run: ls dist
-
-      - name: Upload artifact for Windows
-        if: matrix.config.os == 'windows-latest'
-        uses: actions/upload-artifact@v3
-        with:
-          name: Aesir Setup ${{ env.VERSION }}.exe
-          path: dist/Aesir Setup ${{ env.VERSION }}.exe
-
-      - name: Upload artifact for Ubuntu
+        
+      - name: Upload Release Asset Ubuntu
         if: matrix.config.os == 'ubuntu-latest'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: Aesir-${{ env.VERSION }}-amd64.deb
-          path: dist/Aesir-${{ env.VERSION }}-amd64.deb
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: dist/Aesir-${{ env.VERSION }}-amd64.deb
+          asset_name: Aesir-${{ env.VERSION }}-amd64.deb
+          asset_content_type: application/octet-stream
 
-      - name: Upload artifact for macOS ARM
-        if: matrix.config.name == 'macOS Latest'
-        uses: actions/upload-artifact@v3
+      - name: Upload Release Asset macOS
+        if: matrix.config.os == 'macos-latest'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: Aesir-${{ env.VERSION }}-$PLATFORM.dmg
-          path: dist/Aesir-${{ env.VERSION }}-$PLATFORM.dmg
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: dist/Aesir-${{ env.VERSION }}-$PLATFORM.dmg
+          asset_name: Aesir-${{ env.VERSION }}-$PLATFORM.dmg
+          asset_content_type: application/octet-stream
+
+      - name: Upload Release Asset Windows
+        if: matrix.config.os == 'windows-latest'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: dist/Aesir Setup ${{ env.VERSION }}.exe
+          asset_name: Aesir Setup ${{ env.VERSION }}.exe
+          asset_content_type: application/x-msdownload
