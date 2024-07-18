@@ -98,7 +98,7 @@ jobs:
         run: npm run build:mac-$PLATFORM
 
       - name: Check artifacts --DEBUG--
-        run: ls dist
+        run: ls
 
       - name: Upload artifact for Windows
         if: matrix.config.os == 'windows-latest'
