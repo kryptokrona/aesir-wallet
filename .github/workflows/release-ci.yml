@@ -90,15 +90,11 @@ jobs:
         run: npm run build:linux-$PLATFORM
 
       - name: Build ${{ matrix.config.name }}
-        if: matrix.config.name == 'macOS-11'
-        run: npm run build:mac-$PLATFORM
-
-      - name: Build ${{ matrix.config.name }}
-        if: matrix.config.name == 'macOS Latest'
+        if: matrix.config.name == 'macos-latest'
         run: npm run build:mac-$PLATFORM
 
       - name: Check artifacts --DEBUG--
-        run: ls
+        run: ls dist
 
       - name: Upload artifact for Windows
         if: matrix.config.os == 'windows-latest'
