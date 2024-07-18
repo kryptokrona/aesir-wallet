@@ -27,12 +27,12 @@ jobs:
             platform: x64
           }
           - {
-            name: "macOS-11",
-            os: macos-11,
+            name: "macOS-x64",
+            os: macos-latest,
             platform: x64
           }
           - {
-            name: "macOS Latest",
+            name: "macOS arm64",
             os: macos-latest,
             platform: arm64
           }
