@@ -10,9 +10,6 @@
   import { page } from '$app/stores';
   import Updater from '$lib/components/updater/Updater.svelte';
   import { hyper } from '$lib/stores/hyper.js';
-
-  import '../app.css'
-
   let ready = false;
 
   document.addEventListener('contextmenu', (event) => event.preventDefault());

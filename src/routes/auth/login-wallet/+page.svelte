@@ -8,7 +8,7 @@
   import { Moon } from 'svelte-loading-spinners';
   import { wallet } from '$lib/stores/wallet.js';
   import { node } from '$lib/stores/node.js';
-  import { sleep } from '$lib/helpers';
+  import { sleep } from '$lib/utils';
   import { user } from '$lib/stores/user.js';
   import { dev } from '$app/environment';
   import toast from 'svelte-french-toast';

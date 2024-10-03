@@ -1,7 +1,7 @@
 <script>
     // Copyright (c) 2022, The Kryptokrona Developers
     import {fade, fly} from "svelte/transition";
-    import { prettyNumbers } from "$lib/helpers";
+    import { prettyNumbers } from "$lib/utils";
     import {wallet} from "$lib/stores/wallet.js";
 
     let locked

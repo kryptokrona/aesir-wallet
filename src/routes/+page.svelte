@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { sleep } from '$lib/helpers';
+  import { sleep } from '$lib/utils';
   import { node } from '$lib/stores/node.js';
   import { user } from '$lib/stores/user.js';
   import { wallet } from '$lib/stores/wallet.js';

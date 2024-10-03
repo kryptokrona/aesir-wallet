@@ -8,7 +8,7 @@
   import Globe from '$lib/components/icons/Globe.svelte';
   import Warning from '$lib/components/icons/Warning.svelte';
   import { fade, fly } from 'svelte/transition';
-  import { prettyNumbers } from '$lib/helpers';
+  import { prettyNumbers } from '$lib/utils';
   import { fiat } from '$lib/stores/fiat.js';
   import { onMount } from 'svelte';
   import Auto from '$lib/components/icons/Auto.svelte';
