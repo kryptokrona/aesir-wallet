@@ -66,6 +66,12 @@ function createWindow() {
     windowState.saveState(mainWindow);
   });
 
+  
+  if (dev) {
+    console.log('Running in development')
+    mainWindow.openDevTools()
+  }
+
   return mainWindow;
 }
 

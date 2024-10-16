@@ -24,6 +24,7 @@
   function changeTicker(it) {
     let change = true;
     let currency = $fiat.currencies.find((a) => a.ticker === it);
+    if (!currency) currency = $fiat.currencies.find((a) => a.ticker === 'usd');
     if (currency.symbolLocation === 'postfix') change = false;
     return [currency.symbol, change];
   }
@@ -31,6 +32,7 @@
   $: {
     if (showFiat) {
       fiatBalance = (($wallet.balance[0] * $fiat.balance) / 100000).toFixed(5);
+      if (fiatBalance == 'NaN') fiatBalance = 0;
       let [ticker, change] = changeTicker($fiat.ticker);
       if (change) display = ticker + fiatBalance;
       else display = fiatBalance + '///' + ticker.toUpperCase();
