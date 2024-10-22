@@ -134,7 +134,7 @@ jobs:
 
       - name: Notarize macOS App
         if: matrix.config.os == 'macos-latest'
-        run: xcrun notarytool submit --apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$APP_SPECIFIC_PASSWORD" --file dist/Aesir-${{ env.VERSION }}.dmg --wait
+        run: xcrun notarytool submit --apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$APP_SPECIFIC_PASSWORD" --wait dist/Aesir-${{ env.VERSION }}.dmg
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           TEAM_ID: ${{ secrets.TEAM_ID }}
