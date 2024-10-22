@@ -127,8 +127,7 @@ jobs:
       - name: Sign the macOS Application
         if: matrix.config.os == 'macos-latest'
         run: |
-          codesign --deep --force --verify --verbose \
-          --sign "$SIGNING_IDENTITY" dist/Aesir-${{ env.VERSION }}.dmg
+          codesign --deep --force --verify --verbose --sign "$SIGNING_IDENTITY" dist/Aesir-${{ env.VERSION }}.dmg
         env:
           SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
 
