@@ -55,7 +55,7 @@
         "file-saver": "^2.0.5",
         "hyperswarm": "^4.7.7",
         "keytar": "^7.9.0",
-        "kryptokrona-crypto": "^1.0.1",
+        "kryptokrona-crypto": "^1.0.3",
         "kryptokrona-wallet-backend-js": "^2.5.5",
         "lightweight-charts": "^4.1.1",
         "ndjson": "^2.0.0",
