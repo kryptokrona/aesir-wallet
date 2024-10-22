@@ -134,11 +134,12 @@ jobs:
 
       - name: Notarize macOS App
         if: matrix.config.os == 'macos-latest'
-        run: xcrun altool --notarize-app --primary-bundle-id "org.kryptokrona.aesir" --username "$APPLE_ID" --password "$APP_SPECIFIC_PASSWORD" --file dist/Aesir-${{ env.VERSION }}.dmg
+        run: xcrun notarytool --notarize-app --primary-bundle-id "org.kryptokrona.aesir" --apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$APP_SPECIFIC_PASSWORD" --file dist/Aesir-${{ env.VERSION }}.dmg
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
+          TEAM_ID: ${{ secrets.TEAM_ID }}
           APP_SPECIFIC_PASSWORD: ${{ secrets.APP_SPECIFIC_PASSWORD }}
-
+ 
       - name: Staple Notarization
         if: matrix.config.os == 'macos-latest'
         run: xcrun stapler staple dist/Aesir-${{ env.VERSION }}.app
