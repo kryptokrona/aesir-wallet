@@ -134,9 +134,7 @@ jobs:
 
       - name: Notarize macOS App
         if: matrix.config.os == 'macos-latest'
-        run: xcrun altool --notarize-app --primary-bundle-id "org.kryptokrona.aesir" \
-          --username "$APPLE_ID" --password "$APP_SPECIFIC_PASSWORD" \
-          --file dist/Aesir-${{ env.VERSION }}.dmg
+        run: xcrun altool --notarize-app --primary-bundle-id "org.kryptokrona.aesir" --username "$APPLE_ID" --password "$APP_SPECIFIC_PASSWORD" --file dist/Aesir-${{ env.VERSION }}.dmg
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APP_SPECIFIC_PASSWORD: ${{ secrets.APP_SPECIFIC_PASSWORD }}
