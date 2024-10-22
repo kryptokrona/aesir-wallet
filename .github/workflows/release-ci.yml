@@ -134,7 +134,7 @@ jobs:
 
       - name: Notarize macOS App
         if: matrix.config.os == 'macos-latest'
-        run: xcrun notarytool --notarize-app --primary-bundle-id "org.kryptokrona.aesir" --apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$APP_SPECIFIC_PASSWORD" --file dist/Aesir-${{ env.VERSION }}.dmg
+        run: xcrun notarytool --notarize-app --primary-bundle-id "org.kryptokrona.aesir" --apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$APP_SPECIFIC_PASSWORD" --file dist/Aesir-${{ env.VERSION }}.dmg --wait
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           TEAM_ID: ${{ secrets.TEAM_ID }}
