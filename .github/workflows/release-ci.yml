@@ -142,7 +142,7 @@ jobs:
  
       - name: Staple Notarization
         if: matrix.config.os == 'macos-latest'
-        run: xcrun stapler staple dist/Aesir-${{ env.VERSION }}.app
+        run: xcrun stapler staple dist/Aesir-${{ env.VERSION }}.dmg
 
       - name: Check artifacts --DEBUG--
         run: ls dist
