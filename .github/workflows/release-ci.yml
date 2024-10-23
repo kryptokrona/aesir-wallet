@@ -108,7 +108,8 @@ jobs:
           # Apply provisioning profile
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           cp $PP_PATH ~/Library/MobileDevice/Provisioning\ Profiles
-          ls ~/Library/MobileDevice/Provisioning\ Profiles
+          cp $PP_PATH .
+          ls
 
       - name: Install dependencies
         run: npm install --quiet
