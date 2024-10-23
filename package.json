@@ -36,11 +36,7 @@
             }
         ],
         "mac": {
-            "asarUnpack": "./node_modules/node-notifier/vendor/**",
-            "entitlements": "./entitlements.plist",
-            "entitlementsInherit": "./entitlements.plist",
-            "identity": "Developer ID Application: Lukas Nyberg (YT27J42JQ8)",
-            "provisioningProfile": "build_pp.provisionprofile"
+            "asarUnpack": "./node_modules/node-notifier/vendor/**"
         }
     },
     "browserslist": [
