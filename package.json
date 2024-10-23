@@ -27,6 +27,7 @@
         "publish:mac-intel": "cross-env NODE_ENV=production vite build && electron-builder --mac --x64 --config build.config.json -p never"
     },
     "build": {
+        "appId": "org.kryptokrona.aesir",
         "publish": [
             {
                 "provider": "github",
@@ -35,7 +36,11 @@
             }
         ],
         "mac": {
-            "asarUnpack": "./node_modules/node-notifier/vendor/**"
+            "asarUnpack": "./node_modules/node-notifier/vendor/**",
+            "entitlements": "./entitlements.plist",
+            "entitlementsInherit": "./entitlements.plist",
+            "identity": "Developer ID Application: Lukas Nyberg (YT27J42JQ8)",
+            "provisioningProfile": "build_pp.mobileprovision"
         }
     },
     "browserslist": [
