@@ -131,6 +131,9 @@ jobs:
         if: matrix.config.os == 'macos-latest'
         run: npm run build:mac-$PLATFORM
 
+      - name: Check artifacts --DEBUG--
+        run: ls dist
+
       - name: Sign the macOS Application
         if: matrix.config.os == 'macos-latest'
         run: |
@@ -153,9 +156,6 @@ jobs:
       - name: Staple Notarization
         if: matrix.config.os == 'macos-latest'
         run: xcrun stapler staple dist/Aesir-${{ env.VERSION }}.dmg
-
-      - name: Check artifacts --DEBUG--
-        run: ls dist
 
       - name: Upload Release Asset Ubuntu
         if: matrix.config.os == 'ubuntu-latest'
