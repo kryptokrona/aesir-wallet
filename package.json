@@ -40,7 +40,7 @@
             "entitlements": "./entitlements.plist",
             "entitlementsInherit": "./entitlements.plist",
             "identity": "Developer ID Application: Lukas Nyberg (YT27J42JQ8)",
-            "provisioningProfile": "~/Library/MobileDevice/Provisioning Profiles/build_pp.mobileprovision"
+            "provisioningProfile": "build_pp.mobileprovision"
         }
     },
     "browserslist": [
