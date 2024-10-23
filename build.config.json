@@ -18,7 +18,7 @@
     "entitlements": "bin/entitlements.mac.plist",
     "entitlementsInherit": "bin/entitlements.mac.inherit.plist",
     "identity": "Developer ID Application: Lukas Nyberg (YT27J42JQ8)",
-    "provisioningProfile": "61be0696-8d71-4a17-8f96-53c50b8c6fdd.provisionprofile"
+    "provisioningProfile": "61be0696-8d71-4a17-8f96-53c50b8c6fdd.provisionprofile",
     "type": "development",
   },
   "linux": {
