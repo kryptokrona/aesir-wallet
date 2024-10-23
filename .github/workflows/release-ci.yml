@@ -111,7 +111,9 @@ jobs:
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           cp $PP_PATH ~/Library/MobileDevice/Provisioning\ Profiles
           cp $PP_PATH .
+          cp $PP_PATH bin/
           ls
+          ls bin
           security find-identity -p codesigning -v
 
       - name: Install dependencies
