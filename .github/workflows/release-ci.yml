@@ -112,6 +112,7 @@ jobs:
           cp $PP_PATH ~/Library/MobileDevice/Provisioning\ Profiles
           cp $PP_PATH .
           ls
+          security find-identity -p codesigning -v
 
       - name: Install dependencies
         run: npm install --quiet
