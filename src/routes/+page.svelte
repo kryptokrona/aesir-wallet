@@ -14,7 +14,7 @@
     $wallet.wallets = await window.api.getWallets();
     $node.selectedNode = await window.api.getNode();
     $user.touchId = await window.api.checkTouchId();
-
+    if (!localStorage.getItem('fiat')) localStorage.setItem('fiat', 'usd')
     window.api.startApp();
 
     window.api.receive('started-app', async (data) => {
