@@ -135,14 +135,14 @@ jobs:
         run: ls dist
 
       - name: Sign the macOS Application
-        if: matrix.config.os == 'macos-latest'
+        if: matrix.config.os == 'macos-latest-not'
         run: |
           codesign --deep --force --verify --verbose --sign "$SIGNING_IDENTITY" dist/Aesir-${{ env.VERSION }}.dmg
         env:
           SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
 
       - name: Check macOS signature
-        if: matrix.config.os == 'macos-latest'
+        if: matrix.config.os == 'macos-latest-not'
         run: codesign -vvv --deep --strict dist/Aesir-${{ env.VERSION }}.dmg
 
       - name: Notarize macOS App
