@@ -70,6 +70,12 @@
       seedWordsStr = '';
       walletName = '';
       blockHeight = '';
+    } else {
+      toast.error('Cannot connect to node.', {
+        position: 'top-right',
+        style:
+          'border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);',
+      });
     }
   };
 

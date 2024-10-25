@@ -9,6 +9,7 @@
   import { node } from '$lib/stores/node.js';
   import { sleep } from '$lib/utils';
   import { goto } from '$app/navigation';
+  import toast from 'svelte-french-toast';
 
   let animate = false;
   onMount(() => {
@@ -33,12 +34,17 @@
         window.api.walletStart($wallet.currentWallet, password, selectedNode, false);
         password = '';
         walletName = '';
+        $wallet.started = true;
         await sleep(300);
         await goto('/auth/backup-wallet');
       }
+    } else {
+      toast.error('Cannot connect to node.', {
+        position: 'top-right',
+        style:
+          'border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);',
+      });
     }
-
-    $wallet.started = true
   };
 
   const openFromFile = () => {
