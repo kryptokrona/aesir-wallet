@@ -25,6 +25,7 @@ module.exports = async function (params) {
             appPath: appPath,
             appleId: process.env.appleId,
             appleIdPassword: process.env.appleIdPassword,
+            teamId: process.env.teamId,
         });
     } catch (error) {
         console.error(error);
