@@ -1,18 +1,18 @@
-const fs = require('fs');
-const path = require('path');
-let electron_notarize = require('electron-notarize');
+import fs from 'fs';
+import path from 'path';
+import { notarize } from '@electron/notarize';
 
-module.exports = async function (params) {
-    // Only notarize the app on Mac OS only.
+export default async function notarizeApp(params) {
+    // Only notarize the app on macOS.
     if (process.platform !== 'darwin') {
         return;
     }
+    
     console.log('afterSign hook triggered', params);
 
-    // Same appId in electron-builder.
-    let appId = 'org.kryptokrona.hugin'
-
-    let appPath = path.join(params.appOutDir, `${params.packager.appInfo.productFilename}.app`);
+    const appId = 'org.kryptokrona.hugin';
+    
+    const appPath = path.join(params.appOutDir, `${params.packager.appInfo.productFilename}.app`);
     if (!fs.existsSync(appPath)) {
         throw new Error(`Cannot find application at: ${appPath}`);
     }
@@ -20,16 +20,16 @@ module.exports = async function (params) {
     console.log(`Notarizing ${appId} found at ${appPath}`);
 
     try {
-        await electron_notarize.notarize({
+        await notarize({
             appBundleId: appId,
-            appPath: appPath,
-            appleId: process.env.appleId,
-            appleIdPassword: process.env.appleIdPassword,
-            teamId: process.env.teamId,
+            appPath,
+            appleId: process.env.appleId,             // Apple Developer ID
+            appleIdPassword: process.env.appleIdPassword, // App-specific password
+            teamId: process.env.teamId,               // Team ID
         });
     } catch (error) {
-        console.error(error);
+        console.error('Notarization failed:', error);
     }
 
     console.log(`Done notarizing ${appId}`);
-};
+}
