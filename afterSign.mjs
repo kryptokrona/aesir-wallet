@@ -10,7 +10,7 @@ export default async function notarizeApp(params) {
     
     console.log('afterSign hook triggered', params);
 
-    const appId = 'org.kryptokrona.hugin';
+    const appId = 'org.kryptokrona.aesir';
     
     const appPath = path.join(params.appOutDir, `${params.packager.appInfo.productFilename}.app`);
     if (!fs.existsSync(appPath)) {
