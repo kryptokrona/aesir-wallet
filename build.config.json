@@ -1,6 +1,7 @@
 {
   "appId": "org.kryptokrona.aesir",
   "productName": "Aesir",
+  "afterSign": "./afterSign.cjs",
   "directories": {
       "output": "dist"
   },
