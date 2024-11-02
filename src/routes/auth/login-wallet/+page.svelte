@@ -47,8 +47,7 @@
       loading = false;
       //Set stored balance to avoid showing zero balance while loading
       const local = localStorage.getItem('balance');
-
-      $wallet.balance = local ? [local, 0] : [0, 0];
+      $wallet.balance = local ? [parseInt(local), 0] : [0, 0];
       $wallet.started = true;
     });
   });
