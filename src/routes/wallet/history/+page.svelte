@@ -31,7 +31,7 @@
 
 <div class="header">
   <h3 in:fade>History</h3>
-  <p>{page}/{pages}</p>
+  {#if pages > 0}<p>{page}/{pages}</p>{/if}
   <div in:fade>
     {#if pageNum > 0}
       <Button text="-" on:click={() => getTransactions(pageNum--)} />
@@ -87,7 +87,6 @@
     &::-webkit-scrollbar {
       display: none;
     }
-
   }
   .transactions::-webkit-scrollbar {
     width: 8px;

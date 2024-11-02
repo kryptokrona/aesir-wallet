@@ -17,7 +17,7 @@
   let dc;
   let nodePopup = false;
   let fundsPopup = false;
-  let display = 'Loading';
+  let display = 0.0;
   let showFiat = false;
   let fiatBalance;
 
