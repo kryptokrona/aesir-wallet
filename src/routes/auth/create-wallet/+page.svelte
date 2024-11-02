@@ -5,6 +5,7 @@
   import { fade, fly } from 'svelte/transition';
   import Backward from '$lib/components/icons/Backward.svelte';
   import NodeSelector from '$lib/components/NodeSelector.svelte';
+  import Button from '$lib/components/buttons/Button.svelte';
   import { wallet } from '$lib/stores/wallet.js';
   import { node } from '$lib/stores/node.js';
   import { sleep } from '$lib/utils';
@@ -75,9 +76,11 @@
         <ArrowRight green={walletName.length >= 3} />
       </button>
     </div>
-    <p class="import" on:click={() => openFromFile()}>Open file</p>
 
-    <p class="import" on:click={() => goto('/auth/import-wallet')}>Import wallet</p>
+    <p>- or -</p>
+
+    <Button on:click={() => openFromFile()} text="Open" width="105" height="36" />
+    <Button on:click={() => goto('/auth/import-wallet')} text="Import" width="105" height="36" />
 
     <input
       bind:this={fileList}

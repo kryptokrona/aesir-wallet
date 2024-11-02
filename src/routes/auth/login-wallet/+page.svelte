@@ -13,6 +13,7 @@
   import { dev } from '$app/environment';
   import toast from 'svelte-french-toast';
   import NodeSelector from '$lib/components/NodeSelector.svelte';
+  import Button from '$lib/components/buttons/Button.svelte';
 
   let animate = false;
   let loading = false;
@@ -125,8 +126,9 @@
       <div style="text-align: center">
         <p>{$wallet.currentWallet}.wallet</p>
         {#if !$wallet.started}
-          <p class="import" on:click={() => openFromFile()}>Open another wallet</p>
-          <p class="import" on:click={() => goto('/auth/create-wallet')}>Create a new wallet</p>
+          <br />
+          <Button on:click={() => openFromFile()} text="Open another wallet" width="135" height="36" />
+          <Button on:click={() => goto('/auth/create-wallet')} text="Create a new wallet" width="135" height="36" />
         {/if}
       </div>
 
