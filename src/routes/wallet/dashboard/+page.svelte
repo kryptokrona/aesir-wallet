@@ -5,6 +5,7 @@
   import { goto } from '$app/navigation';
   import { createChart } from 'lightweight-charts';
   import { transactions } from '$lib/stores/wallet';
+  import { node } from '$lib/stores/node';
 
   const MAX_PAGES = 2;
   let transactionsList = [];
@@ -14,6 +15,7 @@
   let area;
 
   onMount(async () => {
+    $node.loading = false;
     await formatAndRender(false);
   });
 

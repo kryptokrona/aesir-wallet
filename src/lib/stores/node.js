@@ -6,4 +6,5 @@ export const node = writable({
     localDaemonBlockCount: null,
     networkBlockCount: null,
     nodeStatus: '-',
+    loading: false
 })

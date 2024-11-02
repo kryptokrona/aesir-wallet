@@ -39,6 +39,7 @@
         await goto('/auth/backup-wallet');
       }
     } else {
+      $node.loading = false;
       toast.error('Cannot connect to node.', {
         position: 'top-right',
         style:

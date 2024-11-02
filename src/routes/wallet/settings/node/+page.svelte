@@ -3,11 +3,22 @@
   import { node } from '$lib/stores/node.js';
   import { fade } from 'svelte/transition';
   import Button from '$lib/components/buttons/Button.svelte';
+  import toast from 'svelte-french-toast';
 
   let showSelector = false;
 
   const changeNode = async (e) => {
-    $node.selectedNode = await window.api.changeNode(e.detail.node);
+    const change = await window.api.changeNode(e.detail.node);
+    if (!change) {
+      $node.loading = false;
+      toast.error('Cannot connect to node.', {
+        position: 'top-right',
+        style:
+          'border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);',
+      });
+      return;
+    }
+    $node.selectedNode = change;
     showSelector = false;
   };
 

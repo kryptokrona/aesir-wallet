@@ -52,7 +52,7 @@
 
   const importSeed = async (e, selectedNode = e.detail.node) => {
     $node.selectedNode = selectedNode;
-
+    loading = true;
     if (await window.api.checkNode(selectedNode)) {
       //If you manually enter the words
       if (seedWordsStr === undefined) {
@@ -71,12 +71,14 @@
       walletName = '';
       blockHeight = '';
     } else {
+      $node.loading = false;
       toast.error('Cannot connect to node.', {
         position: 'top-right',
         style:
           'border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);',
       });
     }
+    loading = false;
   };
 
   let meta;

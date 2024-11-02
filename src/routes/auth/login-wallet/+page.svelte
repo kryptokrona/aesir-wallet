@@ -61,6 +61,7 @@
     } else if (!nodeOnline) {
       loading = false;
       password = '';
+      $node.loading = false;
       toast.error('Node error', {
         position: 'top-right',
         style:

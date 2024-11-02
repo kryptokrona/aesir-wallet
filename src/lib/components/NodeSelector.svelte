@@ -34,6 +34,7 @@
   };
 
   const connectTo = () => {
+    $node.loading = true;
     let input = nodeInput;
     if (input.startsWith('http://')) {
       input = input.replace(/(^\w+:|^)\/\//, '');
@@ -60,7 +61,6 @@
     dispatch('connect', {
       node: nodeDetails,
     });
-
     $node.selectedNode = nodeDetails;
   };
 
@@ -136,8 +136,13 @@
         <Auto />
       {/if}
     </button>
-    <button on:click={connectTo}>
-      <ArrowRight green={nodeInput} />
+
+    <button disabled={$node.loading} on:click={connectTo}>
+      {#if $node.loading}
+        <Moon color="#ffffff" size="20" unit="px" />
+      {:else}
+        <ArrowRight green={nodeInput} />
+      {/if}
     </button>
   </div>
   <div class="node-list">
