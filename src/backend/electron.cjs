@@ -210,7 +210,7 @@ let userPassword;
 
 //////// START WALLET
 ipcMain.on("start-wallet", async (e, walletName, password, node, file) => {
-
+  
   if (!daemon) {
     daemon = new WB.Daemon(node.url, node.port);
   }
@@ -235,6 +235,7 @@ ipcMain.on("start-wallet", async (e, walletName, password, node, file) => {
   await walletBackend.start();
   walletBackend.setLogLevel(WB.LogLevel.WARNING);
   walletBackend.enableAutoOptimization(true);
+  walletBackend.scanPoolTransactions(true)
   walletBackend.scanCoinbaseTransactions(true);
 
   const [walletBlockCount, localDaemonBlockCount, networkBlockCount] = walletBackend.getSyncStatus();
@@ -364,7 +365,8 @@ ipcMain.handle("create-wallet", async (e, walletName, password, node) => {
     let height;
 
     try {
-      const req = await fetch(`http://${node.url}:${node.port}/getinfo`);
+      const req = await fetch(`http://${node.url}:${node.port}/getinfo`)
+
       if (!req.ok) {
         return reject("error");
       }
@@ -534,24 +536,31 @@ ipcMain.handle("get-node", async (e) => {
 });
 
 ipcMain.handle("check-node", async (e, node) => {
-    try {
-      const req = await fetch(`${node.ssl ? 'https://' : 'http://' }${node.url}:${node.port}/getinfo`);
-      if (!req.ok) {
-        return false
-      }
+ return await checkNode(node)
+});
 
-      const res = await req.json();
-
-      return res.status === "OK";
-
-    } catch (e) {
-      console.log(e);
+async function checkNode(node) {
+  try {
+    const req = await fetch(`${node.ssl ? 'https://' : 'http://' }${node.url}:${node.port}/getinfo`);
+      
+    if (!req.ok) {
       return false
     }
-});
+
+    const res = await req.json();
+
+    return res.status === "OK";
+
+  } catch (e) {
+    console.log(e);
+    return false
+  }
+}
 
 ipcMain.handle('change-node', async (e, node) => {
   console.log('SETTING', node);
+  const check = await checkNode(node)
+  if (!check) return false
   daemon = new WB.Daemon(node.url, node.port, node.ssl)
   await walletBackend.swapNode(daemon)
   nodes.set("node", { url: node.url, port: node.port, ssl: node.ssl });
