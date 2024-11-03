@@ -38,7 +38,7 @@
     for (const tx in transactionsList) {
       const thisTx = transactionsList[tx];
       runningBalance += thisTx.amount;
-      let dateFormatted = new Date(thisTx.time * 1000).toISOString();
+      let dateFormatted = new Date(thisTx.time * 1000).toISOString().split('T')[0];
       let formattedTx = { time: dateFormatted, value: runningBalance / 100000 };
       data.push(formattedTx);
     }
@@ -124,7 +124,7 @@
     $transactions = $transactions;
     transactionsList.reverse();
     dates = transactionsList.map((t) => new Date(t.time * 1000).toLocaleString());
-    dates = dates;
+    dates = [...new Set(dates.map((dateTime) => dateTime.split(' ')[0]))];
   }
 </script>
 
