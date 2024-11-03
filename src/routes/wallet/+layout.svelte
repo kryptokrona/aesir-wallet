@@ -12,10 +12,8 @@
     $node.walletBlockCount = data.walletBlockCount;
 
     //Check to avoid triggering UI update if the balance is the same
-    if (localStorage.getItem('balance')) {
-      if (data.balance[0] != localStorage.getItem('balance')) {
-        $wallet.balance = data.balance;
-      }
+    if (data.balance[0] != localStorage.getItem('balance')) {
+      $wallet.balance = data.balance;
     }
 
     $user.idleTime = data.idle ?? 0;

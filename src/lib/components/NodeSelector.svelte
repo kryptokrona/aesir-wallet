@@ -30,6 +30,7 @@
   const dispatch = new createEventDispatcher();
 
   const back = () => {
+    $node.loading = false;
     dispatch('back');
   };
 

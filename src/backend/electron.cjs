@@ -541,7 +541,7 @@ ipcMain.handle("check-node", async (e, node) => {
 
 async function checkNode(node) {
   try {
-    const req = await fetch(`${node.ssl ? 'https://' : 'http://' }${node.url}:${node.port}/getinfo`);
+    const req = await fetchTimeout(`${node.ssl ? 'https://' : 'http://' }${node.url}:${node.port}/getinfo`);
       
     if (!req.ok) {
       return false
@@ -604,6 +604,15 @@ function toHex(str, hex) {
     //console.log('invalid text input: ' + str)
   }
   return hex;
+}
+
+function fetchTimeout(url, options = {}, timeout = 2000) {
+  return Promise.race([
+      fetch(url, options),
+      new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), timeout)
+      )
+  ]);
 }
 
 ipcMain.handle("get-contacts", async e => {
