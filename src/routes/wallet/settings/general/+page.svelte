@@ -1,11 +1,11 @@
 <script>
-  import { fiat, getCoinPriceFromAPI } from "$lib/stores/fiat.js";
+  import { fiat, getCoinPriceFromAPI } from '$lib/stores/fiat.js';
 
   const fiatList = $fiat.currencies;
 
   function pick(it) {
     $fiat.ticker = it;
-    localStorage.setItem("fiat", it);
+    localStorage.setItem('fiat', it);
     getCoinPriceFromAPI();
   }
 </script>
@@ -18,7 +18,9 @@
     <div class="body">
       <div class="list">
         {#each fiatList.reverse() as currency}
-          <p class:selected={$fiat.ticker === currency.ticker} on:click={() => pick(currency.ticker)}>{currency.coinName}</p>
+          <p class:selected={$fiat.ticker === currency.ticker} on:click={() => pick(currency.ticker)}>
+            {currency.coinName}
+          </p>
         {/each}
       </div>
     </div>
@@ -47,7 +49,7 @@
   .card {
     border: 1px solid var(--border-color);
     border-radius: 5px;
-    height: 200px;
+    height: 400px;
 
     .header {
       padding: 15px;
@@ -64,7 +66,7 @@
       }
 
       .selected {
-        color: var(--primary-color)
+        color: var(--primary-color);
       }
     }
   }
