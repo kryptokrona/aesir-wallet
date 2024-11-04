@@ -130,17 +130,17 @@
           <br />
           <Button on:click={() => openFromFile()} text="Open" width="135" height="36" />
           <Button on:click={() => goto('/auth/create-wallet')} text="Create" width="135" height="36" />
+
+          <input
+            bind:this={fileList}
+            bind:files
+            class="open"
+            type="file"
+            on:change={() => selectedFile()}
+            style="width: 0;"
+          />
         {/if}
       </div>
-
-      <input
-        bind:this={fileList}
-        bind:files
-        class="open"
-        type="file"
-        on:change={() => selectedFile()}
-        style="width: 0;"
-      />
     </div>
   </div>
 {/if}
