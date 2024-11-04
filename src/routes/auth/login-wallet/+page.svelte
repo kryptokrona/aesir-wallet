@@ -128,8 +128,8 @@
         <p>{$wallet.currentWallet}.wallet</p>
         {#if !$wallet.started}
           <br />
-          <Button on:click={() => openFromFile()} text="Open another wallet" width="135" height="36" />
-          <Button on:click={() => goto('/auth/create-wallet')} text="Create a new wallet" width="135" height="36" />
+          <Button on:click={() => openFromFile()} text="Open" width="135" height="36" />
+          <Button on:click={() => goto('/auth/create-wallet')} text="Create" width="135" height="36" />
         {/if}
       </div>
 
