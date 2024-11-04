@@ -45,12 +45,8 @@
 
     const summarizedData = Object.values(
       data.reduce((acc, entry) => {
-        const date = entry.time.split('T')[0]; // Extract only the date part
-        // If the date is not in acc or the current entry has a later time, update the entry
-        if (!acc[date] || entry.time > acc[date].time) {
-          acc[date] = entry;
-        }
-
+        const date = entry.time;
+        acc[date] = entry;
         return acc;
       }, {}),
     );
@@ -91,17 +87,71 @@
         crossHairMarkerVisible: false,
         lineType: 2,
         priceLineVisible: false,
-        lineVisible: false,
+        lineVisible: true,
       });
 
       return [newChart, areaSeries];
     }
 
     area.priceScale().applyOptions({ visible: false });
-    chart.timeScale().applyOptions({ borderColor: border_color });
-
+    chart.timeScale().applyOptions({ borderColor: border_color, visible: false });
     area.setData(summarizedData);
+
     chart.timeScale().fitContent();
+
+    const container = document.getElementById('transactions-chart');
+
+    const toolTipWidth = 80;
+    const toolTipHeight = 0;
+    const toolTipMargin = 15;
+
+    // Create and style the tooltip html element
+    const toolTip = document.createElement('div');
+
+    toolTip.style = `width: fit-content; height: 75px; position: absolute; display: none; padding: 8px; box-sizing: border-box; font-size: 12px; text-align: left; z-index: 1000; top: 12px; left: 12px; pointer-events: none; border: 1px solid; border-radius: 2px;font-family: -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;`;
+    toolTip.style.background = getComputedStyle(document.documentElement).getPropertyValue('--backgound-color');
+    toolTip.style.color = getComputedStyle(document.documentElement).getPropertyValue('--primary-color');
+    toolTip.style.borderColor = getComputedStyle(document.documentElement).getPropertyValue('--border-color');
+    container.appendChild(toolTip);
+
+    // update tooltip
+    chart.subscribeCrosshairMove((param) => {
+      if (
+        param.point === undefined ||
+        !param.time ||
+        param.point.x < 0 ||
+        param.point.x > container.clientWidth ||
+        param.point.y < 0 ||
+        param.point.y > container.clientHeight
+      ) {
+        toolTip.style.display = 'none';
+      } else {
+        // time will be in the same format that we supplied to setData.
+        // thus it will be YYYY-MM-DD
+        const dateStr = param.time;
+        toolTip.style.display = 'block';
+        const data = param.seriesData.get(area);
+        const price = data.value !== undefined ? data.value : data.close;
+        toolTip.innerHTML = `<div style='font-family: "Roboto Mono", monospace; font-size: 24px; margin: 4px 0px;'>
+          ${Math.round(100 * price) / 100}
+          </div><div style="color: ${getComputedStyle(document.documentElement).getPropertyValue('--text-color')}">
+          ${dateStr}
+          </div>`;
+
+        const coordinate = area.priceToCoordinate(price);
+        let shiftedCoordinate = param.point.x - 50;
+        if (coordinate === null) {
+          return;
+        }
+        shiftedCoordinate = Math.max(0, Math.min(container.clientWidth - toolTipWidth, shiftedCoordinate));
+        const coordinateY =
+          coordinate - toolTipHeight - toolTipMargin > 0
+            ? coordinate - toolTipHeight - toolTipMargin
+            : Math.max(0, Math.min(container.clientHeight - toolTipHeight - toolTipMargin, coordinate + toolTipMargin));
+        toolTip.style.left = shiftedCoordinate + 'px';
+        toolTip.style.top = coordinateY + 'px';
+      }
+    });
   }
 
   async function getTransactions(transactionsList, pageNum) {
@@ -109,12 +159,13 @@
     let txs = await window.api.getTransactions(startIndex, true);
     transactionsList = transactionsList.concat(txs.pageTx);
     $transactions.txs = transactionsList;
+    console.log(transactionsList.latest);
     return transactionsList;
   }
 
   async function formatTransactions() {
     transactionsList = await getTransactions([], 0);
-    $transactions.latest = transactionsList.slice(0, Math.min(4, transactionsList.length));
+    $transactions.latest = transactionsList.slice(0, Math.min(6, transactionsList.length));
     //Add pending to list
     if ($transactions.pending.length) {
       $transactions.pending.forEach((tx) => {
@@ -134,7 +185,7 @@
       <h3 in:fade>Dashboard</h3>
     </div>
     {#if dates.length > 2}
-      <div bind:this={txChart} id="transactions-chart" style="width: 100%; height: 300px" />
+      <div bind:this={txChart} id="transactions-chart" style="width: 100%; height: 220px" />
     {/if}
     {#if dates.length > 0}
       <div class="transactions">
@@ -189,6 +240,8 @@
     height: 50px;
     padding: 0 2rem;
     border-bottom: 1px solid var(--border-color);
+    vertical-align: middle;
+    line-height: 1em;
     &:hover {
       background-color: var(--border-color);
       cursor: pointer;
@@ -196,6 +249,10 @@
     &:active {
       color: #121212;
     }
+  }
+
+  .row:last-of-type {
+    border-bottom: none;
   }
 
   .unconfirmed {
