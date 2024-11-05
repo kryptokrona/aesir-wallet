@@ -430,7 +430,7 @@ async function logIntoWallet(walletName, password) {
   if (error) {
     console.log("Failed to open wallet: " + error.toString());
     mainWindow.webContents.send("wrong-password");
-    return [false];
+    return false;
   } else {
     loggedIn = true;
     successMessage('Starting wallet...')
