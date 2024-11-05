@@ -17,7 +17,7 @@
         "dev:svelte": "vite dev",
         "dev:electron": "electron src/backend/electron.cjs",
         "build": "cross-env NODE_ENV=production npm run build:svelte && npm run build:electron",
-        "postinstall": "patch-package",
+        "postinstall": "patch-package && electron-rebuild",
         "build:svelte": "vite build",
         "build:electron": "electron-builder -mwl --config build.config.json",
         "build:win-x64": "cross-env NODE_ENV=production vite build && electron-builder --win --x64 --config build.config.json -p never",
