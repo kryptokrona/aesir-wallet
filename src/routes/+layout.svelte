@@ -10,6 +10,7 @@
   import { page } from '$app/stores';
   import Updater from '$lib/components/updater/Updater.svelte';
   import { hyper } from '$lib/stores/hyper.js';
+  import { transactions } from '$lib/stores/wallet';
   let ready = false;
 
   document.addEventListener('contextmenu', (event) => event.preventDefault());
@@ -95,6 +96,41 @@
       $hyper.messages = knownMessages;
     });
   });
+
+  window.api.receive('incoming-tx', (tx, val) => {
+    //Delete from pending list on dashboard
+    if ($transactions.pending.some((a) => a.hash === tx.hash)) {
+      deletePendingTx(tx.hash);
+    }
+
+    let transaction = {
+      amount: val,
+      hash: tx.hash,
+      time: tx.timestamp,
+      height: tx.blockHeight,
+      confirmed: true,
+    };
+
+    if ($page.url.pathname === '/wallet/dashboard') {
+      //Add to dashboard to update latest four txs.
+      $transactions.latest.unshift(transaction);
+    }
+    //Add to history page
+    $transactions.txs.unshift(transaction);
+    updateTxs();
+  });
+
+  function updateTxs() {
+    $transactions = $transactions;
+    console.log('$transactions.latest', $transactions.latest);
+  }
+
+  function deletePendingTx(hash) {
+    $transactions.latest = $transactions.latest.filter((a) => a.hash !== hash);
+    $transactions.pending = $transactions.pending.filter((a) => a.hash !== hash);
+    $transactions.txs = $transactions.txs.filter((a) => a.hash !== hash);
+    updateTxs();
+  }
 
   $: if ($user.idleTime >= 300) goto('/auth/login-wallet');
 </script>
