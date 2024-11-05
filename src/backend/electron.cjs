@@ -224,7 +224,7 @@ ipcMain.on("start-wallet", async (e, walletName, password, node, file) => {
   //Save opened wallet file path if we did not create a new one on first start and name it if it's not known
   if (file) {
     if (!knownWallets.some(a => a.wallet === walletName)) {
-      knownWallets.unshift({ wallet: walletName.toLowerCase(), path: file });
+      knownWallets.unshift({ wallet: walletName, path: file });
       wallets.set("wallets", knownWallets);
     }
   }
@@ -356,7 +356,7 @@ ipcMain.handle("create-wallet", async (e, walletName, password, node) => {
       daemon = new WB.Daemon(node.url, node.port, node.ssl);
     }
 
-    walletName = walletName.toLowerCase()
+    walletName = walletName
 
     walletBackend = await WB.WalletBackend.createWallet(daemon);
 
@@ -411,7 +411,7 @@ const verifyPassword = async (password) => {
 async function saveWalletInfo(walletName) {
   let walletPath = userDataDir + "/" + walletName + ".wallet"
   let knownWallets = await getMyWallets()
-  knownWallets.unshift({ wallet: walletName.toLowerCase(), path: walletPath });
+  knownWallets.unshift({ wallet: walletName, path: walletPath });
   await wallets.set("wallets", knownWallets);
   return walletPath
 }
