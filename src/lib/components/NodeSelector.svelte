@@ -52,10 +52,16 @@
         ssl: true,
       };
     } else {
+      const thisNode = nodeList.find((a) => a.url === input.split(':')[0] && a.port === parseInt(input.split(':')[1]));
+      if (!thisNode) {
+        window.api.errorMessage('Add http/https to your link');
+        $node.loading = false;
+        return;
+      }
       nodeDetails = {
-        url: input.split(':')[0] ?? input,
-        port: parseInt(input.split(':')[1]) ?? '',
-        ssl: undefined,
+        url: thisNode.url,
+        port: parseInt(thisNode.port),
+        ssl: thisNode.ssl,
       };
     }
 
