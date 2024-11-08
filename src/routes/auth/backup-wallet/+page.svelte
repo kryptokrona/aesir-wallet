@@ -1,54 +1,56 @@
 <script>
-  import { onMount } from "svelte"
-  import { fade, fly } from "svelte/transition"
-  import { goto } from "$app/navigation"
-  import toast from "svelte-french-toast"
-  import { wallet } from "$lib/stores/wallet.js"
-  import { saveAs } from "file-saver"
+  import { onMount } from 'svelte';
+  import { fade, fly } from 'svelte/transition';
+  import { goto } from '$app/navigation';
+  import toast from 'svelte-french-toast';
+  import { wallet } from '$lib/stores/wallet.js';
+  import { saveAs } from 'file-saver';
 
-  let step = 1
-  let seedWords
-  let seedWordsArray
-  let randomNumbersArray = new Set()
+  let step = 1;
+  let seedWords;
+  let seedWordsArray;
+  let randomNumbersArray = new Set();
 
-  let checkArray = new Array(8).fill({ "word": "" })
+  let checkArray = Array(8)
+    .fill(null)
+    .map(() => ({ word: '' }));
 
   const toastStyle = {
-    position: "top-right",
-    style: "border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color)"
-  }
+    position: 'top-right',
+    style:
+      'border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color)',
+  };
 
-  const checkAllWords = () => [...randomNumbersArray].every((num, i) => checkArray[i].word === seedWordsArray[num - 1])
+  const checkAllWords = () => [...randomNumbersArray].every((num, i) => checkArray[i].word === seedWordsArray[num - 1]);
 
   const validateAndProceed = () => {
     if (checkAllWords()) {
-      toast.success("Success!", toastStyle)
-      goto('/wallet/dashboard')
+      toast.success('Success!', toastStyle);
+      goto('/wallet/dashboard');
     } else {
-      toast.error("Some words are incorrect. Please check and try again.", toastStyle)
+      toast.error('Some words are incorrect. Please check and try again.', toastStyle);
     }
-  }
+  };
 
   onMount(async () => {
-    seedWords = await window.api.getSeed()
-    seedWordsArray = seedWords.split(" ")
+    seedWords = await window.api.getSeed();
+    seedWordsArray = seedWords.split(' ');
     while (randomNumbersArray.size < 8) {
-      randomNumbersArray.add(Math.floor(Math.random() * 10) + 1)
+      randomNumbersArray.add(Math.floor(Math.random() * 10) + 1);
     }
-    randomNumbersArray = [...randomNumbersArray]
-  })
+    randomNumbersArray = [...randomNumbersArray];
+  });
 
   const copy = () => {
-    navigator.clipboard.writeText(seedWords)
-    toast.success("Copied", toastStyle)
-  }
+    navigator.clipboard.writeText(seedWords);
+    toast.success('Copied', toastStyle);
+  };
 
   const exportTxt = () => {
-    const blob = new Blob([`Seed for wallet ${$wallet.currentWallet}: ${seedWords}`], { type: "text/plain" })
-    saveAs(blob, `wallet-${$wallet.currentWallet}`)
-  }
+    const blob = new Blob([`Seed for wallet ${$wallet.currentWallet}: ${seedWords}`], { type: 'text/plain' });
+    saveAs(blob, `wallet-${$wallet.currentWallet}`);
+  };
 </script>
-
 
 {#if step === 1}
   <section in:fade>
@@ -58,7 +60,7 @@
         <div style="display: flex; flex-direction: column; align-items: center">
           <p style="margin-bottom: 5px">{i + 1}</p>
           <div class="card">
-            <p in:fly={{y: 20, delay: i * 30}}>{word}</p>
+            <p in:fly={{ y: 20, delay: i * 30 }}>{word}</p>
           </div>
         </div>
       {/each}
@@ -74,15 +76,18 @@
       {#each randomNumbersArray ?? [] as number, i}
         <div style="display: flex; flex-direction: column; align-items: center">
           <p style="margin-bottom: 5px">{number}</p>
-          <input id={i} class="card" class:correct={checkArray[i].word === seedWordsArray[number - 1]}
-                 bind:value={checkArray[i].word}>
+          <input
+            id={i}
+            class="card"
+            class:correct={checkArray[i].word === seedWordsArray[number - 1]}
+            bind:value={checkArray[i].word}
+          />
         </div>
       {/each}
       <button class="card" style="margin-top: 1rem" on:click={() => step--}>Back</button>
       <div />
       <button class="card" style="margin-top: 1rem" on:click={() => goto('/wallet/dashboard')}>Skip</button>
-      <button class="card" style="margin-top: 1rem" on:click={validateAndProceed}>Check
-      </button>
+      <button class="card" style="margin-top: 1rem" on:click={validateAndProceed}>Check</button>
     </div>
   </section>
 {/if}
