@@ -60,7 +60,8 @@ jobs:
 
     env:
       PLATFORM: ${{ matrix.config.platform }}
-      VERSION: ${{ github.ref_name }}  # This extracts the tag name
+      VERSION: ${{ github.ref_name }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Check out Git repository
