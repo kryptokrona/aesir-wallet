@@ -1,27 +1,39 @@
 <script>
-    import { fly } from 'svelte/transition'
-    import {updater} from "$lib/stores/updater.js";
+  import { fly } from 'svelte/transition';
+  import { updater } from '$lib/stores/updater.js';
 
+  const update = () => {
+    $updater.step++;
+    window.api.send('download-update');
+  };
+
+  const install = () => {
+    window.api.send('install-update');
+  };
+
+  $: {
+    if ($updater.percentageDownloaded === 100) {
+      $updater.step++;
+    }
+  }
 </script>
 
 {#if $updater.step === 1}
-    <div class="updater" style="cursor: pointer;" in:fly={{delay: 500, y: 50}} on:click={() => $updater.step++}>
-        <p>Update available</p>
-    </div>
+  <div class="updater" style="cursor: pointer;" in:fly={{ delay: 500, y: 50 }} on:click={() => update()}>
+    <p>Update available</p>
+  </div>
 {:else if $updater.step === 2}
-    <div class="updater" on:click={() => $updater.step++}>
-        <div class="progress" style="width: {$updater.percentageDownloaded}"></div>
-        <p class="percentage">{$updater.percentageDownloaded}%</p>
-    </div>
+  <div class="updater">
+    <div class="progress" style="width: {$updater.percentageDownloaded}"></div>
+    <p class="percentage">{$updater.percentageDownloaded}%</p>
+  </div>
 {:else if $updater.step === 3}
-    <div class="updater" style="cursor: pointer;">
-        <p>Install update</p>
-    </div>
+  <div class="updater" style="cursor: pointer;" on:click={() => install()}>
+    <p>Install update</p>
+  </div>
 {/if}
 
-
 <style lang="scss">
-
   .updater {
     display: flex;
     align-items: center;
