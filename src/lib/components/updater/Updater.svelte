@@ -28,9 +28,11 @@
 
 <div in:fade={{ duration: 100 }} out:fade={{ duration: 100 }} class="backdrop">
   {#if $updater.step === 1}
-    <h2>Update available🚀</h2>
-    <Button on:click={() => update()} text="Update" width="180" height="40" />
+    <h2>Update available</h2>
     <div>
+      <Button on:click={() => update()} text="Update" width="180" height="40" />
+      <br />
+      <br />
       <Button on:click={() => hide()} text="Later" width="180" height="40" />
     </div>
   {:else if $updater.step === 2}
