@@ -31,7 +31,7 @@
     <div class="updater" style="cursor: pointer;" in:fly={{ delay: 500, y: 50 }} on:click={() => update()}>
       <p>Update available</p>
     </div>
-    <Button on:click={() => hide()} text="Later" width="135" height="36" />
+    <Button on:click={() => hide()} text="Later" width="180" height="40" />
   {:else if $updater.step === 2}
     <div class="updater">
       <div class="progress" style="width: {$updater.percentageDownloaded}"></div>
