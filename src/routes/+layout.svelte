@@ -10,7 +10,8 @@
   import { page } from '$app/stores';
   import Updater from '$lib/components/updater/Updater.svelte';
   import { hyper } from '$lib/stores/hyper.js';
-  import { transactions } from '$lib/stores/wallet';
+  import { transactions, wallet } from '$lib/stores/wallet';
+  import Verify from '$lib/components/Verify.svelte';
   let ready = false;
 
   document.addEventListener('contextmenu', (event) => event.preventDefault());
@@ -144,6 +145,10 @@
   {#if $updater.showPopup}
     <Updater on:hide={() => ($updater.showPopup = false)} />
   {/if}
+{/if}
+
+{#if $wallet.verify}
+  <Verify />
 {/if}
 
 <style lang="scss">
