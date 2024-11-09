@@ -1,5 +1,5 @@
 <script>
-  import { fly } from 'svelte/transition';
+  import { fade, fly } from 'svelte/transition';
   import { updater } from '$lib/stores/updater.js';
   import { createEventDispatcher, onMount } from 'svelte';
 
