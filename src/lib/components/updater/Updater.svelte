@@ -36,7 +36,7 @@
       <Button on:click={() => hide()} text="Later" width="180" height="40" />
     </div>
   {:else if $updater.step === 2}
-    <div class="updater" in:fade>
+    <div class="updater" in:fly={{ x: -100 }} out:fly={{ x: 100 }}>
       <div class="goal">
         <h4>
           {$updater.percentageDownloaded === 100
