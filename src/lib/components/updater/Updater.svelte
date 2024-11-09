@@ -25,20 +25,22 @@
   };
 </script>
 
-{#if $updater.step === 1}
-  <div class="updater" style="cursor: pointer;" in:fly={{ delay: 500, y: 50 }} on:click={() => update()}>
-    <p>Update available</p>
-  </div>
-{:else if $updater.step === 2}
-  <div class="updater">
-    <div class="progress" style="width: {$updater.percentageDownloaded}"></div>
-    <p class="percentage">{$updater.percentageDownloaded}%</p>
-  </div>
-{:else if $updater.step === 3}
-  <div class="updater" style="cursor: pointer;" on:click={() => install()}>
-    <p>Install update</p>
-  </div>
-{/if}
+<div in:fade={{ duration: 100 }} out:fade={{ duration: 100 }} class="backdrop" on:click={() => hide()}>
+  {#if $updater.step === 1}
+    <div class="updater" style="cursor: pointer;" in:fly={{ delay: 500, y: 50 }} on:click={() => update()}>
+      <p>Update available</p>
+    </div>
+  {:else if $updater.step === 2}
+    <div class="updater">
+      <div class="progress" style="width: {$updater.percentageDownloaded}"></div>
+      <p class="percentage">{$updater.percentageDownloaded}%</p>
+    </div>
+  {:else if $updater.step === 3}
+    <div class="updater" style="cursor: pointer;" on:click={() => install()}>
+      <p>Install update</p>
+    </div>
+  {/if}
+</div>
 
 <style lang="scss">
   .updater {
