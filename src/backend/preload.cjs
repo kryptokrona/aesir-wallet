@@ -25,6 +25,9 @@ contextBridge.exposeInMainWorld("api", {
     return ipcRenderer.invoke("check-touchId");
   },
 
+  verifyPass: async (password) => {
+    return await ipcRenderer.invoke('verify-pass', password)
+},
 
   getNode: async () => {
     return await ipcRenderer.invoke("get-node");

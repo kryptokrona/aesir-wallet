@@ -408,6 +408,15 @@ const verifyPassword = async (password) => {
   }
 };
 
+const checkPass = async (password) => {
+  const passHash = await crypto.cn_fast_hash(toHex(password));
+  if (passHash === userPassword) {
+    return true
+  } else {
+    return false
+  }
+}
+
 async function saveWalletInfo(walletName) {
   let walletPath = userDataDir + "/" + walletName + ".wallet"
   let knownWallets = await getMyWallets()
@@ -522,6 +531,11 @@ ipcMain.handle("get-seed", async (e) => {
     return false;
   }
 });
+
+ipcMain.handle('verify-pass', async (e, password) => {
+  return await checkPass(password)
+})
+
 
 ipcMain.handle('get-privkeys', async () => {
   return walletBackend.getPrimaryAddressPrivateKeys()

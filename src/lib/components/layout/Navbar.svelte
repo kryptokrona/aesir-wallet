@@ -10,6 +10,7 @@
   import Logo from '$lib/components/icons/Logo.svelte';
   import Contacts from '$lib/components/icons/Navbar/Contacts.svelte';
   import Tooltip from '../Tooltip.svelte';
+  import { wallet } from '$lib/stores/wallet';
 </script>
 
 <nav in:fade>
@@ -55,7 +56,7 @@
       </button>
     </Tooltip>
     <Tooltip title="Wallet backup" stylized={true}>
-      <button on:click={() => goto('/auth/backup-wallet')}>
+      <button on:click={() => ($wallet.verify = true)}>
         <Logo size="22" />
       </button>
     </Tooltip>
