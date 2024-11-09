@@ -15,7 +15,7 @@
 
   $: {
     if ($updater.percentageDownloaded === 100) {
-      $updater.step++;
+      $updater.step = 3;
     }
   }
 
