@@ -1,6 +1,7 @@
 <script>
   import { fly } from 'svelte/transition';
   import { updater } from '$lib/stores/updater.js';
+  import { createEventDispatcher, onMount } from 'svelte';
 
   const update = () => {
     $updater.step++;
@@ -16,6 +17,12 @@
       $updater.step++;
     }
   }
+
+  const dispatch = new createEventDispatcher();
+
+  const hide = () => {
+    dispatch('hide');
+  };
 </script>
 
 {#if $updater.step === 1}
@@ -45,7 +52,7 @@
     height: 40px;
     gap: 0.5rem;
     position: absolute;
-    bottom: 30px;
+    bottom: 200px;
     left: 50%;
     right: 50%;
     transform: translate(-50%);
@@ -68,5 +75,20 @@
   .percentage {
     position: absolute;
     font-weight: 600;
+  }
+
+  .backdrop {
+    position: fixed;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background-color: var(--backdrop-color);
+    backdrop-filter: blur(8px);
+    z-index: 103;
+    border-radius: 15px;
   }
 </style>

@@ -142,7 +142,7 @@
     <slot />
   </main>
   {#if $updater.showPopup}
-    <Updater />
+    <Updater on:hide={() => ($updater.showPopup = false)} />
   {/if}
 {/if}
 
