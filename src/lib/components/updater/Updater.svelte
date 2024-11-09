@@ -2,6 +2,7 @@
   import { fade, fly } from 'svelte/transition';
   import { updater } from '$lib/stores/updater.js';
   import { createEventDispatcher, onMount } from 'svelte';
+  import Button from '$lib/components/buttons/Button.svelte';
 
   const update = () => {
     $updater.step++;
@@ -25,11 +26,12 @@
   };
 </script>
 
-<div in:fade={{ duration: 100 }} out:fade={{ duration: 100 }} class="backdrop" on:click={() => hide()}>
+<div in:fade={{ duration: 100 }} out:fade={{ duration: 100 }} class="backdrop">
   {#if $updater.step === 1}
     <div class="updater" style="cursor: pointer;" in:fly={{ delay: 500, y: 50 }} on:click={() => update()}>
       <p>Update available</p>
     </div>
+    <Button on:click={() => hide()} text="Later" width="135" height="36" />
   {:else if $updater.step === 2}
     <div class="updater">
       <div class="progress" style="width: {$updater.percentageDownloaded}"></div>
