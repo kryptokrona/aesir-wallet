@@ -28,18 +28,30 @@
 
 <div in:fade={{ duration: 100 }} out:fade={{ duration: 100 }} class="backdrop">
   {#if $updater.step === 1}
-    <div class="updater" style="cursor: pointer;" in:fly={{ delay: 500, y: 50 }} on:click={() => update()}>
-      <p>Update available</p>
+    <h2>Update available🚀</h2>
+    <Button on:click={() => update()} text="Update" width="180" height="40" />
+    <div>
+      <Button on:click={() => hide()} text="Later" width="180" height="40" />
     </div>
-    <Button on:click={() => hide()} text="Later" width="180" height="40" />
   {:else if $updater.step === 2}
-    <div class="updater">
-      <div class="progress" style="width: {$updater.percentageDownloaded}"></div>
-      <p class="percentage">{$updater.percentageDownloaded}%</p>
+    <div class="updater" in:fade>
+      <div class="goal">
+        <h4>
+          {$updater.percentageDownloaded === 100
+            ? $updater.percentageDownloaded.toFixed(0)
+            : $updater.percentageDownloaded.toFixed()}%
+        </h4>
+        <div
+          class="progress"
+          class:stripes={$updater.percentageDownloaded !== 100}
+          class:synced={$updater.percentageDownloaded === 100}
+          style="width: {$updater.percentageDownloaded}%;"
+        ></div>
+      </div>
     </div>
   {:else if $updater.step === 3}
-    <div class="updater" style="cursor: pointer;" on:click={() => install()}>
-      <p>Install update</p>
+    <div class="updater" style="cursor: pointer;">
+      <Button on:click={() => install()} text="Install" width="180" height="40" />
     </div>
   {/if}
 </div>
@@ -56,7 +68,7 @@
     height: 40px;
     gap: 0.5rem;
     position: absolute;
-    bottom: 200px;
+    bottom: 330px;
     left: 50%;
     right: 50%;
     transform: translate(-50%);
@@ -76,6 +88,26 @@
     background-color: var(--primary-color);
   }
 
+  .goal {
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 40px;
+    background-color: var(--input-background);
+    border: 1px solid var(--input-border);
+    border-radius: 0.4rem;
+    margin: 5px 0;
+
+    h4 {
+      color: white;
+      position: absolute;
+      align-self: center;
+      z-index: 9999;
+    }
+  }
+
   .percentage {
     position: absolute;
     font-weight: 600;
@@ -83,7 +115,7 @@
 
   .backdrop {
     position: fixed;
-    display: flex;
+    display: grid;
     justify-content: center;
     align-items: center;
     top: 0;
