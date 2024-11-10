@@ -7,6 +7,12 @@
 [![release](https://img.shields.io/github/v/release/kryptokrona/aesir-wallet)](https://img.shields.io/github/v/release/kryptokrona/aesir-wallet)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![discord](https://img.shields.io/discord/562673808582901793?label=discord)](https://discord.gg/VTgsTGS9b7)
+<a href="https://github.com/kryptokrona/aesir-wallet/releases/latest">
+    <img src="https://img.shields.io/github/downloads/kryptokrona/aesir-wallet/total">
+</a>
+<a href="https://github.com/kryptokrona/aesir-wallet/releases/latest">
+    <img src="https://img.shields.io/github/downloads/kryptokrona/aesir-wallet/latest/total">
+</a>
 
 Aesir is the most current Kryptokrona GUI Wallet built with Svelte and Electron.
 
