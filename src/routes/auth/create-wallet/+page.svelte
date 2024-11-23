@@ -26,27 +26,26 @@
   const createWallet = async (e, selectedNode = e.detail.node) => {
     $node.selectedNode = selectedNode;
 
-    if (await window.api.checkNode(selectedNode)) {
-      const myWallets = await window.api.walletCreate(walletName, password, selectedNode);
+    const myWallets = await window.api.walletCreate(walletName, password, selectedNode);
 
-      if (myWallets) {
-        $wallet.wallets = myWallets;
-        $wallet.currentWallet = myWallets[0].wallet;
-        window.api.walletStart($wallet.currentWallet, password, selectedNode, false);
-        password = '';
-        walletName = '';
-        $wallet.started = true;
-        await sleep(300);
-        await goto('/auth/backup-wallet');
-      }
-    } else {
-      $node.loading = false;
+    if (myWallets) {
+      $wallet.wallets = myWallets;
+      $wallet.currentWallet = myWallets[0].wallet;
+      window.api.walletStart($wallet.currentWallet, password, selectedNode, false);
+      password = '';
+      walletName = '';
+      $wallet.started = true;
+      await sleep(300);
+      await goto('/auth/backup-wallet');
+    }
+    if (!(await window.api.checkNode(selectedNode))) {
       toast.error('Cannot connect to node.', {
         position: 'top-right',
         style:
           'border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);',
       });
     }
+    $node.loading = false;
   };
 
   const openFromFile = () => {

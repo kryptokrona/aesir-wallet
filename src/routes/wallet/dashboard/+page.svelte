@@ -35,6 +35,7 @@
   async function renderchart(update) {
     let data = [];
     let runningBalance = 0.0;
+    console.log(transactionsList);
     for (const tx in transactionsList) {
       const thisTx = transactionsList[tx];
       runningBalance += thisTx.amount;

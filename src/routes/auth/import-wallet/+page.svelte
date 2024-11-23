@@ -53,24 +53,24 @@
   const importSeed = async (e, selectedNode = e.detail.node) => {
     $node.selectedNode = selectedNode;
     loading = true;
-    if (await window.api.checkNode(selectedNode)) {
-      //If you manually enter the words
-      if (seedWordsStr === undefined) {
-        seedWordsStr = seedWordsArray.join(' ');
-      }
-      console.log(seedWordsStr, walletName, password, parseInt(blockHeight), selectedNode);
-      const walletImport = await window.api.importSeed(
-        seedWordsStr,
-        walletName,
-        password,
-        parseInt(blockHeight),
-        selectedNode,
-      );
-      if (walletImport) await goto('/');
-      seedWordsStr = '';
-      walletName = '';
-      blockHeight = '';
-    } else {
+
+    //If you manually enter the words
+    if (seedWordsStr === undefined) {
+      seedWordsStr = seedWordsArray.join(' ');
+    }
+    console.log(seedWordsStr, walletName, password, parseInt(blockHeight), selectedNode);
+    const walletImport = await window.api.importSeed(
+      seedWordsStr,
+      walletName,
+      password,
+      parseInt(blockHeight),
+      selectedNode,
+    );
+    if (walletImport) await goto('/');
+    seedWordsStr = '';
+    walletName = '';
+    blockHeight = '';
+    if (!(await window.api.checkNode(selectedNode))) {
       $node.loading = false;
       toast.error('Cannot connect to node.', {
         position: 'top-right',

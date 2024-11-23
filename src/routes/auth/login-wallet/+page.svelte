@@ -18,7 +18,7 @@
   let animate = false;
   let loading = false;
   let password = '';
-  let nodeOnline;
+  let nodeOnline = false;
   let wrongPassword;
   let openNodeSelector;
   let files;
@@ -58,19 +58,14 @@
     wrongPassword = false;
 
     nodeOnline = await window.api.checkNode($node.selectedNode);
-    if (nodeOnline) {
-      window.api.walletStart($wallet.currentWallet, password, $node.selectedNode, $wallet.path);
-    } else if (!nodeOnline) {
-      loading = false;
-      password = '';
-      $node.loading = false;
+    if (!nodeOnline) {
       toast.error('Node error', {
         position: 'top-right',
         style:
           'border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);',
       });
-      openNodeSelector = true;
     }
+    window.api.walletStart($wallet.currentWallet, password, $node.selectedNode, $wallet.path);
   };
 
   const keyDown = (e) => {

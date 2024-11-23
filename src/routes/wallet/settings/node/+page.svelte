@@ -16,7 +16,6 @@
           'border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);',
       });
       $node.loading = false;
-      return;
     }
     $node.loading = false;
     $node.selectedNode = change;
@@ -24,9 +23,11 @@
   };
 
   let progress;
-  $: progress = (($node.walletBlockCount / $node.networkBlockCount) * 100).toFixed(2);
-
-  isNaN();
+  $: progress = Number((($node.walletBlockCount / $node.networkBlockCount) * 100).toFixed(2));
+  $: if ($node.networkBlockCount === 0) {
+    $node.nodeStatus = 'Node offline';
+  }
+  $: progressCheck = Number.isFinite(progress);
 </script>
 
 <div class="wrapper">
@@ -41,11 +42,11 @@
     </div>
     <div>
       <h4>Status</h4>
-      <h3>{$node.nodeStatus ? $node.nodeStatus : '-'}</h3>
+      <h3>{$node.nodeStatus}</h3>
     </div>
     <div>
       <h4>Status</h4>
-      <h3>{isNaN(progress) ? '-' : `${progress === '100.00' ? '100%' : `${progress}%`}`}</h3>
+      <h3>{progressCheck ? `${progress === '100.00' ? '100%' : `${progress}%`}` : 'Node offline'}</h3>
     </div>
     <div>
       <Button text="Change node" on:click={() => (showSelector = !showSelector)} />
@@ -93,5 +94,6 @@
     left: 0;
     right: 0;
     bottom: 0;
+    border-radius: 15px;
   }
 </style>

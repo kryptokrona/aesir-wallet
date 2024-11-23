@@ -574,11 +574,15 @@ async function checkNode(node) {
 ipcMain.handle('change-node', async (e, node) => {
   console.log('SETTING', node);
   const check = await checkNode(node)
-  if (!check) return false
   daemon = new WB.Daemon(node.url, node.port, node.ssl)
   await walletBackend.swapNode(daemon)
   nodes.set("node", { url: node.url, port: node.port, ssl: node.ssl });
-  successMessage('Connecting to node')
+  if (check) {
+    successMessage('Connecting to node')
+  } else {
+    errorMessage('Cannot connect to node')
+  }
+  
   return node
 })
 
@@ -620,7 +624,7 @@ function toHex(str, hex) {
   return hex;
 }
 
-function fetchTimeout(url, options = {}, timeout = 2000) {
+function fetchTimeout(url, options = {}, timeout = 8000) {
   return Promise.race([
       fetch(url, options),
       new Promise((_, reject) =>

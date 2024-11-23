@@ -5,6 +5,7 @@
   import { node } from '$lib/stores/node.js';
   import Auto from '$lib/components/icons/Auto.svelte';
   import { Moon } from 'svelte-loading-spinners';
+  import Button from '$lib/components/buttons/Button.svelte';
 
   let nodeInput = '';
   let nodeDetails = '';
@@ -25,6 +26,7 @@
     }
 
     nodeList = await getNodeList();
+    console.log(nodeList);
   });
 
   const dispatch = new createEventDispatcher();
@@ -71,9 +73,13 @@
     $node.selectedNode = nodeDetails;
   };
 
-  const chooseNode = (node, i) => {
-    nodeInput = `${node.url}:${node.port}`;
+  const chooseNode = async (pickedNode, i) => {
+    console.log('Indexxx', i);
+    $node.loading = true;
+    nodeInput = `${pickedNode.url}:${pickedNode.port}`;
     selectedNode = i;
+    await checkNode(pickedNode);
+    $node.loading = false;
   };
 
   const getNodeList = async () => {
@@ -117,8 +123,11 @@
         );
 
         if (resp.ok) {
-          nodeInput = `${this_node.ssl ? 'https://' : 'http://'}${this_node.url}:${this_node.port}`;
           loadingNode = false;
+          console.log('indexz', nodeList.indexOf(this_node));
+          const nodeIndex = nodeList.find((a) => a.url === this_node.url && a.ssl === this_node.ssl);
+          chooseNode(this_node, nodeList.indexOf(nodeIndex));
+
           return;
         }
       } catch (e) {
@@ -129,6 +138,63 @@
     if (recommended_node === undefined) {
       nodeInput = await randomNode(false);
     }
+  };
+
+  const checkNodes = async () => {
+    // Create an array to store all fetch promises
+    const fetchPromises = [];
+
+    for (const node of nodeList) {
+      const nodeURL = `${node.ssl ? 'https://' : 'http://'}${node.url}:${node.port}/info`;
+      const fetchPromise = fetch(nodeURL, { method: 'GET' })
+        .then((response) => {
+          node.online = true;
+          nodeList = nodeList;
+          // this.setState({
+          //     nodes: Globals.daemons,
+          //     forceUpdate: this.state.forceUpdate + 1,
+          // });
+        })
+        .catch((error) => {
+          // Handle errors here
+          node.online = false;
+          nodeList = nodeList;
+          // this.setState({
+          //     nodes: Globals.daemons,
+          //     forceUpdate: this.state.forceUpdate + 1,
+          // });
+        });
+      fetchPromises.push(fetchPromise);
+    }
+
+    // Wait for all fetch promises to resolve
+    await Promise.all(fetchPromises);
+    console.log(nodeList);
+  };
+
+  const checkNode = async (pickedNode) => {
+    // Create an array to store all fetch promises
+    const fetchPromises = [];
+
+    const nodeURL = `${pickedNode.ssl ? 'https://' : 'http://'}${pickedNode.url}:${pickedNode.port}/info`;
+    const fetchPromise = fetch(nodeURL, { method: 'GET' })
+      .then((response) => {
+        pickedNode.online = true;
+        nodeList.some((a) => {
+          if (a.url === pickedNode.url && a.ssl === pickedNode.ssl) a.online = true;
+        });
+        nodeList = nodeList;
+      })
+      .catch((error) => {
+        node.online = false;
+        nodeList.some((a) => {
+          if (a.url === pickedNode.url && a.ssl === pickedNode.ssl) a.online = false;
+        });
+        nodeList = nodeList;
+      });
+    fetchPromises.push(fetchPromise);
+    // Wait for all fetch promises to resolve
+    await Promise.all(fetchPromises);
   };
 </script>
 
@@ -162,9 +228,11 @@
         }}
       >
         <p id="node">{node.name}</p>
+        <span class="status" class:online={node.online === true} class:offline={node.online === false}>&nbsp;</span>
       </div>
     {/each}
   </div>
+  <Button on:click={() => checkNodes()} text="Check availability" width="155" height="36" />
 </section>
 
 <style lang="scss">
@@ -190,10 +258,30 @@
     padding: 0.55rem 1rem;
     border-radius: 0.4rem;
     cursor: pointer;
+    position: relative;
 
     p {
       margin: 0;
       font-size: 0.75rem;
+    }
+
+    .status {
+      display: inline-block;
+      background-color: rgba(255, 255, 255, 0.2);
+      border-radius: 50%;
+      height: 6px;
+      width: 6px;
+      position: absolute;
+      top: 5px;
+      right: 5px;
+    }
+
+    .online {
+      background-color: greenyellow;
+    }
+
+    .offline {
+      background-color: red;
     }
   }
 
