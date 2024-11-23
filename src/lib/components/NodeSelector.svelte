@@ -26,7 +26,6 @@
     }
 
     nodeList = await getNodeList();
-    console.log(nodeList);
   });
 
   const dispatch = new createEventDispatcher();
@@ -74,7 +73,6 @@
   };
 
   const chooseNode = async (pickedNode, i) => {
-    console.log('Indexxx', i);
     $node.loading = true;
     nodeInput = `${pickedNode.url}:${pickedNode.port}`;
     selectedNode = i;
@@ -124,7 +122,6 @@
 
         if (resp.ok) {
           loadingNode = false;
-          console.log('indexz', nodeList.indexOf(this_node));
           const nodeIndex = nodeList.find((a) => a.url === this_node.url && a.ssl === this_node.ssl);
           chooseNode(this_node, nodeList.indexOf(nodeIndex));
 
@@ -150,19 +147,11 @@
         .then((response) => {
           node.online = true;
           nodeList = nodeList;
-          // this.setState({
-          //     nodes: Globals.daemons,
-          //     forceUpdate: this.state.forceUpdate + 1,
-          // });
         })
         .catch((error) => {
           // Handle errors here
           node.online = false;
           nodeList = nodeList;
-          // this.setState({
-          //     nodes: Globals.daemons,
-          //     forceUpdate: this.state.forceUpdate + 1,
-          // });
         });
       fetchPromises.push(fetchPromise);
     }
