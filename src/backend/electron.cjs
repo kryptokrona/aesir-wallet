@@ -211,6 +211,8 @@ let userPassword;
 
 //////// START WALLET
 ipcMain.on("start-wallet", async (e, walletName, password, node, file) => {
+
+  nodes.set("node", { url: node.url, port: node.port, ssl: node.ssl });
   
   if (!daemon) {
     daemon = new WB.Daemon(node.url, node.port);
