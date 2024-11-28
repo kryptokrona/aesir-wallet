@@ -164,7 +164,7 @@ ipcMain.on("start-app", async e => {
   mainWindow.webContents.send("started-app", data);
   mainWindow.setSize(600, 700, true);
   if (node) {
-    daemon = new WB.Daemon(node.url, node.port, node.ssl);
+    daemon = new WB.Daemon(node.url, node.port);
   }
 });
 
@@ -353,7 +353,7 @@ ipcMain.handle("create-wallet", async (e, walletName, password, node) => {
   try {
 
     if (!daemon) {
-      daemon = new WB.Daemon(node.url, node.port, node.ssl);
+      daemon = new WB.Daemon(node.url, node.port);
     }
 
     walletName = walletName
@@ -556,7 +556,7 @@ ipcMain.handle("check-node", async (e, node) => {
 async function checkNode(node) {
   try {
     const req = await fetchTimeout(`${node.ssl ? 'https://' : 'http://' }${node.url}:${node.port}/getinfo`);
-      
+
     if (!req.ok) {
       return false
     }
@@ -573,9 +573,9 @@ async function checkNode(node) {
 
 ipcMain.handle('change-node', async (e, node) => {
   console.log('SETTING', node);
-  const check = await checkNode(node)
-  daemon = new WB.Daemon(node.url, node.port, node.ssl)
-  await walletBackend.swapNode(daemon)
+  const check = await checkNode(node);
+  daemon = new WB.Daemon(node.url, node.port);
+  await walletBackend.swapNode(daemon);
   nodes.set("node", { url: node.url, port: node.port, ssl: node.ssl });
   if (check) {
     successMessage('Connecting to node')
