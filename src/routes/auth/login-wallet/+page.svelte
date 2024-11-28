@@ -27,10 +27,10 @@
 
   onMount(async () => {
     if (dev) {
-      $node.selectedNode = await window.api.getNode();
+      $node.selectedNode = $node.selectedNode || (await window.api.getNode());
       $wallet.wallets = await window.api.getWallets();
       $user.touchId = await window.api.checkTouchId();
-      $wallet.currentWallet = $wallet.wallets[0].wallet;
+      $wallet.currentWallet = $wallet.currentWallet || $wallet.wallets[0].wallet;
     }
 
     animate = true;

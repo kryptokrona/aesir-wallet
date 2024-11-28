@@ -22,6 +22,7 @@
   let walletName = '';
   let files;
   let fileList;
+  let nodeShouldBeSelected = false;
 
   const checkWalletName = async () => {
     if (await window.api.walletExists(walletName)) {
@@ -65,7 +66,10 @@
     $wallet.currentWallet = file.name.split('.')[0];
     $wallet.file = true;
     $wallet.path = file.path;
-    await goto(`./login-wallet`);
+
+    if (!$node.selectedNode) {
+      nodeShouldBeSelected = true;
+    }
   };
 </script>
 
@@ -73,8 +77,21 @@
   <StartFlash />
 {/if}
 
+{#if nodeShouldBeSelected}
+  <div class="node-selector-wrapper">
+    <NodeSelector
+      on:connect={async (e) => {
+        console.log(e);
+        $node.selectedNode = e.detail.node;
+        await goto(`./login-wallet`);
+      }}
+    />
+  </div>
+{/if}
+
 <section in:fade>
   <div style="margin-bottom: 2rem" />
+
   {#if step === 1}
     <h2>Create wallet</h2>
     <div class="field">
@@ -131,6 +148,19 @@
 </section>
 
 <style lang="scss">
+  .node-selector-wrapper {
+    position: fixed; /* Ensures it's always on top */
+    top: 0;
+    left: 0;
+    width: 100vw; /* Full viewport width */
+    height: 100vh; /* Full viewport height */
+    display: flex; /* Enable flexbox */
+    align-items: center; /* Center vertically */
+    justify-content: center; /* Center horizontally */
+    background-color: var(--backgound-color); /* Use the specified background color */
+    z-index: 9999; /* Ensure it stays above other elements */
+    border-radius: 15px;
+  }
   .open {
     opacity: 0;
   }
