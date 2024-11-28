@@ -23,6 +23,14 @@
   let files;
   let fileList;
 
+  const checkWalletName = async () => {
+    if (await window.api.walletExists(walletName)) {
+      window.api.errorMessage('A wallet with that name already exists!');
+      return false;
+    }
+    step++;
+  };
+
   const createWallet = async (e, selectedNode = e.detail.node) => {
     $node.selectedNode = selectedNode;
 
@@ -71,7 +79,12 @@
     <h2>Create wallet</h2>
     <div class="field">
       <input in:fly={{ y: 20 }} placeholder="Wallet name.." type="text" autofocus bind:value={walletName} />
-      <button class="enabled" on:click={() => step++}>
+      <button
+        class="enabled"
+        on:click={() => {
+          checkWalletName();
+        }}
+      >
         <ArrowRight green={walletName.length >= 3} />
       </button>
     </div>

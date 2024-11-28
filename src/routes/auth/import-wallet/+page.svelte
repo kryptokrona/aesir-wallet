@@ -25,6 +25,14 @@
     inputs[0].focus();
   });
 
+  const checkWalletName = async () => {
+    if (await window.api.walletExists(walletName)) {
+      window.api.errorMessage('A wallet with that name already exists!');
+      return false;
+    }
+    step++;
+  };
+
   const paste = async () => {
     seedWordsArray = Array(25).fill('');
     seedWordsStr = await navigator.clipboard.readText();
@@ -52,6 +60,11 @@
 
   const importSeed = async (e, selectedNode = e.detail.node) => {
     $node.selectedNode = selectedNode;
+    if (await window.api.walletExists(walletName)) {
+      window.api.errorMessage('A wallet with that name already exists!');
+      return false;
+    }
+
     loading = true;
 
     //If you manually enter the words
@@ -125,7 +138,7 @@
     <h1>Name wallet</h1>
     <div class="field">
       <input in:fly={{ y: 20 }} placeholder="Name.." type="text" bind:value={walletName} />
-      <button on:click on:click={() => step++}>
+      <button on:click on:click={() => checkWalletName()}>
         {#if loading}
           <Moon color="#ffffff" size="20" unit="px" />
         {:else}

@@ -349,6 +349,15 @@ ipcMain.on("rewind-wallet", async (e, height) => {
 
 });
 
+ipcMain.handle("wallet-exists", async (e, walletName) => {
+  if (fs.existsSync(userDataDir + '/' + walletName + '.wallet')) { 
+    return true;
+   }
+   return false;
+});
+
+
+
 ipcMain.handle("create-wallet", async (e, walletName, password, node) => {
   
   try {

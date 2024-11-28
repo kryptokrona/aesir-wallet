@@ -42,6 +42,10 @@ contextBridge.exposeInMainWorld("api", {
     return await ipcRenderer.invoke("set-node", node)
   },
 
+  walletExists: async walletName => {
+    return await ipcRenderer.invoke("wallet-exists", walletName)
+  },
+
   getWallets: async () => {
     return await ipcRenderer.invoke("get-wallets");
   },
