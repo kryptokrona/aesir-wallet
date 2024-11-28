@@ -8,4 +8,5 @@ export const updater = writable( {
     dataDownloaded: 0,
     downloadSize: 0,
     downloadSpeed: 0,
+    version: "1.0.0"
 })

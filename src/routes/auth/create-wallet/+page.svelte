@@ -97,7 +97,6 @@
         <ArrowRight green={password.length >= 3} />
       </button>
     </div>
-    <p>v1.0.0</p>
   {:else if step === 3}
     <NodeSelector on:connect={(e) => createWallet(e)} />
   {/if}

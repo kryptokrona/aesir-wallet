@@ -8,6 +8,7 @@
   import { Moon } from 'svelte-loading-spinners';
   import { wallet } from '$lib/stores/wallet.js';
   import { node } from '$lib/stores/node.js';
+  import { updater } from '$lib/stores/updater.js';
   import { sleep } from '$lib/utils';
   import { user } from '$lib/stores/user.js';
   import { dev } from '$app/environment';
@@ -119,13 +120,14 @@
       </button>
     </div>
     <div class="info">
-      <div style="text-align: center">
+      <div style="text-align: center; display: flex; flex-direction: column; align-items: center;">
         <p>{$wallet.currentWallet}.wallet</p>
         {#if !$wallet.started}
           <br />
-          <Button on:click={() => openFromFile()} text="Open" width="135" height="36" />
-          <Button on:click={() => goto('/auth/create-wallet')} text="Create" width="135" height="36" />
-
+          <div style="display: flex; gap: 10px; justify-content: center;">
+            <Button on:click={() => openFromFile()} text="Open" width="135" height="36" />
+            <Button on:click={() => goto('/auth/create-wallet')} text="Create" width="135" height="36" />
+          </div>
           <input
             bind:this={fileList}
             bind:files
@@ -136,6 +138,7 @@
           />
         {/if}
       </div>
+      <p>{$updater.version}</p>
     </div>
   </div>
 {/if}

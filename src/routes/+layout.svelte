@@ -56,6 +56,10 @@
       $updater.downloadSpeed = progress.bytesPerSecond;
     });
 
+    window.api.receive('version', (version) => {
+      $updater.version = version;
+    });
+
     window.api.receive('wrong-password', async () => {
       toast.error('Wrong password', {
         position: 'top-right',

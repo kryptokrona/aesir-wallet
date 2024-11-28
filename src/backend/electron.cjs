@@ -166,6 +166,7 @@ ipcMain.on("start-app", async e => {
   if (node) {
     daemon = new WB.Daemon(node.url, node.port);
   }
+  mainWindow.webContents.send('version', app.getVersion())
 });
 
 ipcMain.on("check-new-release", () => {
