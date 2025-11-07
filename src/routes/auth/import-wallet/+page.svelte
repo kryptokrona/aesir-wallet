@@ -74,9 +74,9 @@
     console.log(seedWordsStr, walletName, password, parseInt(blockHeight), selectedNode);
     const walletImport = await window.api.importSeed(
       seedWordsStr,
-      walletName,
+      walletName || 'default',
       password,
-      parseInt(blockHeight),
+      parseInt(blockHeight) || 1,
       selectedNode,
     );
     if (walletImport) await goto('/');
