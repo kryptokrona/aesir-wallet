@@ -226,10 +226,18 @@ ipcMain.on("start-wallet", async (e, walletName, password, node, file) => {
   let knownWallets = await getMyWallets()
   //Save opened wallet file path if we did not create a new one on first start and name it if it's not known
   if (file) {
-    if (!knownWallets.some(a => a.wallet === walletName)) {
+    const existingWalletIndex = knownWallets.findIndex(a => a.wallet === walletName);
+    if (existingWalletIndex !== -1) {
+      // Update path and move to top
+      const wallet = knownWallets[existingWalletIndex];
+      wallet.path = file;
+      knownWallets.splice(existingWalletIndex, 1);
+      knownWallets.unshift(wallet);
+    } else {
+      // Add new wallet to top
       knownWallets.unshift({ wallet: walletName, path: file });
-      wallets.set("wallets", knownWallets);
     }
+    wallets.set("wallets", knownWallets);
   }
 
   walletBackend = await logIntoWallet(walletName, password);
