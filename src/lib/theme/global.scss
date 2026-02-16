@@ -122,11 +122,17 @@ p, label {
   animation: blinker 1s linear infinite;
 }
 
+.blink_me_balance {
+  opacity: 80%;
+  transition: opacity 0.8s ease;
+}
+
 @keyframes blinker {
   50% {
     opacity: 0;
   }
 }
+
 
 .card-wrapper {
   border: 1px solid var(--input-border);

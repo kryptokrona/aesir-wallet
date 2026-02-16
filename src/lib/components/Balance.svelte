@@ -35,23 +35,53 @@
   onMount(() => {
     randomInterval = setInterval(() => {
       if (loading) {
-        display = prettyNumbers(Math.floor(Math.random() * 999999999999)).toString().split('');
+        display = prettyNumbers(Math.floor(Math.random() * 900000000000) + 100000000000).toString().split('');
       }
     }, 50);
 
     return () => clearInterval(randomInterval);
   });
 
-  // Stop animation when the first real data tick arrives
-  async function stopLoading() {
-    loading = false;
+  // Reveal digits one at a time from left to right
+  async function revealBalance(targetDisplay) {
     clearInterval(randomInterval);
+
+    // Pad or trim current display to match target length
+    let current = [...display];
+    while (current.length < targetDisplay.length) current.push('0');
+    current = current.slice(0, targetDisplay.length);
+
+    let revealIndex = 0;
+
+    // Keep randomizing unrevealed digits at the same 50ms speed
+    const scrambleInterval = setInterval(() => {
+      for (let j = revealIndex; j < targetDisplay.length; j++) {
+        if (targetDisplay[j] === ',' || targetDisplay[j] === '.') {
+          current[j] = targetDisplay[j];
+        } else {
+          current[j] = Math.floor(Math.random() * 10).toString();
+        }
+      }
+      display = [...current];
+    }, 50);
+
+    // Reveal correct digits one at a time at 120ms
+    for (let i = 0; i < targetDisplay.length; i++) {
+      current[i] = targetDisplay[i];
+      revealIndex = i + 1;
+      display = [...current];
+      await new Promise(r => setTimeout(r, 120));
+    }
+
+    clearInterval(scrambleInterval);
+    loading = false;
     await tick();
   }
 
   // Watch for the first real balance update from the backend
   $: if (loading && $wallet.balance && ($wallet.balance[0] !== 0 || $wallet.balance[1] !== 0)) {
-    stopLoading();
+    const target = prettyNumbers($wallet.balance[0] + $wallet.balance[1]).toString().split('');
+    revealBalance(target);
   }
 
   // Normal reactive display update once loading is done
@@ -79,10 +109,10 @@
 
 <div class="balance" in:fade>
   <div class="summary">
-    <h2 on:click={() => (showFiat = !showFiat)}>
+    <h2 style="transition: opacity 0.3s ease all" on:click={() => (showFiat = !showFiat)}>
       Balance <span style="opacity: 50%; cursor: pointer" on:click><Auto /></span>
     </h2>
-    <div style="display: inline-flex">
+    <div style="display: inline-flex; transition: opacity 0.8s ease" class:blink_me_balance={loading}>
         {#each display ?? [] as number, i (number + i)}
           {#key number}
             {#if number !== '/'}
