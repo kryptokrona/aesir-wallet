@@ -4,7 +4,7 @@
     "productName": "Aesir",
     "author": "Kryptokrona Developers <info@kryptokrona.org>",
     "email": "info@kryptokrona.org",
-    "version": "1.0.6",
+    "version": "1.0.7",
     "private": true,
     "description": "a wallet for Kryptokrona",
     "repository": "https://github.com/kryptokrona/aesir-wallet",
