@@ -20,7 +20,7 @@
     {#if $wallet.preparedTransaction}
       <div in:fade|local class="tx">
         <h4>Receiving Address</h4>
-        <p style="margin-bottom: 30px; color: var(--primary-color)">{$wallet.preparedTransaction.address.substr(0, 24) + ".." + $wallet.preparedTransaction.address.substr(84, $wallet.preparedTransaction.address.length)}</p>
+        <p style="margin-bottom: 30px; color: var(--primary-color)">{$wallet.preparedTransaction.address.slice(0, 24) + '..' + $wallet.preparedTransaction.address.slice(-15)}</p>
         <h4>PaymentID</h4>
         <p style="margin-bottom: 30px; color: var(--primary-color)">{$wallet.preparedTransaction.paymentid ? $wallet.preparedTransaction.paymentid : 'Not Applicable'}</p>
         <div style="display: flex; gap: 2rem">
