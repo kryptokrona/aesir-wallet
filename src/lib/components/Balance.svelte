@@ -10,16 +10,18 @@
   import { fade, fly } from 'svelte/transition';
   import { prettyNumbers } from '$lib/utils';
   import { fiat } from '$lib/stores/fiat.js';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import Auto from '$lib/components/icons/Auto.svelte';
 
   //Variables and default values
   let dc;
   let nodePopup = false;
   let fundsPopup = false;
-  let display = 0;
+  let display = [];
   let showFiat = false;
   let fiatBalance;
+  let loading = true;
+  let randomInterval;
 
   function changeTicker(it) {
     let change = true;
@@ -29,16 +31,42 @@
     return [currency.symbol, change];
   }
 
+  // Randomize digits while loading
+  onMount(() => {
+    randomInterval = setInterval(() => {
+      if (loading) {
+        display = prettyNumbers(Math.floor(Math.random() * 999999999999)).toString().split('');
+      }
+    }, 50);
+
+    return () => clearInterval(randomInterval);
+  });
+
+  // Stop animation when the first real data tick arrives
+  async function stopLoading() {
+    loading = false;
+    clearInterval(randomInterval);
+    await tick();
+  }
+
+  // Watch for the first real balance update from the backend
+  $: if (loading && $wallet.balance && ($wallet.balance[0] !== 0 || $wallet.balance[1] !== 0)) {
+    stopLoading();
+  }
+
+  // Normal reactive display update once loading is done
   $: {
-    if (showFiat) {
-      fiatBalance = (($wallet.balance[0] * $fiat.balance) / 100000).toFixed(5);
-      let [ticker, change] = changeTicker($fiat.ticker);
-      if (change) display = ticker + fiatBalance;
-      else display = fiatBalance + '///' + ticker.toUpperCase();
-    } else {
-      display = prettyNumbers($wallet.balance[0] + $wallet.balance[1])
-        .toString()
-        .split('');
+    if (!loading) {
+      if (showFiat) {
+        fiatBalance = (($wallet.balance[0] * $fiat.balance) / 100000).toFixed(5);
+        let [ticker, change] = changeTicker($fiat.ticker);
+        if (change) display = ticker + fiatBalance;
+        else display = fiatBalance + '///' + ticker.toUpperCase();
+      } else {
+        display = prettyNumbers($wallet.balance[0] + $wallet.balance[1])
+          .toString()
+          .split('');
+      }
     }
   }
 </script>
@@ -55,20 +83,20 @@
       Balance <span style="opacity: 50%; cursor: pointer" on:click><Auto /></span>
     </h2>
     <div style="display: inline-flex">
-      {#each display ?? [] as number, i (number + i)}
-        {#key number}
-          {#if number !== '/'}
-            <p
-              in:fly={{ y: 20, delay: i * 100 }}
-              style="font-size: 1.75rem; margin-top: 10px; color: var(--primary-color)"
-            >
-              {number}
-            </p>
-          {:else}
-            <div style="width: 5px;" />
-          {/if}
-        {/key}
-      {/each}
+        {#each display ?? [] as number, i (number + i)}
+          {#key number}
+            {#if number !== '/'}
+              <p
+                in:fly={{ y: 20, delay: i * 100 }}
+                style="font-size: 1.75rem; margin-top: 10px; color: var(--primary-color)"
+              >
+                {number}
+              </p>
+            {:else}
+              <div style="width: 5px;" />
+            {/if}
+          {/key}
+        {/each}
     </div>
   </div>
   <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 15px">

@@ -6,6 +6,9 @@
   import { user } from '$lib/stores/user.js';
   import { page } from '$app/stores';
 
+  // Clear stale balance from previous session on mount
+  localStorage.removeItem('balance');
+
   window.api.receive('data', (data) => {
     $node.localDaemonBlockCount = data.localDaemonBlockCount;
     $node.networkBlockCount = data.networkBlockCount;
