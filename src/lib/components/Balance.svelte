@@ -79,7 +79,7 @@
   }
 
   // Watch for the first real balance update from the backend
-  $: if (loading && $wallet.balance && ($wallet.balance[0] !== 0 || $wallet.balance[1] !== 0)) {
+  $: if (loading && $wallet.balance !== null) {
     const target = prettyNumbers($wallet.balance[0] + $wallet.balance[1]).toString().split('');
     revealBalance(target);
   }
@@ -87,15 +87,17 @@
   // Normal reactive display update once loading is done
   $: {
     if (!loading) {
-      if (showFiat) {
-        fiatBalance = (($wallet.balance[0] * $fiat.balance) / 100000).toFixed(5);
-        let [ticker, change] = changeTicker($fiat.ticker);
-        if (change) display = ticker + fiatBalance;
-        else display = fiatBalance + '///' + ticker.toUpperCase();
-      } else {
-        display = prettyNumbers($wallet.balance[0] + $wallet.balance[1])
-          .toString()
-          .split('');
+      if ($wallet.balance) {
+        if (showFiat) {
+          fiatBalance = (($wallet.balance[0] * $fiat.balance) / 100000).toFixed(5);
+          let [ticker, change] = changeTicker($fiat.ticker);
+          if (change) display = ticker + fiatBalance;
+          else display = fiatBalance + '///' + ticker.toUpperCase();
+        } else {
+          display = prettyNumbers($wallet.balance[0] + $wallet.balance[1])
+            .toString()
+            .split('');
+        }
       }
     }
   }
@@ -137,9 +139,9 @@
       on:click={() => (nodePopup = !nodePopup)}
     />
     <Warning
-      blink={$wallet.balance[1] !== 0}
-      grey={$wallet.balance[1] === 0}
-      yellow={$wallet.balance[1] !== 0}
+      blink={$wallet.balance && $wallet.balance[1] !== 0}
+      grey={!$wallet.balance || $wallet.balance[1] === 0}
+      yellow={$wallet.balance && $wallet.balance[1] !== 0}
       red={dc}
       on:click={() => (fundsPopup = !fundsPopup)}
     />
