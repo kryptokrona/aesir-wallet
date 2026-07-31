@@ -64,6 +64,9 @@ contextBridge.exposeInMainWorld("api", {
   deleteSubwallet: async (subwallet) => {
     return await ipcRenderer.invoke('delete-subwallet', subwallet)
   },
+  recoverSubwallets: async (count) => {
+    return await ipcRenderer.invoke('recover-subwallets', count)
+  },
   subwalletBalance: async (subwallet) => {
     return await ipcRenderer.invoke('balance-subwallet', subwallet)
   },
@@ -72,6 +75,9 @@ contextBridge.exposeInMainWorld("api", {
   },
   getAddresses: () => {
     return ipcRenderer.invoke("get-addresses");
+  },
+  getAddressForms: () => {
+    return ipcRenderer.invoke("get-address-forms");
   },
   getSeed: () => {
     return ipcRenderer.invoke("get-seed");

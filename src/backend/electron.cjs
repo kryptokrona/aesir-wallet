@@ -4,6 +4,7 @@ const { app, BrowserWindow, ipcMain, systemPreferences, powerMonitor, dialog, gl
 const serve = require("electron-serve");
 const path = require("path");
 const WB = require("kryptokrona-wallet-backend-js");
+const { Address } = require("kryptokrona-utils");
 const notifier = require("node-notifier");
 const Crypto = require("kryptokrona-crypto").Crypto;
 const fetch = require("cross-fetch");
@@ -208,6 +209,10 @@ ipcMain.on("install-update", async (e, data) => {
 
 let loggedIn = false;
 let userPassword;
+// The path + password of the currently open wallet, captured on start so
+// subwallet operations can persist the container immediately.
+let currentWalletPath;
+let currentPassword;
 
 //////// START WALLET
 ipcMain.on("start-wallet", async (e, walletName, password, node, file) => {
@@ -291,6 +296,8 @@ ipcMain.on("start-wallet", async (e, walletName, password, node, file) => {
   });
 
   const walletPath = await getWalletPath(walletName)
+  currentWalletPath = walletPath;
+  currentPassword = password;
   walletSaver(walletPath, password)
   mainWindow.webContents.send("wallet-started");
 
@@ -513,6 +520,35 @@ ipcMain.handle("get-addresses", (e) => {
   if (addresses) return addresses;
 });
 
+// The wallet's own addresses are encoded under the default prefix (SEKR). The
+// same keys can also be encoded under the alternate prefix (Xkr) -- both decode
+// to the same wallet, so a sender using a wallet that only knows one prefix can
+// still pay us. We surface both so the receive panel can show them side by side.
+// (Requires kryptokrona-utils with alternateAddress(); ships with the prefix
+// migration release alongside the updated wallet-backend-js.)
+async function addressForms(address, primary) {
+  try {
+    const decoded = await Address.fromAddress(address);
+    return { standard: address, alternate: await decoded.alternateAddress(), primary };
+  } catch (err) {
+    console.log(`Could not derive alternate address form: ${err}`);
+    return { standard: address, alternate: null, primary };
+  }
+}
+
+// Build the { standard, alternate, primary } list for every (sub)wallet. The
+// first address returned by getAddresses() is always the primary.
+async function addressFormsList() {
+  const addresses = walletBackend.getAddresses();
+  if (!addresses || !addresses.length) return [];
+  const primary = walletBackend.getPrimaryAddress();
+  return Promise.all(addresses.map((a) => addressForms(a, a === primary)));
+}
+
+ipcMain.handle("get-address-forms", async (e) => {
+  return addressFormsList();
+});
+
 //Gets n transactions per page to view in frontend
 ipcMain.handle('get-transactions', async (e, startIndex, all = false) => {
     const showPerPage = 10
@@ -686,21 +722,93 @@ ipcMain.handle("delete-contact", async (e, contact) => {
   return knownContacts;
 });
 
-ipcMain.handle('create-subwallet', async (e) => {
-  const [address, error] = await walletBackend.addSubWallet();
-  if (!error) {
-    console.log(`Created subwallet with address of ${address}`);
+async function saveCurrentWallet() {
+  if (!currentWalletPath) return;
+  try {
+    await saveWallet(currentWalletPath, currentPassword);
+  } catch (err) {
+    console.log(`Could not save wallet: ${err}`);
   }
-  await saveWallet(userDataDir, walletName, password)
-})
+}
 
-ipcMain.handle('delete-subwallet', async (e) => {
+// Derive the private spend key of the deterministic subwallet at `index`. The
+// derivation is a pure function of the root private spend key (the seed), so the
+// same index always reproduces the same subwallet -- that is what makes these
+// subwallets recoverable from the mnemonic. `walletBackend.addSubWallet()` by
+// contrast creates a RANDOM subwallet that cannot be recovered from the seed.
+async function deterministicSubWalletKey(index) {
+  const [privateSpendKey] = walletBackend.getPrimaryAddressPrivateKeys();
+  const keys = await crypto.generateDeterministicSubwalletKeys(privateSpendKey, index);
+  return keys.private_key || keys.secretKey;
+}
 
-})
+ipcMain.handle('create-subwallet', async (e) => {
+  try {
+    // Index 0 is the primary (the root key itself); new subwallets take the
+    // next contiguous index, which is the current wallet count.
+    const index = walletBackend.getWalletCount();
+    const privateSpendKey = await deterministicSubWalletKey(index);
+    const [address, error] = await walletBackend.importSubWallet(privateSpendKey);
+    if (error) {
+      console.log(`Could not create subwallet: ${error.toString()}`);
+      errorMessage('Could not create subwallet');
+    } else {
+      console.log(`Created deterministic subwallet #${index}: ${address}`);
+    }
+  } catch (err) {
+    console.log(`create-subwallet failed: ${err}`);
+    errorMessage('Could not create subwallet');
+  }
+  await saveCurrentWallet();
+  return addressFormsList();
+});
 
-ipcMain.handle('balance-subwallet', async (e) => {
+ipcMain.handle('delete-subwallet', async (e, address) => {
+  try {
+    if (address === walletBackend.getPrimaryAddress()) {
+      errorMessage('Cannot delete the primary address');
+    } else {
+      const error = await walletBackend.deleteSubWallet(address);
+      if (error && error.errorCode !== undefined && error.errorCode !== 0) {
+        console.log(`Could not delete subwallet: ${error.toString()}`);
+      }
+    }
+  } catch (err) {
+    console.log(`delete-subwallet failed: ${err}`);
+  }
+  await saveCurrentWallet();
+  return addressFormsList();
+});
 
-})
+// Re-derive deterministic subwallets from the seed. Given the number of
+// subwallets the user previously created, deriving indices 1..count reproduces
+// the exact same addresses. Already-present subwallets are skipped.
+ipcMain.handle('recover-subwallets', async (e, count) => {
+  const target = Math.max(0, Math.min(parseInt(count, 10) || 0, 100));
+  for (let index = 1; index <= target; index++) {
+    try {
+      const privateSpendKey = await deterministicSubWalletKey(index);
+      const [address, error] = await walletBackend.importSubWallet(privateSpendKey);
+      if (error && !/already exists/i.test(error.toString())) {
+        console.log(`recover subwallet #${index}: ${error.toString()}`);
+      }
+    } catch (err) {
+      console.log(`recover subwallet #${index} failed: ${err}`);
+    }
+  }
+  await saveCurrentWallet();
+  return addressFormsList();
+});
+
+ipcMain.handle('balance-subwallet', async (e, address) => {
+  try {
+    const [unlocked, locked] = await walletBackend.getBalance([address]);
+    return { unlocked, locked };
+  } catch (err) {
+    console.log(`balance-subwallet failed: ${err}`);
+    return { unlocked: 0, locked: 0 };
+  }
+});
 
 ipcMain.handle('prepare-transaction', async (e, address, amount, paymentID, sendAll) => {
   console.log(address, amount, paymentID, sendAll);

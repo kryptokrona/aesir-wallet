@@ -55,10 +55,12 @@
         "electron-updater": "^5.3.0",
         "electron-window-state": "^5.0.3",
         "file-saver": "^2.0.5",
+        "headless-qr": "^1.0.3",
         "hyperswarm": "^4.7.7",
         "keytar": "^7.9.0",
         "kryptokrona-crypto": "^1.0.3",
-        "kryptokrona-wallet-backend-js": "^2.5.6",
+        "kryptokrona-utils": "^1.4.0",
+        "kryptokrona-wallet-backend-js": "^2.6.0",
         "lightweight-charts": "^4.1.1",
         "ndjson": "^2.0.0",
         "node-notifier": "^10.0.1",
@@ -105,6 +107,7 @@
     "overrides": {
         "electron": {
             "got": "^12.5.1"
-        }
+        },
+        "kryptokrona-utils": "github:kryptokrona/kryptokrona-utils#new-prefix"
     }
 }
