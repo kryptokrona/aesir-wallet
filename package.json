@@ -108,6 +108,6 @@
         "electron": {
             "got": "^12.5.1"
         },
-        "kryptokrona-utils": "github:kryptokrona/kryptokrona-utils#new-prefix"
+        "kryptokrona-utils": "^1.4.0"
     }
 }

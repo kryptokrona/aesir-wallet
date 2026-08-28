@@ -5,6 +5,8 @@ const serve = require("electron-serve");
 const path = require("path");
 const WB = require("kryptokrona-wallet-backend-js");
 const { Address } = require("kryptokrona-utils");
+const xkrSwap = require("./swap/xkr-wallet-rpc.cjs");
+const xkrSwapEngine = require("./swap/engine.cjs");
 const notifier = require("node-notifier");
 const Crypto = require("kryptokrona-crypto").Crypto;
 const fetch = require("cross-fetch");
@@ -128,6 +130,14 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
+app.on("before-quit", () => {
+  xkrSwapEngine.stopEngine();
+  if (xkrSwapServer) {
+    xkrSwapServer.close();
+    xkrSwapServer = undefined;
+  }
+});
+
 ipcMain.on("quit", () => {
   app.quit();
 });
@@ -146,10 +156,50 @@ let node;
 let ports;
 let daemon;
 
+// Local JSON-RPC service that handles the XKR (Kryptokrona) side of atomic
+// swaps, backed by wallet-backend-js. The Rust swap engine (xkr-swap-core)
+// drives it over 127.0.0.1:XKR_SWAP_RPC_PORT. See ./swap/xkr-wallet-rpc.cjs.
+const XKR_SWAP_RPC_PORT = 40000;
+let xkrSwapServer;
+
 const wallets = new Store();
 const nodes = new Store();
 const contacts = new Store();
 const miscs = new Store();
+
+// Start (or restart) the XKR swap RPC service pointed at the given node, so a
+// swap uses the same daemon the wallet is connected to. Non-fatal on failure:
+// the wallet keeps working even if the swap service can't bind.
+function startXkrSwapService(node) {
+  try {
+    if (xkrSwapServer) {
+      xkrSwapServer.close();
+      xkrSwapServer = undefined;
+    }
+    if (!node) return;
+    xkrSwapServer = xkrSwap.start({
+      port: XKR_SWAP_RPC_PORT,
+      daemonHost: node.url,
+      daemonPort: node.port,
+      ssl: node.ssl,
+    });
+    xkrSwapServer.on("error", (err) => {
+      console.error("xkr-swap RPC service error:", err.message);
+    });
+    // Spawn the Rust swap engine as a child, pointed at the RPC service.
+    xkrSwapEngine.startEngine({ app, rpcPort: XKR_SWAP_RPC_PORT });
+  } catch (e) {
+    console.error("failed to start xkr-swap RPC service:", e.message);
+  }
+}
+
+// Lets the renderer discover where the swap service is listening and whether
+// the Rust engine child process is up.
+ipcMain.handle("swap-rpc-status", () => ({
+  running: !!xkrSwapServer,
+  port: XKR_SWAP_RPC_PORT,
+  engineRunning: xkrSwapEngine.isRunning(),
+}));
 
 ipcMain.on("start-app", async e => {
   const myWallets = await wallets.get("wallets") ?? false;
@@ -218,10 +268,13 @@ let currentPassword;
 ipcMain.on("start-wallet", async (e, walletName, password, node, file) => {
 
   nodes.set("node", { url: node.url, port: node.port, ssl: node.ssl });
-  
+
   if (!daemon) {
     daemon = new WB.Daemon(node.url, node.port);
   }
+
+  // Point the XKR swap RPC service at the same node the wallet uses.
+  startXkrSwapService(node);
 
   if (loggedIn) {
     await verifyPassword(password);
