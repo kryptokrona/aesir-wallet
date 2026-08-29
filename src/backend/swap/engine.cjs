@@ -1,7 +1,9 @@
-// Child-process manager for the Rust swap engine (xkr-swap-core's `xkr-wallet`
-// binary, and eventually the full swap engine). The wallet app spawns it as a
-// child in `serve` mode; it connects to the local XKR wallet JSON-RPC service
-// (./xkr-wallet-rpc.cjs) and drives the XKR side of BTC<->XKR atomic swaps.
+// Child-process manager for the Rust swap engine's TAKER daemon
+// (xkr-swap-core's `swap` binary, `serve` subcommand). The wallet app spawns it
+// as a child; it boots a taker `Context` (libp2p swarm + Bitcoin electrum
+// wallet), reaches the XKR chain through the local XKR wallet JSON-RPC service
+// (./xkr-wallet-rpc.cjs, via the XKR_WALLET_RPC_URL env var), and exposes a
+// JSON-RPC API on `servePort` that the renderer drives (see ./swap-rpc.cjs).
 
 const { spawn } = require("child_process");
 const fs = require("fs");
@@ -9,22 +11,30 @@ const path = require("path");
 
 let engineProcess;
 
-// Resolve the engine binary:
+// Resolve the swap engine binary:
 //   1. XKR_SWAP_ENGINE_BIN env var (dev / explicit override)
-//   2. packaged app: <resources>/bin/xkr-wallet[.exe]  (electron-builder extraResources)
+//   2. packaged app: <resources>/bin/swap[.exe]  (electron-builder extraResources)
 function resolveEngineBinary(app) {
   const fromEnv = process.env.XKR_SWAP_ENGINE_BIN;
   if (fromEnv) return fromEnv;
-  const exe = process.platform === "win32" ? "xkr-wallet.exe" : "xkr-wallet";
+  const exe = process.platform === "win32" ? "swap.exe" : "swap";
   if (app && app.isPackaged) {
     return path.join(process.resourcesPath, "bin", exe);
   }
   return null;
 }
 
-// Spawn the engine, pointed at the local XKR wallet RPC service. Non-fatal: if
-// the binary is missing or fails to spawn, the wallet keeps working.
-function startEngine({ app, rpcPort, onLog } = {}) {
+// Spawn the taker `swap serve` daemon. Non-fatal: if the binary is missing or
+// fails to spawn, the wallet keeps working (swaps are just unavailable).
+//
+// Params:
+//   app          - electron app (for isPackaged / resourcesPath)
+//   xkrRpcPort   - port of the local XKR wallet RPC service (xkr-wallet-rpc.cjs)
+//   servePort    - port the taker JSON-RPC daemon should listen on
+//   electrumUrl  - Bitcoin electrum RPC URL for the BTC side
+//   testnet      - whether to run with --testnet defaults
+//   onLog        - optional (text, stream) log callback
+function startEngine({ app, xkrRpcPort, servePort, electrumUrl, testnet = true, onLog } = {}) {
   stopEngine();
 
   const bin = resolveEngineBinary(app);
@@ -37,9 +47,17 @@ function startEngine({ app, rpcPort, onLog } = {}) {
     return null;
   }
 
-  const rpcUrl = `http://127.0.0.1:${rpcPort}`;
-  const child = spawn(bin, ["--rpc-url", rpcUrl, "serve"], {
+  const args = ["serve", "--rpc-port", String(servePort)];
+  if (testnet) args.unshift("--testnet");
+  if (electrumUrl) args.push("--electrum-rpc", electrumUrl);
+
+  const child = spawn(bin, args, {
     stdio: ["ignore", "pipe", "pipe"],
+    env: {
+      ...process.env,
+      // The engine reaches the XKR chain through the local wallet RPC service.
+      XKR_WALLET_RPC_URL: `http://127.0.0.1:${xkrRpcPort}`,
+    },
   });
   engineProcess = child;
 
@@ -60,7 +78,10 @@ function startEngine({ app, rpcPort, onLog } = {}) {
     if (engineProcess === child) engineProcess = undefined;
   });
 
-  console.log(`[xkr-swap-engine] spawned ${bin} -> ${rpcUrl}`);
+  console.log(
+    `[xkr-swap-engine] spawned ${bin} ${args.join(" ")} ` +
+      `(XKR_WALLET_RPC_URL=http://127.0.0.1:${xkrRpcPort})`,
+  );
   return child;
 }
 
