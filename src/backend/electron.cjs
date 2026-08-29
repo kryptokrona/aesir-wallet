@@ -7,6 +7,8 @@ const WB = require("kryptokrona-wallet-backend-js");
 const { Address } = require("kryptokrona-utils");
 const xkrSwap = require("./swap/xkr-wallet-rpc.cjs");
 const xkrSwapEngine = require("./swap/engine.cjs");
+const xkrSwapRpc = require("./swap/swap-rpc.cjs");
+const xkrSwapAsb = require("./swap/asb.cjs");
 const notifier = require("node-notifier");
 const Crypto = require("kryptokrona-crypto").Crypto;
 const fetch = require("cross-fetch");
@@ -132,6 +134,7 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   xkrSwapEngine.stopEngine();
+  xkrSwapAsb.stopAsb();
   if (xkrSwapServer) {
     xkrSwapServer.close();
     xkrSwapServer = undefined;
@@ -160,7 +163,16 @@ let daemon;
 // swaps, backed by wallet-backend-js. The Rust swap engine (xkr-swap-core)
 // drives it over 127.0.0.1:XKR_SWAP_RPC_PORT. See ./swap/xkr-wallet-rpc.cjs.
 const XKR_SWAP_RPC_PORT = 40000;
+// Port the taker `swap serve` daemon (the Rust engine) listens on for the
+// renderer's JSON-RPC calls (start swap / poll progress).
+const XKR_SWAP_SERVE_PORT = 40010;
+// Bitcoin electrum RPC URL for the BTC side of a swap. Overridable via env for
+// dev/regtest; defaults to a public testnet electrum server.
+const XKR_SWAP_ELECTRUM_URL =
+  process.env.XKR_SWAP_ELECTRUM_URL || "ssl://electrum.blockstream.info:60002";
 let xkrSwapServer;
+
+xkrSwapRpc.setServePort(XKR_SWAP_SERVE_PORT);
 
 const wallets = new Store();
 const nodes = new Store();
@@ -186,8 +198,15 @@ function startXkrSwapService(node) {
     xkrSwapServer.on("error", (err) => {
       console.error("xkr-swap RPC service error:", err.message);
     });
-    // Spawn the Rust swap engine as a child, pointed at the RPC service.
-    xkrSwapEngine.startEngine({ app, rpcPort: XKR_SWAP_RPC_PORT });
+    // Spawn the taker `swap serve` daemon: it reaches the XKR chain through the
+    // wallet RPC service above and exposes its own JSON-RPC on the serve port.
+    xkrSwapEngine.startEngine({
+      app,
+      xkrRpcPort: XKR_SWAP_RPC_PORT,
+      servePort: XKR_SWAP_SERVE_PORT,
+      electrumUrl: XKR_SWAP_ELECTRUM_URL,
+      testnet: true,
+    });
   } catch (e) {
     console.error("failed to start xkr-swap RPC service:", e.message);
   }
@@ -198,8 +217,46 @@ function startXkrSwapService(node) {
 ipcMain.handle("swap-rpc-status", () => ({
   running: !!xkrSwapServer,
   port: XKR_SWAP_RPC_PORT,
+  servePort: XKR_SWAP_SERVE_PORT,
   engineRunning: xkrSwapEngine.isRunning(),
+  asbRunning: xkrSwapAsb.isRunning(),
 }));
+
+// ---- Swap actions (renderer -> taker `swap serve` daemon over JSON-RPC) ----
+// Each returns { ok, result } or { ok: false, error } so the renderer can show
+// a clear message instead of an unhandled rejection.
+async function swapRpc(fn) {
+  try {
+    return { ok: true, result: await fn() };
+  } catch (e) {
+    console.error("swap rpc error:", e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+// Start a swap against a maker. args: { sellerMultiaddr, sellerPeerId,
+// amountSat, xkrReceiveAddress, changeAddress? }
+ipcMain.handle("swap-start", (e, args) => swapRpc(() => xkrSwapRpc.buyXmrDirect(args)));
+// Poll all swaps + their current state (for progress).
+ipcMain.handle("swap-infos", () => swapRpc(() => xkrSwapRpc.swapInfos()));
+// Completed-swap history.
+ipcMain.handle("swap-history", () => swapRpc(() => xkrSwapRpc.history()));
+// The taker's Bitcoin balance.
+ipcMain.handle("swap-balance", () => swapRpc(() => xkrSwapRpc.balance()));
+// Resume a swap by id.
+ipcMain.handle("swap-resume", (e, swapId) => swapRpc(() => xkrSwapRpc.resume(swapId)));
+
+// Start the local ASB maker (optional; for a self-contained demo). args:
+// { configPath, env? }
+ipcMain.handle("swap-asb-start", (e, args = {}) => {
+  const child = xkrSwapAsb.startAsb({
+    app,
+    configPath: args.configPath,
+    testnet: true,
+    env: { XKR_WALLET_RPC_URL: `http://127.0.0.1:${XKR_SWAP_RPC_PORT}`, ...(args.env || {}) },
+  });
+  return { ok: !!child };
+});
 
 ipcMain.on("start-app", async e => {
   const myWallets = await wallets.get("wallets") ?? false;
