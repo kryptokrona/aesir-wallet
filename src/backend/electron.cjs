@@ -1,6 +1,11 @@
 const windowStateManager = require("electron-window-state");
 const contextMenu = require("electron-context-menu");
 const { app, BrowserWindow, ipcMain, systemPreferences, powerMonitor, dialog, globalShortcut } = require("electron");
+
+// In development the app name defaults to "Electron", so every dev Electron app
+// shares ~/Library/Application Support/Electron. Give this app its own folder.
+// Must run before any userData path is resolved (electron-store below).
+if (!app.isPackaged) app.setName("AesirDev");
 const serve = require("electron-serve");
 const path = require("path");
 const WB = require("kryptokrona-wallet-backend-js");
@@ -168,8 +173,17 @@ const XKR_SWAP_RPC_PORT = 40000;
 const XKR_SWAP_SERVE_PORT = 40010;
 // Bitcoin electrum RPC URL for the BTC side of a swap. Overridable via env for
 // dev/regtest; defaults to a public testnet electrum server.
-const XKR_SWAP_ELECTRUM_URL =
-  process.env.XKR_SWAP_ELECTRUM_URL || "ssl://electrum.blockstream.info:60002";
+// Empty by default so the engine uses its built-in multi-server testnet electrum
+// list (with failover) instead of a single server -- a single public electrum
+// (e.g. Blockstream) rate-limits/stalls the initial wallet scan. Override with
+// XKR_SWAP_ELECTRUM_URL to force a specific server.
+const XKR_SWAP_ELECTRUM_URL = process.env.XKR_SWAP_ELECTRUM_URL || "";
+// XKR rendezvous point(s) for maker discovery: comma-separated multiaddrs, each
+// with a /p2p/<peer-id> part. Defaults to the deployed XKR rendezvous node;
+// override with XKR_SWAP_RENDEZVOUS (empty string disables discovery).
+const XKR_SWAP_RENDEZVOUS =
+  process.env.XKR_SWAP_RENDEZVOUS ??
+  "/dns4/deploy.cloud.cbh.kth.se/tcp/20235/p2p/12D3KooW9xM8oboXDBcmF1JrYXKWJjwAYufsEL5Aq8iGFHArMsUd";
 let xkrSwapServer;
 
 xkrSwapRpc.setServePort(XKR_SWAP_SERVE_PORT);
@@ -182,13 +196,22 @@ const miscs = new Store();
 // Start (or restart) the XKR swap RPC service pointed at the given node, so a
 // swap uses the same daemon the wallet is connected to. Non-fatal on failure:
 // the wallet keeps working even if the swap service can't bind.
-function startXkrSwapService(node) {
+async function startXkrSwapService(node) {
   try {
     if (xkrSwapServer) {
       xkrSwapServer.close();
       xkrSwapServer = undefined;
     }
     if (!node) return;
+    // Floor the swap wallet reconstructions near the chain tip so they don't try
+    // to sync from genesis (mainnet is 2.5M+ blocks). The swap's shared-output
+    // deposit and any inventory we spend are always at or above 'now', so a
+    // recent floor is safe. Best-effort: on failure we leave the env untouched.
+    try {
+      const info = await fetchTimeout(`${node.ssl ? "https://" : "http://"}${node.url}:${node.port}/getinfo`);
+      const j = info.ok ? await info.json() : null;
+      if (j && j.height) process.env.XKR_WALLET_SCAN_HEIGHT = String(Math.max(0, j.height - 1000));
+    } catch (_) {}
     xkrSwapServer = xkrSwap.start({
       port: XKR_SWAP_RPC_PORT,
       daemonHost: node.url,
@@ -206,9 +229,39 @@ function startXkrSwapService(node) {
       servePort: XKR_SWAP_SERVE_PORT,
       electrumUrl: XKR_SWAP_ELECTRUM_URL,
       testnet: true,
+      rendezvous: XKR_SWAP_RENDEZVOUS,
+      // Resumed swaps read their receive address from this env (not persisted by
+      // the engine); use our primary XKR address when the wallet is loaded.
+      xkrReceiveAddress:
+        walletBackend && walletBackend.getPrimaryAddress ? walletBackend.getPrimaryAddress() : undefined,
     });
+    // The daemon does NOT auto-resume in-flight swaps on boot, so a swap that was
+    // mid-flight when the app closed/restarted would otherwise sit frozen (e.g.
+    // stuck at "btc is locked") until manually resumed. Give the daemon a moment
+    // to bind, then resume every unfinished swap so restarts are self-healing.
+    setTimeout(resumeInFlightSwaps, 6000);
   } catch (e) {
     console.error("failed to start xkr-swap RPC service:", e.message);
+  }
+}
+
+// Resume any swap the daemon has persisted as not-yet-completed. Safe to call
+// repeatedly: resuming an already-finished swap is a no-op, and the daemon
+// serialises work per swap behind its own lock.
+async function resumeInFlightSwaps() {
+  try {
+    const infos = await xkrSwapRpc.swapInfos();
+    if (!Array.isArray(infos)) return;
+    for (const info of infos) {
+      if (info && info.completed === false && info.swap_id) {
+        xkrSwapRpc
+          .resume(info.swap_id)
+          .then(() => console.log("resumed in-flight swap", info.swap_id))
+          .catch((err) => console.error("resume failed for", info.swap_id, err.message));
+      }
+    }
+  } catch (e) {
+    console.error("failed to enumerate swaps for resume:", e.message);
   }
 }
 
@@ -243,17 +296,34 @@ ipcMain.handle("swap-infos", () => swapRpc(() => xkrSwapRpc.swapInfos()));
 ipcMain.handle("swap-history", () => swapRpc(() => xkrSwapRpc.history()));
 // The taker's Bitcoin balance.
 ipcMain.handle("swap-balance", () => swapRpc(() => xkrSwapRpc.balance()));
+// A fresh Bitcoin deposit address (fund the taker wallet to swap from).
+ipcMain.handle("swap-bitcoin-address", () => swapRpc(() => xkrSwapRpc.bitcoinAddress()));
+// Send BTC from the wallet. args: { address, amountSat? } (omit amountSat to drain).
+ipcMain.handle("swap-withdraw-btc", (e, args) => swapRpc(() => xkrSwapRpc.withdrawBtc(args)));
+// The BTC wallet's transaction history.
+ipcMain.handle("swap-btc-txs", () => swapRpc(() => xkrSwapRpc.bitcoinTransactions()));
+// Makers discovered via rendezvous, with their quotes (for the swap quote-board).
+ipcMain.handle("swap-list-sellers", () => swapRpc(() => xkrSwapRpc.listSellers()));
 // Resume a swap by id.
 ipcMain.handle("swap-resume", (e, swapId) => swapRpc(() => xkrSwapRpc.resume(swapId)));
 
-// Start the local ASB maker (optional; for a self-contained demo). args:
+// Start the local ASB maker (optional; for a self-contained demo). The config is
+// auto-generated if missing. NOTE: the maker still needs a funded XKR wallet
+// (XKR_ASB_SPEND_SECRET / XKR_ASB_VIEW_SECRET) to actually lock XKR. args:
 // { configPath, env? }
-ipcMain.handle("swap-asb-start", (e, args = {}) => {
-  const child = xkrSwapAsb.startAsb({
+ipcMain.handle("swap-asb-start", async (e, args = {}) => {
+  const child = await xkrSwapAsb.startAsb({
     app,
     configPath: args.configPath,
     testnet: true,
-    env: { XKR_WALLET_RPC_URL: `http://127.0.0.1:${XKR_SWAP_RPC_PORT}`, ...(args.env || {}) },
+    env: {
+      XKR_WALLET_RPC_URL: `http://127.0.0.1:${XKR_SWAP_RPC_PORT}`,
+      // The maker registers at the same rendezvous the taker discovers from.
+      ...(XKR_SWAP_RENDEZVOUS ? { XKR_SWAP_RENDEZVOUS } : {}),
+      // Fixed maker price in sats per XKR (no BTC/XKR exchange feed exists).
+      XKR_ASB_PRICE_SATS: process.env.XKR_ASB_PRICE_SATS || "5",
+      ...(args.env || {}),
+    },
   });
   return { ok: !!child };
 });
@@ -363,6 +433,32 @@ ipcMain.on("start-wallet", async (e, walletName, password, node, file) => {
   walletBackend.enableAutoOptimization(true);
   walletBackend.scanPoolTransactions(true)
   walletBackend.scanCoinbaseTransactions(true);
+
+  // Re-spawn the swap engine seeded from the XKR wallet's private spend key, so
+  // its Bitcoin wallet + libp2p identity derive deterministically from this XKR
+  // wallet -- restoring the XKR seed restores the entire (BTC + XKR) wallet.
+  try {
+    const [privateSpendKey] = walletBackend.getPrimaryAddressPrivateKeys();
+    if (privateSpendKey) {
+      xkrSwapEngine.startEngine({
+        app,
+        xkrRpcPort: XKR_SWAP_RPC_PORT,
+        servePort: XKR_SWAP_SERVE_PORT,
+        electrumUrl: XKR_SWAP_ELECTRUM_URL,
+        testnet: true,
+        seedKey: privateSpendKey,
+        rendezvous: XKR_SWAP_RENDEZVOUS,
+        // Resumed swaps read the receive address from XKR_RECEIVE_ADDRESS (the
+        // engine doesn't persist it), so seed it with our primary XKR address.
+        xkrReceiveAddress: walletBackend.getPrimaryAddress(),
+      });
+      // Resume any swap interrupted by a previous shutdown now that the engine
+      // is respawned with the receive address available.
+      setTimeout(resumeInFlightSwaps, 6000);
+    }
+  } catch (e) {
+    console.error("failed to seed swap engine from XKR key:", e.message);
+  }
 
   const [walletBlockCount, localDaemonBlockCount, networkBlockCount] = walletBackend.getSyncStatus();
   const balance = await walletBackend.getBalance();
