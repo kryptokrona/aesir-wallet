@@ -33,6 +33,30 @@ const { Address } = require('kryptokrona-utils');
 
 const DEFAULT_FEE = 10; // atomic units (network MINIMUM_FEE)
 
+// These three settings are read lazily (per call, not at module load) so a host
+// process that embeds this module (e.g. the Aesir app, which requires it at
+// startup) can set them just before a swap -- and the standalone maker can set
+// them once via launch env.
+
+// Ring size / mixin for the swap's XKR lock and sweep. Mainnet forbids mixin 0
+// (mixinZeroDisabled since height 620000) and enforces a range per fork -- the
+// current V4 regime is [1,5]. 3 is a safe in-range default. A sparse local
+// testnet with too few decoy outputs can override this to 0 via XKR_SWAP_MIXIN.
+const swapMixin = () => parseInt(process.env.XKR_SWAP_MIXIN || '3', 10);
+
+// Floor scan height used when the caller doesn't supply one. Reconstructing a
+// wallet from keys and syncing from genesis is prohibitively slow once the chain
+// is long, and the swap engine's lock/redeem calls don't pass a restore height.
+// Set XKR_WALLET_SCAN_HEIGHT to (roughly) the height the swap wallets were funded
+// at so each per-call reconstruction only scans recent blocks. 0 = from genesis.
+const floorScanHeight = () => parseInt(process.env.XKR_WALLET_SCAN_HEIGHT || '0', 10);
+
+// Whether to scan coinbase transactions. Needed only when swap funds arrive as
+// mined coinbase (a local testnet funded by mining) -- it's ~20x slower. On
+// mainnet inventory arrives as normal transfers, so leave this OFF. Enable with
+// XKR_SCAN_COINBASE=1 for a mining-funded testnet.
+const scanCoinbase = () => process.env.XKR_SCAN_COINBASE === '1' || process.env.XKR_SCAN_COINBASE === 'true';
+
 function makeDaemon(daemonHost, daemonPort, ssl) {
     // isCacheApi=false; ssl defaults to false for local/known nodes.
     return new WB.Daemon(daemonHost, daemonPort, false, !!ssl);
@@ -43,6 +67,11 @@ async function withWallet(makeWallet, fn) {
     const [wallet, err] = await makeWallet();
     if (err) throw new Error(err.toString());
     try {
+        // On a mining-funded testnet the inventory is coinbase, which
+        // wallet-backend-js skips by default -- without this the wallet would
+        // report a 0 balance. Off on mainnet (normal transfers) where it's a
+        // large, needless sync cost. See scanCoinbase().
+        if (scanCoinbase()) wallet.scanCoinbaseTransactions(true);
         await wallet.start();
         return await fn(wallet);
     } finally {
@@ -78,7 +107,7 @@ const methods = {
     async watchForLock({ address, viewSecret, amount, timeoutMs, scanHeight }, ctx) {
         if (!address || !viewSecret || !amount) throw new Error('address, viewSecret, amount required');
         return withWallet(
-            () => WB.WalletBackend.importViewWallet(makeDaemon(ctx.daemonHost, ctx.daemonPort, ctx.ssl), scanHeight || 0, viewSecret, address),
+            () => WB.WalletBackend.importViewWallet(makeDaemon(ctx.daemonHost, ctx.daemonPort, ctx.ssl), scanHeight || floorScanHeight(), viewSecret, address),
             async (wallet) => {
                 const [unlocked, locked] = await poll('deposit', timeoutMs || 180000, 2000, async () => {
                     const [u, l] = await wallet.getBalance();
@@ -97,7 +126,7 @@ const methods = {
         if (!spendSecret || !viewSecret || !destAddress) throw new Error('spendSecret, viewSecret, destAddress required');
         const useFee = typeof fee === 'number' ? fee : DEFAULT_FEE;
         return withWallet(
-            () => WB.WalletBackend.importWalletFromKeys(makeDaemon(ctx.daemonHost, ctx.daemonPort, ctx.ssl), scanHeight || 0, viewSecret, spendSecret),
+            () => WB.WalletBackend.importWalletFromKeys(makeDaemon(ctx.daemonHost, ctx.daemonPort, ctx.ssl), scanHeight || floorScanHeight(), viewSecret, spendSecret),
             async (wallet) => {
                 // Idempotency: if the shared output was already swept (e.g. a prior
                 // attempt that broadcast but whose response was lost), return that tx
@@ -115,7 +144,7 @@ const methods = {
                 const sendAmount = typeof amount === 'number' ? amount : outcome.spendable - useFee;
                 const result = await wallet.sendTransactionAdvanced(
                     [[destAddress, sendAmount]],
-                    0, // mixin
+                    swapMixin(), // mixin
                     WB.FeeType.FixedFee(useFee),
                     undefined, // paymentID
                     undefined, // subWalletsToTakeFrom
@@ -137,7 +166,7 @@ const methods = {
         if (!spendSecret || !viewSecret || !txHash) throw new Error('spendSecret, viewSecret, txHash required');
         const need = typeof confirmations === 'number' ? confirmations : 1;
         return withWallet(
-            () => WB.WalletBackend.importWalletFromKeys(makeDaemon(ctx.daemonHost, ctx.daemonPort, ctx.ssl), scanHeight || 0, viewSecret, spendSecret),
+            () => WB.WalletBackend.importWalletFromKeys(makeDaemon(ctx.daemonHost, ctx.daemonPort, ctx.ssl), scanHeight || floorScanHeight(), viewSecret, spendSecret),
             async (wallet) => {
                 const depth = await poll('tx confirmations', timeoutMs || 600000, 3000, async () => {
                     const tx = await wallet.getTransaction(txHash);
@@ -162,7 +191,7 @@ const methods = {
         }
         const useFee = typeof fee === 'number' ? fee : DEFAULT_FEE;
         return withWallet(
-            () => WB.WalletBackend.importWalletFromKeys(makeDaemon(ctx.daemonHost, ctx.daemonPort, ctx.ssl), scanHeight || 0, senderViewSecret, senderSpendSecret),
+            () => WB.WalletBackend.importWalletFromKeys(makeDaemon(ctx.daemonHost, ctx.daemonPort, ctx.ssl), scanHeight || floorScanHeight(), senderViewSecret, senderSpendSecret),
             async (wallet) => {
                 await poll('spendable balance for lock', 180000, 2000, async () => {
                     const [u] = await wallet.getBalance();
@@ -170,7 +199,7 @@ const methods = {
                 });
                 const result = await wallet.sendTransactionAdvanced(
                     [[destAddress, amount]],
-                    0, // mixin
+                    swapMixin(), // mixin
                     WB.FeeType.FixedFee(useFee),
                     undefined, // paymentID
                     undefined, // subWalletsToTakeFrom
@@ -180,6 +209,28 @@ const methods = {
                 );
                 if (!result.success) throw new Error(result.error.toString());
                 return { txHash: result.transactionHash, amount, fee: useFee };
+            },
+        );
+    },
+
+    // Unlocked (spendable) + locked balance of the wallet reconstructed from the
+    // given secrets, in atomic units. The maker uses this to advertise an honest
+    // max_buy and to reject a swap setup it can't fund -- before the taker locks
+    // any BTC. Syncs toward the chain tip (bounded by the floor height), then
+    // reports whatever balance it has.
+    async balance({ spendSecret, viewSecret, scanHeight }, ctx) {
+        if (!spendSecret || !viewSecret) throw new Error('spendSecret, viewSecret required');
+        return withWallet(
+            () => WB.WalletBackend.importWalletFromKeys(makeDaemon(ctx.daemonHost, ctx.daemonPort, ctx.ssl), scanHeight || floorScanHeight(), viewSecret, spendSecret),
+            async (wallet) => {
+                // Catch up to the network tip (bounded) so the balance is current,
+                // then read it. If we never fully catch up, report what we have.
+                await poll('balance sync', 60000, 2000, async () => {
+                    const [walletHeight, , networkHeight] = wallet.getSyncStatus();
+                    return networkHeight > 0 && walletHeight >= networkHeight - 1 ? true : null;
+                }).catch(() => {});
+                const [unlocked, locked] = await wallet.getBalance();
+                return { unlocked, locked };
             },
         );
     },

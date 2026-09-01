@@ -25,7 +25,9 @@ function call(method, params = {}) {
           "Content-Type": "application/json",
           "Content-Length": Buffer.byteLength(body),
         },
-        timeout: 20000,
+        // Generous: a cold Bitcoin-wallet sync (the balance endpoint) can take
+        // ~30s until the background-sync daemon build lands and makes it instant.
+        timeout: 60000,
       },
       (res) => {
         let data = "";
@@ -56,6 +58,13 @@ const status = () => call("status");
 const swapInfos = () => call("swap_infos");
 const history = () => call("history");
 const balance = () => call("balance");
+const bitcoinAddress = () => call("bitcoin_address");
+const bitcoinTransactions = () => call("bitcoin_transactions");
+// Makers discovered via rendezvous, each with a live quote.
+const listSellers = () => call("list_sellers");
+// Send BTC. amountSat omitted => drain the wallet.
+const withdrawBtc = ({ address, amountSat }) =>
+  call("withdraw_btc", { address, amount_sat: amountSat ?? null });
 const resume = (swapId) => call("resume", { swap_id: swapId });
 // Start a swap against an explicit maker. amountSat is the BTC amount to lock.
 const buyXmrDirect = ({ sellerMultiaddr, sellerPeerId, amountSat, xkrReceiveAddress, changeAddress }) =>
@@ -74,6 +83,10 @@ module.exports = {
   swapInfos,
   history,
   balance,
+  bitcoinAddress,
+  bitcoinTransactions,
+  listSellers,
+  withdrawBtc,
   resume,
   buyXmrDirect,
 };
