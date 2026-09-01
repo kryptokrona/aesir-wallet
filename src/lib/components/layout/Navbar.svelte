@@ -40,6 +40,13 @@
         <Transactions />
       </button>
     </Tooltip>
+    <Tooltip title="Swap (BTC ⇄ XKR)" stylized={true}>
+      <button on:click={() => goto('/wallet/swap')}>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M4 8h13l-3-3M20 16H7l3 3" stroke="var(--text-color)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </Tooltip>
   </div>
 
   <div class="draggable drag" />
