@@ -1,5 +1,5 @@
 <script>
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import toast from "svelte-french-toast";
   import CopyButton from "$lib/components/icons/CopyButton.svelte";
   import QRModal from "$lib/components/QRModal.svelte";
@@ -10,14 +10,36 @@
   // prefix (Xkr). Both decode to the same wallet, so recipients can hand out
   // either form.
   let addressForms = [];
+  let btcAddress = null; // the swap engine's on-chain BTC deposit address
   let busy = false;
   let qr = null; // { address, label } when the QR modal is open
 
+  let btcPoll;
+
+  // The BTC wallet is derived from the XKR seed by the swap engine on wallet
+  // start, but the engine takes a few seconds to boot (BDK + electrum) --
+  // especially right after creating a new wallet. Poll until its address is up.
+  const fetchBtcAddress = async () => {
+    try {
+      const res = await window.api.invoke("swap-bitcoin-address");
+      if (res && res.ok && res.result?.address) {
+        btcAddress = res.result.address;
+        if (btcPoll) {
+          clearInterval(btcPoll);
+          btcPoll = undefined;
+        }
+      }
+    } catch (_) {}
+  };
+
   const refresh = async () => {
     addressForms = (await window.api.getAddressForms()) ?? [];
+    await fetchBtcAddress();
+    if (!btcAddress && !btcPoll) btcPoll = setInterval(fetchBtcAddress, 3000);
   };
 
   onMount(refresh);
+  onDestroy(() => btcPoll && clearInterval(btcPoll));
 
   // The switch to the new prefix keeps the old one working, so we label the
   // forms by their visible prefix rather than assuming which is the default.
@@ -81,6 +103,29 @@
       {/each}
     </div>
   {/each}
+
+  {#if btcAddress}
+    <div class="group" in:fly={{ y: 20, delay: 50 }}>
+      <div class="group-title">Bitcoin</div>
+      <div class="row">
+        <div class="addr">
+          <span class="label">BTC</span>
+          <p>{short(btcAddress)}</p>
+        </div>
+        <div class="actions">
+          <button class="icon-btn" title="Show QR" on:click={() => (qr = { address: btcAddress, label: "Bitcoin" })}>
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M3 3h5v5H3V3zM12 3h5v5h-5V3zM3 12h5v5H3v-5z" stroke="var(--text-color)" stroke-width="1.4"/>
+              <path d="M12 12h2v2h-2v-2zM15 15h2v2h-2v-2zM15 12h.01M12 15h.01" stroke="var(--text-color)" stroke-width="1.4"/>
+            </svg>
+          </button>
+          <div class="icon-btn" on:click={() => copy(btcAddress)}>
+            <CopyButton />
+          </div>
+        </div>
+      </div>
+    </div>
+  {/if}
 
 </div>
 

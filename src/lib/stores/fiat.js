@@ -113,6 +113,9 @@ export const currencies = [
 
 export const fiat = writable({
     balance: 0,
+    // Bitcoin price in the selected ticker. Used for the "Total fiat" balance
+    // mode and, later, for pricing swap quotes.
+    btcPrice: 0,
     ticker: "usd",
     currencies: currencies,
 })
@@ -122,24 +125,24 @@ export async function getCoinPriceFromAPI() {
     let ticker
     const local = localStorage.getItem('fiat')
 
-    if (local === undefined) ticker = get(fiat).ticker.toLowerCase();
+    if (local === undefined || local === null) ticker = get(fiat).ticker.toLowerCase();
     else ticker = local
 
     /* Note: Coingecko has to support your coin for this to work */
-    let uri = `https://api.coingecko.com/api/v3/simple/price?ids=kryptokrona&vs_currencies=${ticker}`;
+    let uri = `https://api.coingecko.com/api/v3/simple/price?ids=kryptokrona,bitcoin&vs_currencies=${ticker}`;
 
     try {
 
         const resp = await fetch(uri);
         let json = await resp.json();
 
-        const balance = json.kryptokrona[ticker]
+        const balance = json.kryptokrona?.[ticker] ?? 0
+        const btcPrice = json.bitcoin?.[ticker] ?? 0
 
-        fiat.set({balance, ticker, currencies: currencies})
-        
+        fiat.set({balance, btcPrice, ticker, currencies: currencies})
+
         localStorage.setItem('fiat', ticker);
-        console.log('Updated coin price from API');
-        console.log('BALANCE:' + balance);
+        console.log('Updated coin prices from API (XKR + BTC)');
 
     } catch (error) {
         console.log('Failed to get price from API: ' + error.toString());
