@@ -57,11 +57,17 @@
 
     nodeOnline = await window.api.checkNode($node.selectedNode);
     if (!nodeOnline) {
-      toast.error('Node error', {
+      // Don't start the wallet against a dead node -- that leaves it half-started
+      // and the app bounces. Open the node selector so the user can pick a working
+      // node (needed e.g. to switch to a testnet node), then they retry login.
+      toast.error('Node error — pick a working node', {
         position: 'top-right',
         style:
           'border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);',
       });
+      openNodeSelector = true;
+      loading = false;
+      return;
     }
     window.api.walletStart($wallet.currentWallet, password, $node.selectedNode, $wallet.path);
   };
