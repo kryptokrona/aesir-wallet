@@ -10,6 +10,8 @@
   import { fade, fly } from 'svelte/transition';
   import { prettyNumbers } from '$lib/utils';
   import { fiat } from '$lib/stores/fiat.js';
+  import { walletMode } from '$lib/stores/walletMode.js';
+  import { btc, refreshBtc } from '$lib/stores/btc.js';
   import { onMount, onDestroy, tick } from 'svelte';
   import Auto from '$lib/components/icons/Auto.svelte';
 
@@ -40,6 +42,13 @@
     }, 50);
 
     return () => clearInterval(randomInterval);
+  });
+
+  // Keep the BTC wallet (balance/txs) fresh so the BTC and Total modes are live.
+  onMount(() => {
+    refreshBtc();
+    const i = setInterval(refreshBtc, 6000);
+    return () => clearInterval(i);
   });
 
   // Reveal digits one at a time from left to right
@@ -78,26 +87,38 @@
     await tick();
   }
 
-  // Watch for the first real balance update from the backend
+  // Reveal the initial balance on first load.
   $: if (loading && $wallet.balance !== null) {
     const target = prettyNumbers($wallet.balance[0] + $wallet.balance[1]).toString().split('');
     revealBalance(target);
   }
 
-  // Normal reactive display update once loading is done
+  // Total value across both wallets, in the selected fiat/crypto ticker.
+  function totalFiat() {
+    const xkrValue = (($wallet.balance?.[0] ?? 0) / 100000) * ($fiat.balance ?? 0);
+    const btcValue = (($btc.balanceSat ?? 0) / 1e8) * ($fiat.btcPrice ?? 0);
+    return (xkrValue + btcValue).toFixed(2);
+  }
+
+  // One denomination at a time, cycled by clicking the balance ('///' renders as
+  // spacing before the unit):
+  //   xkr  -> "1,000,000.00000 XKR"
+  //   btc  -> "136.00 mBTC"   (1 mBTC = 100,000 sat)
+  //   fiat -> total value in the selected fiat ticker.
   $: {
-    if (!loading) {
-      if ($wallet.balance) {
-        if (showFiat) {
-          fiatBalance = (($wallet.balance[0] * $fiat.balance) / 100000).toFixed(5);
-          let [ticker, change] = changeTicker($fiat.ticker);
-          if (change) display = ticker + fiatBalance;
-          else display = fiatBalance + '///' + ticker.toUpperCase();
-        } else {
-          display = prettyNumbers($wallet.balance[0] + $wallet.balance[1])
-            .toString()
-            .split('');
-        }
+    if (!loading && $wallet.balance) {
+      if ($walletMode === 'fiat') {
+        const value = totalFiat();
+        let [ticker, change] = changeTicker($fiat.ticker);
+        if (change) display = ticker + value;
+        else display = value + '///' + ticker.toUpperCase();
+      } else if ($walletMode === 'btc') {
+        const mbtc = (($btc.balanceSat ?? 0) / 1e5).toLocaleString('en-US', {
+          maximumFractionDigits: 2,
+        });
+        display = mbtc + '///mBTC';
+      } else {
+        display = prettyNumbers($wallet.balance[0] + $wallet.balance[1]).toString() + '///XKR';
       }
     }
   }
@@ -111,7 +132,7 @@
 
 <div class="balance" in:fade>
   <div class="summary">
-    <h2 style="transition: opacity 0.3s ease all" on:click={() => (showFiat = !showFiat)}>
+    <h2 style="transition: opacity 0.3s ease all" on:click={() => walletMode.cycle()}>
       Balance <span style="opacity: 50%; cursor: pointer" on:click><Auto /></span>
     </h2>
     <div style="display: inline-flex; transition: opacity 0.8s ease" class:blink_me_balance={loading}>

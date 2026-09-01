@@ -6,10 +6,38 @@
   import { createChart } from 'lightweight-charts';
   import { transactions } from '$lib/stores/wallet';
   import { node } from '$lib/stores/node';
+  import { walletMode } from '$lib/stores/walletMode.js';
+  import { btc, refreshBtc } from '$lib/stores/btc.js';
 
   const MAX_PAGES = 2;
   let transactionsList = [];
   let dates = [];
+
+  const shortId = (s) => (s ? s.slice(0, 8) + '…' + s.slice(-8) : '');
+
+  // Unified history feed, filtered by the active wallet mode:
+  //   xkr  -> XKR txs only, btc -> BTC txs only, fiat -> both (merged by time).
+  $: feed = (() => {
+    const xkr = ($transactions.latest || []).map((t) => ({
+      kind: 'xkr',
+      id: t.hash,
+      amount: parseFloat(t.amount) / 100000,
+      confirmed: t.confirmed !== false,
+      time: t.time || 0,
+    }));
+    const bt = ($btc.txs || []).map((t) => ({
+      kind: 'btc',
+      id: t.txid,
+      amount: (t.amount_sat || 0) / 1e8,
+      confirmed: !!t.confirmed,
+      time: t.timestamp || 0,
+    }));
+    let list;
+    if ($walletMode === 'btc') list = bt;
+    else if ($walletMode === 'fiat') list = [...xkr, ...bt].sort((a, b) => (b.time || 0) - (a.time || 0));
+    else list = xkr;
+    return list.slice(0, 8);
+  })();
   let txChart;
   let chart;
   let area;
@@ -17,6 +45,7 @@
   onMount(async () => {
     $node.loading = false;
     await formatAndRender(false);
+    refreshBtc();
   });
 
   window.api.receive('incoming-tx', async () => {
@@ -188,22 +217,29 @@
     {#if dates.length > 2}
       <div bind:this={txChart} id="transactions-chart" style="width: 100%; height: 220px" />
     {/if}
-    {#if dates.length > 0}
+    {#if feed.length > 0}
       <div class="transactions">
-        {#each $transactions.latest as tx}
-          <div
-            class="row"
-            class:unconfirmed={tx?.confirmed === false}
-            class:blink_me={tx?.confirmed === false}
-            on:click={() => goto(`/wallet/transaction/${tx.hash}`)}
-          >
-            <p style="opacity: 80%;">
-              {tx.hash.substring(0, 8) + '...' + tx.hash.substring(56, tx.hash.length)}
-            </p>
-            <p class="tx" style="background: none" class:sent={parseFloat(tx.amount) > 0}>
-              {parseFloat(tx.amount / 100000).toFixed(5)}
-            </p>
-          </div>
+        {#each feed as tx (tx.kind + tx.id)}
+          {#if tx.kind === 'xkr'}
+            <div
+              class="row"
+              class:unconfirmed={!tx.confirmed}
+              class:blink_me={!tx.confirmed}
+              on:click={() => goto(`/wallet/transaction/${tx.id}`)}
+            >
+              <p style="opacity: 80%;">{shortId(tx.id)}</p>
+              <p class="tx" style="background: none" class:sent={tx.amount > 0}>
+                {tx.amount.toFixed(5)} XKR
+              </p>
+            </div>
+          {:else}
+            <div class="row" class:unconfirmed={!tx.confirmed} class:blink_me={!tx.confirmed}>
+              <p style="opacity: 80%;">₿ {shortId(tx.id)}</p>
+              <p class="tx" style="background: none" class:sent={tx.amount > 0}>
+                {tx.amount.toFixed(8)} BTC
+              </p>
+            </div>
+          {/if}
         {/each}
       </div>
     {:else}
