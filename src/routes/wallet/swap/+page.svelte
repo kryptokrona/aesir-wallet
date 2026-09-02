@@ -11,6 +11,7 @@
   import toast from 'svelte-french-toast';
   import { fiat } from '$lib/stores/fiat.js';
   import { btc, refreshBtc } from '$lib/stores/btc.js';
+  import { wallet } from '$lib/stores/wallet.js';
   import SwapTimeline from '$lib/components/SwapTimeline.svelte';
   import Button from '$lib/components/buttons/Button.svelte';
   import { friendlyState, isTerminal } from '$lib/utils/swapProgress.js';
@@ -156,8 +157,7 @@
     const snap = { btc: amountNum, xkr: xkrReceive, rate, maker: short(bestSeller.peer_id) };
     try {
       const res = await window.api.invoke('swap-start', {
-        sellerMultiaddr: bestSeller.multiaddr,
-        sellerPeerId: bestSeller.peer_id,
+        xkrAddress: bestSeller.xkrAddress,
         amountSat,
         xkrReceiveAddress: primaryAddress,
       });
@@ -188,6 +188,72 @@
     snapshot = null;
   }
 
+  // ---- market maker (sell XKR for BTC) -------------------------------------
+  let makerStatus = { advertising: false, asbRunning: false, peerId: null, error: null, advertised: null };
+  let makerPrice = '5'; // sats per XKR
+  let makerMinBtc = '0.0001';
+  let makerMaxBtc = '0.05';
+  let makerBusy = false;
+  let makerStarting = false; // clicked start, engine booting
+
+  $: inventoryXkr = ($wallet?.balance?.[0] ?? 0) / 100000; // atomic -> XKR (5 dp)
+  $: makerState = makerStatus.error
+    ? 'error'
+    : makerStatus.advertising
+      ? 'live'
+      : makerStarting || makerStatus.asbRunning
+        ? 'starting'
+        : 'off';
+
+  async function refreshMakerStatus() {
+    try {
+      const res = await window.api.invoke('swap-maker-status');
+      if (res && res.ok) {
+        makerStatus = res.result;
+        if (makerStatus.advertising || makerStatus.error) makerStarting = false;
+      }
+    } catch (_) {}
+  }
+  function openMaker() {
+    view = 'maker';
+    refreshMakerStatus();
+  }
+  async function startMaker() {
+    if (makerBusy || makerStarting) return;
+    makerBusy = true;
+    makerStarting = true;
+    try {
+      const res = await window.api.invoke('swap-maker-start', {
+        priceSats: String(makerPrice),
+        minSat: Math.round((parseFloat(makerMinBtc) || 0) * 1e8),
+        maxSat: Math.round((parseFloat(makerMaxBtc) || 0) * 1e8),
+      });
+      if (!(res && res.ok)) {
+        makerStarting = false;
+        err(res?.error || 'Failed to start market making');
+      }
+      // poll through the boot -> live transition (engine takes a few seconds)
+      for (const d of [1500, 3500, 6000, 10000, 16000, 24000, 32000]) setTimeout(refreshMakerStatus, d);
+    } finally {
+      makerBusy = false;
+    }
+  }
+  async function stopMaker() {
+    if (makerBusy) return;
+    makerBusy = true;
+    makerStarting = false;
+    try {
+      await window.api.invoke('swap-maker-stop');
+      await refreshMakerStatus();
+    } finally {
+      makerBusy = false;
+    }
+  }
+  function retryMaker() {
+    makerStatus = { ...makerStatus, error: null };
+    makerStarting = false;
+  }
+
   onMount(async () => {
     await Promise.all([refreshStatus(), refreshSellers(), refreshInfos(), loadAddress(), refreshBtc()]);
     // If a swap is already in flight, jump straight to watching it.
@@ -198,15 +264,18 @@
     }
     poll = setInterval(async () => {
       await Promise.all([refreshStatus(), refreshSellers(), refreshInfos(), refreshBtc()]);
+      if (view === 'maker') await refreshMakerStatus();
     }, 4000);
   });
   onDestroy(() => poll && clearInterval(poll));
 </script>
 
 <div class="header" in:fade>
-  <h3>Swap BTC → XKR</h3>
-  {#if view === 'monitor'}
-    <button class="backbutton" on:click={newSwap}>
+  <h3>{view === 'maker' ? 'Market Maker' : 'Swap BTC → XKR'}</h3>
+  {#if view === 'form'}
+    <button class="link" on:click={openMaker}>Market Maker</button>
+  {:else}
+    <button class="backbutton" on:click={() => (view === 'maker' ? (view = 'form') : newSwap())}>
       <ArrowLeft />
     </button>
   {/if}
@@ -307,6 +376,86 @@
       </div>
     {:else}
       <p class="hint">Loading swap…</p>
+    {/if}
+  </div>
+{/if}
+
+{#if view === 'maker'}
+  <div class="card monitor" in:fly={{ y: 16, delay: 40 }}>
+    <div class="maker-head">
+      <span
+        class="status-dot"
+        class:on={makerState === 'live'}
+        class:pending={makerState === 'starting'}
+        class:warn={makerState === 'error'}
+      />
+      <span class="status-text">
+        {makerState === 'live'
+          ? 'Market making — live'
+          : makerState === 'starting'
+            ? 'Market making — starting…'
+            : makerState === 'error'
+              ? 'Market making — problem'
+              : 'Market making — off'}
+      </span>
+    </div>
+
+    {#if makerState === 'error'}
+      <p class="maker-error">{makerStatus.error}</p>
+      <button class="primary inline" on:click={retryMaker}>Try again</button>
+    {:else if makerState === 'starting'}
+      <p class="maker-blurb">
+        Starting the market-making engine and announcing you on the swap network — this takes a few seconds.
+      </p>
+      <div class="recap">
+        <div>
+          <span class="k">Inventory</span>
+          <span class="v">{fmtXkr(inventoryXkr)} XKR</span>
+        </div>
+      </div>
+      <button class="primary inline" on:click={stopMaker} disabled={makerBusy}>Cancel</button>
+    {:else if makerState === 'live'}
+      <p class="maker-blurb">
+        You're advertised on the swap network. Takers can discover you and swap BTC for your XKR over a private,
+        hole-punched connection — no server, no port forwarding.
+      </p>
+      <div class="recap">
+        <div>
+          <span class="k">Inventory</span>
+          <span class="v">{fmtXkr(inventoryXkr)} XKR</span>
+        </div>
+        <div class="rt">
+          <span class="k">Price</span>
+          <span class="v">{makerStatus.advertised ? makerStatus.advertised.price : makerPrice} sat/XKR</span>
+        </div>
+      </div>
+      {#if makerStatus.peerId}<div class="meta"><span>Peer {short(makerStatus.peerId)}</span></div>{/if}
+      <button class="primary inline" on:click={stopMaker} disabled={makerBusy}>
+        {makerBusy ? 'Stopping…' : 'Stop market making'}
+      </button>
+    {:else}
+      <p class="maker-blurb">
+        Sell your XKR for BTC. Set a price and turn it on — your wallet is the inventory, and buyers reach you
+        peer-to-peer.
+      </p>
+      <div class="fieldlabel"><span>Price (sats per XKR)</span></div>
+      <div class="field"><input type="number" style="width: 100%" bind:value={makerPrice} placeholder="5" /></div>
+
+      <div class="fieldlabel" style="margin-top: 0.8rem"><span>Min (BTC)</span><span>Max (BTC)</span></div>
+      <div class="mm-row">
+        <div class="field"><input type="number" style="width: 100%" bind:value={makerMinBtc} placeholder="0.0001" /></div>
+        <div class="field"><input type="number" style="width: 100%" bind:value={makerMaxBtc} placeholder="0.05" /></div>
+      </div>
+
+      <div class="recap" style="margin-top: 1rem">
+        <div>
+          <span class="k">Inventory</span>
+          <span class="v">{fmtXkr(inventoryXkr)} XKR</span>
+        </div>
+      </div>
+      <button class="primary inline" on:click={startMaker} disabled={makerBusy || !engineUp}>
+        {makerBusy ? 'Starting…' : 'Start market making'}
+      </button>
     {/if}
   </div>
 {/if}
@@ -589,6 +738,72 @@
       font-size: 0.75rem;
       color: var(--text-color);
       opacity: 0.55;
+    }
+  }
+
+  .maker-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.9rem;
+
+    .status-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--border-color);
+      flex: none;
+
+      &.on {
+        background: var(--primary-color);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 22%, transparent);
+      }
+      &.pending {
+        background: var(--primary-color);
+        animation: mm-pulse 1.2s ease-in-out infinite;
+      }
+      &.warn {
+        background: var(--swap-fail-color, #e5484d);
+      }
+    }
+    .status-text {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text-color);
+    }
+  }
+  @keyframes mm-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.3;
+    }
+  }
+  .maker-error {
+    margin: 0 0 1.1rem;
+    padding: 0.8rem 0.95rem;
+    border: 1px solid var(--swap-fail-color, #e5484d);
+    border-radius: 10px;
+    font-size: 0.83rem;
+    line-height: 1.45;
+    color: var(--text-color);
+    background: color-mix(in srgb, var(--swap-fail-color, #e5484d) 8%, transparent);
+  }
+  .maker-blurb {
+    margin: 0 0 1.1rem;
+    font-size: 0.83rem;
+    line-height: 1.45;
+    color: var(--text-color);
+    opacity: 0.7;
+  }
+  .mm-row {
+    display: flex;
+    gap: 0.7rem;
+
+    .field {
+      flex: 1;
     }
   }
 
