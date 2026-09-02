@@ -75,7 +75,7 @@ function generateConfig({ app, configPath, testnet = true, force = false, env = 
 //   env                - extra env vars (e.g. XKR_ASB_SPEND_SECRET /
 //                        XKR_ASB_VIEW_SECRET, XKR_WALLET_RPC_URL)
 //   onLog              - optional (text, stream) log callback
-async function startAsb({ app, configPath, testnet = true, autoGenerateConfig = true, env = {}, onLog } = {}) {
+async function startAsb({ app, configPath, testnet = true, autoGenerateConfig = true, env = {}, startArgs = [], onLog } = {}) {
   stopAsb();
 
   const bin = resolveAsbBinary(app);
@@ -105,7 +105,7 @@ async function startAsb({ app, configPath, testnet = true, autoGenerateConfig = 
 
   const args = [];
   if (testnet) args.push("--testnet");
-  args.push("--config", configPath, "start");
+  args.push("--config", configPath, "start", ...startArgs);
 
   const child = spawn(bin, args, {
     stdio: ["ignore", "pipe", "pipe"],

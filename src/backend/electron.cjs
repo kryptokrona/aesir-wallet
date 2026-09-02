@@ -13,6 +13,8 @@ const { Address } = require("kryptokrona-utils");
 const xkrSwap = require("./swap/xkr-wallet-rpc.cjs");
 const xkrSwapEngine = require("./swap/engine.cjs");
 const xkrSwapRpc = require("./swap/swap-rpc.cjs");
+const swapSwarm = require("./swap/swap-swarm.cjs");
+const asbRpc = require("./swap/asb-rpc.cjs");
 const xkrSwapAsb = require("./swap/asb.cjs");
 const notifier = require("node-notifier");
 const Crypto = require("kryptokrona-crypto").Crypto;
@@ -287,9 +289,51 @@ async function swapRpc(fn) {
   }
 }
 
-// Start a swap against a maker. args: { sellerMultiaddr, sellerPeerId,
-// amountSat, xkrReceiveAddress, changeAddress? }
-ipcMain.handle("swap-start", (e, args) => swapRpc(() => xkrSwapRpc.buyXmrDirect(args)));
+// ---- HyperSwarm swap connectivity (no rendezvous) ----
+// Discovery + per-swap NAT-traversing bridge live in swap-swarm.cjs; the Rust
+// engine only ever sees local sockets.
+let swapDiscovery = null; // taker: board discovery of makers
+let swapMaker = null; // maker: board advertising, when market-making
+let swapMakerPeerId = null; // this ASB's libp2p peer id, parsed from its log
+let swapMakerError = null; // last maker-board start error, surfaced to the panel
+let swapMakerRpc = null; // asb-rpc client: peer id, XKR inventory, swaps
+let swapMakerAdvertised = null; // the quote actually being advertised (price/min/max)
+const ASB_LISTEN_PORT = 9839; // must match the ASB config's libp2p `listen` tcp port
+const ASB_RPC_PORT = 9945; // ASB control JSON-RPC (localhost, Bearer-authed)
+
+function ensureDiscovery() {
+  if (swapDiscovery) return swapDiscovery;
+  swapDiscovery = swapSwarm.startDiscovery({
+    onUpdate: (makers) => {
+      try {
+        mainWindow.webContents.send("swap-makers", makers);
+      } catch (_) {}
+    },
+    log: (m) => console.log("[swap-swarm] " + m),
+  });
+  return swapDiscovery;
+}
+
+// Start a swap: open a private HyperSwarm beam to the chosen maker, then hand the
+// Rust taker the local bridge address + the maker's real libp2p PeerId.
+// args: { xkrAddress, amountSat, xkrReceiveAddress, changeAddress? }
+ipcMain.handle("swap-start", (e, args) =>
+  swapRpc(async () => {
+    const bridge = await ensureDiscovery().openSwapBridge(args.xkrAddress);
+    try {
+      return await xkrSwapRpc.buyXmrDirect({
+        sellerMultiaddr: bridge.multiaddr,
+        sellerPeerId: bridge.peerId,
+        amountSat: args.amountSat,
+        xkrReceiveAddress: args.xkrReceiveAddress,
+        changeAddress: args.changeAddress,
+      });
+    } catch (err) {
+      bridge.close();
+      throw err;
+    }
+  }),
+);
 // Poll all swaps + their current state (for progress).
 ipcMain.handle("swap-infos", () => swapRpc(() => xkrSwapRpc.swapInfos()));
 // Completed-swap history.
@@ -302,31 +346,157 @@ ipcMain.handle("swap-bitcoin-address", () => swapRpc(() => xkrSwapRpc.bitcoinAdd
 ipcMain.handle("swap-withdraw-btc", (e, args) => swapRpc(() => xkrSwapRpc.withdrawBtc(args)));
 // The BTC wallet's transaction history.
 ipcMain.handle("swap-btc-txs", () => swapRpc(() => xkrSwapRpc.bitcoinTransactions()));
-// Makers discovered via rendezvous, with their quotes (for the swap quote-board).
-ipcMain.handle("swap-list-sellers", () => swapRpc(() => xkrSwapRpc.listSellers()));
+// Makers discovered over the HyperSwarm board (replaces the rendezvous). Shape
+// matches the old quote-board so the UI is unchanged: { peer_id, xkrAddress, quote }.
+ipcMain.handle("swap-list-sellers", () =>
+  swapRpc(async () =>
+    ensureDiscovery()
+      .list()
+      .map((m) => ({ peer_id: m.peerId, xkrAddress: m.xkrAddress, multiaddr: null, quote: m.quote })),
+  ),
+);
 // Resume a swap by id.
 ipcMain.handle("swap-resume", (e, swapId) => swapRpc(() => xkrSwapRpc.resume(swapId)));
 
-// Start the local ASB maker (optional; for a self-contained demo). The config is
-// auto-generated if missing. NOTE: the maker still needs a funded XKR wallet
-// (XKR_ASB_SPEND_SECRET / XKR_ASB_VIEW_SECRET) to actually lock XKR. args:
-// { configPath, env? }
-ipcMain.handle("swap-asb-start", async (e, args = {}) => {
-  const child = await xkrSwapAsb.startAsb({
-    app,
-    configPath: args.configPath,
-    testnet: true,
-    env: {
-      XKR_WALLET_RPC_URL: `http://127.0.0.1:${XKR_SWAP_RPC_PORT}`,
-      // The maker registers at the same rendezvous the taker discovers from.
-      ...(XKR_SWAP_RENDEZVOUS ? { XKR_SWAP_RENDEZVOUS } : {}),
-      // Fixed maker price in sats per XKR (no BTC/XKR exchange feed exists).
-      XKR_ASB_PRICE_SATS: process.env.XKR_ASB_PRICE_SATS || "5",
-      ...(args.env || {}),
-    },
-  });
-  return { ok: !!child };
+// Start market-making: launch the local ASB with its control JSON-RPC enabled,
+// ask it (over RPC, not by scraping logs) for its libp2p peer id, then advertise
+// it on the HyperSwarm board so takers can find and reach it behind NAT (no
+// rendezvous). The ASB locks XKR from this wallet's own keys.
+// args: { configPath?, priceSats?, minSat?, maxSat?, env? }
+ipcMain.handle("swap-maker-start", async (e, args = {}) => {
+  try {
+    swapMakerPeerId = null;
+    swapMakerError = null;
+    swapMakerRpc = null;
+    const priceSats = String(args.priceSats || process.env.XKR_ASB_PRICE_SATS || "5");
+    // The maker's XKR inventory IS this wallet -- the ASB locks XKR from the
+    // user's own keys, so "click to market-make" needs no separate funded wallet.
+    const [makerSpend, makerView] = walletBackend.getPrimaryAddressPrivateKeys();
+    const configPath = args.configPath || path.join(app.getPath("userData"), "xkr-asb-config.toml");
+
+    // Enable the ASB control RPC on localhost, Bearer-authed via a verifier file.
+    const { password, verifier } = asbRpc.generateAuth();
+    const authFile = path.join(app.getPath("userData"), "asb-rpc-auth");
+    fs.writeFileSync(authFile, verifier, { mode: 0o600 });
+
+    const child = await xkrSwapAsb.startAsb({
+      app,
+      configPath,
+      testnet: true,
+      env: {
+        XKR_WALLET_RPC_URL: `http://127.0.0.1:${XKR_SWAP_RPC_PORT}`,
+        XKR_ASB_PRICE_SATS: priceSats,
+        XKR_ASB_SPEND_SECRET: makerSpend,
+        XKR_ASB_VIEW_SECRET: makerView,
+        ...(args.env || {}),
+      },
+      startArgs: [
+        "--rpc-bind-host", "127.0.0.1",
+        "--rpc-bind-port", String(ASB_RPC_PORT),
+        "--rpc-auth-file", authFile,
+      ],
+    });
+    if (!child) {
+      return {
+        ok: false,
+        error:
+          "The market-maker engine (asb) couldn't start — its binary may be missing " +
+          "or its port (9839) is in use. Check the app logs.",
+      };
+    }
+
+    // Ask the ASB for its peer id over its control RPC, retrying while it boots,
+    // then advertise on the board. Robust -- no stdout parsing.
+    const rpc = asbRpc.client(ASB_RPC_PORT, password);
+    swapMakerRpc = rpc;
+    (async () => {
+      for (let i = 0; i < 45; i++) {
+        if (swapMakerRpc !== rpc) return; // stopped / cancelled
+        try {
+          const res = await rpc.peerId();
+          const id = res && (res.peer_id || res.peerId);
+          if (id) {
+            if (swapMakerRpc !== rpc) return;
+            swapMakerPeerId = id;
+            startMakerBoard(args, priceSats);
+            return;
+          }
+        } catch (_) {
+          // RPC not up yet / transient -- keep polling
+        }
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+      if (swapMakerRpc === rpc && !swapMakerPeerId && !swapMakerError) {
+        swapMakerError = "Couldn't reach the market-making engine's control API to read its identity.";
+      }
+    })();
+
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
 });
+
+// Stop advertising on the board (the ASB child keeps its own lifecycle).
+ipcMain.handle("swap-maker-stop", () => {
+  try {
+    if (swapMaker) {
+      swapMaker.stop();
+      swapMaker = null;
+    }
+    // Stop the maker engine too, otherwise asbRunning stays true and the panel is
+    // stuck showing "starting". Clearing swapMakerRpc also halts the peer-id poll.
+    xkrSwapAsb.stopAsb();
+    swapMakerRpc = null;
+    swapMakerPeerId = null;
+    swapMakerError = null;
+    swapMakerAdvertised = null;
+  } catch (_) {}
+  return { ok: true };
+});
+
+// Market-making status for the maker panel.
+ipcMain.handle("swap-maker-status", () => ({
+  ok: true,
+  result: {
+    advertising: !!swapMaker,
+    asbRunning: xkrSwapAsb.isRunning ? xkrSwapAsb.isRunning() : false,
+    peerId: swapMakerPeerId,
+    error: swapMakerError,
+    advertised: swapMaker ? swapMakerAdvertised : null,
+  },
+}));
+
+function startMakerBoard(args, priceSats) {
+  try {
+    if (swapMaker) swapMaker.stop();
+    const [spend] = walletBackend.getPrimaryAddressPrivateKeys();
+    // The quote we actually advertise -- captured at start (a running maker keeps
+    // its price; changing it needs a restart). The panel reads this back so the
+    // shown price can't diverge from reality. Set before startMaker so the first
+    // announce uses it. The swap-setup gate re-validates against real balance.
+    swapMakerAdvertised = {
+      price: Number(priceSats),
+      min_quantity: Number(args.minSat || 10000),
+      max_quantity: Number(args.maxSat || 4999999),
+    };
+    swapMaker = swapSwarm.startMaker({
+      xkrAddress: walletBackend.getPrimaryAddress(),
+      xkrPrivateSpendKey: spend,
+      libp2pPeerId: swapMakerPeerId,
+      asbHost: "127.0.0.1",
+      asbPort: ASB_LISTEN_PORT,
+      getQuote: async () => swapMakerAdvertised,
+      log: (m) => console.log("[swap-swarm] " + m),
+    });
+    swapMakerError = null;
+    console.log("[swap-swarm] maker board up, peer id " + swapMakerPeerId);
+  } catch (err) {
+    swapMaker = null;
+    swapMakerError = "board: " + err.message;
+    console.error("[swap-swarm] maker board failed:", err.stack || err.message);
+  }
+}
 
 ipcMain.on("start-app", async e => {
   const myWallets = await wallets.get("wallets") ?? false;
