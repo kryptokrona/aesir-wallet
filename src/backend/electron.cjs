@@ -742,6 +742,26 @@ ipcMain.on("rewind-wallet", async (e, height) => {
 
 });
 
+// Coalesce fragmented inputs (e.g. lots of mining rewards) into fewer, larger
+// outputs via zero-fee fusion transactions so big sends stop failing on
+// "too many inputs". Auto-optimization is already on, but this lets the user
+// force a full pass on demand. Returns { ok, sent, hashes } for UI feedback.
+ipcMain.handle("wallet-optimize", async () => {
+  if (!walletBackend) return { ok: false, error: "Wallet not loaded" };
+  try {
+    const [sent, hashes] = await walletBackend.optimize();
+    if (sent === 0) {
+      successMessage("Wallet already optimized");
+    } else {
+      successMessage(`Sent ${sent} fusion transaction${sent === 1 ? "" : "s"} — funds will unlock shortly`);
+    }
+    return { ok: true, sent, hashes };
+  } catch (err) {
+    errorMessage("Optimize failed: " + err.message);
+    return { ok: false, error: err.message };
+  }
+});
+
 ipcMain.handle("wallet-exists", async (e, walletName) => {
   if (fs.existsSync(userDataDir + '/' + walletName + '.wallet')) { 
     return true;
