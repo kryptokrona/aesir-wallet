@@ -29,6 +29,17 @@
     navigator.clipboard.writeText(keys[0]);
     window.api.successMessage("Private key copied");
   };
+
+  let optimizing = false;
+  const optimizeWallet = async () => {
+    if (optimizing) return;
+    optimizing = true;
+    try {
+      await window.api.invoke("wallet-optimize");
+    } finally {
+      optimizing = false;
+    }
+  };
 </script>
 
 <div class="wrapper">
@@ -39,6 +50,19 @@
     <div class="body">
       <Button on:click={() => goto('/auth/backup-wallet')} text="Export mnemonic" />
       <Button on:click={getPrivKeys} text="Export private key" />
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="header">
+      <h5>Optimize wallet</h5>
+    </div>
+    <div class="body">
+      <span class="button_wrapper">
+        <Tooltip title="Coalesce many small inputs (e.g. mining rewards) into fewer, larger ones with zero-fee fusion transactions, so large sends stop failing. May take a while and briefly locks funds.">
+          <Button on:click={optimizeWallet} text={optimizing ? 'Optimizing…' : 'Optimize now'} />
+        </Tooltip>
+      </span>
     </div>
   </div>
 
