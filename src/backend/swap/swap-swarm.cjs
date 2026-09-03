@@ -19,6 +19,7 @@ const { topicForKey, randomKey, signXkr, verifyXkr } = require("./swap-crypto.cj
 
 const BOARD_KEY = "xkr-swap-market-v1";
 const ANNOUNCE_INTERVAL_MS = 15000;
+const HEARTBEAT_MS = 8000; // board ping/pong so bidirectionality stays visible in logs
 const MAKER_TTL_MS = 45000;
 const BEAM_CONNECT_TIMEOUT_MS = 60000;
 const BEAM_MAX_LIFETIME_MS = 30 * 60 * 1000; // swaps are minutes; keep generous
@@ -143,10 +144,12 @@ function startMaker(opts) {
   board.swarm.on("connection", (conn) => {
     conns.add(conn);
     log(`maker: taker connected on board (${conns.size} peer(s))`);
-    conn.on("close", () => conns.delete(conn));
+    // Recurring heartbeat both ways: a pong proves taker->maker->taker actually
+    // round-trips (a swap needs that direction; discovery only needs the reverse).
+    const ping = setInterval(() => sendJson(conn, { type: "ping", from: "maker", t: Date.now() }), HEARTBEAT_MS);
+    conn.on("close", () => { conns.delete(conn); clearInterval(ping); });
     conn.on("error", () => {});
     makeAnnounce().then((a) => sendJson(conn, a)).catch(() => {});
-    // Prove the board channel carries bytes both ways: ping the taker, echo pongs.
     sendJson(conn, { type: "ping", from: "maker", t: Date.now() });
     onJson(conn, (msg) => {
       if (!msg) return;
@@ -197,8 +200,11 @@ function startDiscovery(opts = {}) {
 
   board.swarm.on("connection", (conn) => {
     log("discovery: peer connected on board");
+    // Recurring heartbeat both ways: a pong proves this side can reach the maker
+    // AND get a reply back -- the exact round-trip a swap's swap-init depends on.
+    const ping = setInterval(() => sendJson(conn, { type: "ping", from: "taker", t: Date.now() }), HEARTBEAT_MS);
+    conn.on("close", () => clearInterval(ping));
     conn.on("error", () => {});
-    // Prove the board channel carries bytes both ways: ping the maker, echo pongs.
     sendJson(conn, { type: "ping", from: "taker", t: Date.now() });
     onJson(conn, async (msg) => {
       if (!msg) return;
