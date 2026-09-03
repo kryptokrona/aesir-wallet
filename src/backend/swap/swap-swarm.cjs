@@ -27,11 +27,21 @@ const BEAM_MAX_LIFETIME_MS = 30 * 60 * 1000; // swaps are minutes; keep generous
 // Create a hyperswarm-hugin node bound to the topic derived from `key`, and join
 // it. The fork's constructor wants (opts, sig, dht_keys, base_keys); a permissive
 // firewall is fine here — the board is public and a beam is gated by its secret.
-function joinTopic(key, { server = false, client = true, maxPeers = 64 } = {}) {
+//
+// Mirrors hugin-desktop's create_swarm exactly, which is why Hugin's DMs punch
+// through NATs reliably: join as BOTH server AND client (so the DHT can rendezvous
+// the two peers from either direction — no single fragile hole-punch path), and
+// `flushed()` waits until our announce is actually live on the DHT. `.ready`
+// resolves on flush; callers may await it, and we log it for diagnostics.
+function joinTopic(key, { maxPeers = 64, log } = {}) {
   const { topic, base_keys, dht_keys, sig } = topicForKey(key);
   const swarm = new HyperSwarm({ maxPeers, firewall: () => false }, sig, dht_keys, base_keys);
-  const discovery = swarm.join(topic, { server, client });
-  return { swarm, discovery, topic };
+  const discovery = swarm.join(topic, { server: true, client: true });
+  const ready = discovery
+    .flushed()
+    .then(() => { if (log) log(`topic ${topic.toString("hex").slice(0, 8)}… announced on DHT`); })
+    .catch((e) => { if (log) log(`topic flush error: ${e.message}`); });
+  return { swarm, discovery, topic, ready };
 }
 
 // Bidirectional pipe between two duplex streams, with mutual teardown.
@@ -110,7 +120,7 @@ function startMaker(opts) {
     log = () => {},
   } = opts;
 
-  const board = joinTopic(BOARD_KEY, { server: true, client: false, maxPeers: 128 });
+  const board = joinTopic(BOARD_KEY, { maxPeers: 128, log });
   const conns = new Set();
   const beams = new Set();
 
@@ -122,7 +132,7 @@ function startMaker(opts) {
   }
 
   function openMakerBeam(beamKey) {
-    const beam = joinTopic(beamKey, { server: true, client: false, maxPeers: 4 });
+    const beam = joinTopic(beamKey, { maxPeers: 4, log });
     beams.add(beam);
     log(`maker: joined private beam ${beamKey.slice(0, 8)}…, waiting for taker`);
     beam.swarm.on("connection", (conn) => {
@@ -147,8 +157,8 @@ function startMaker(opts) {
     // Recurring heartbeat both ways: a pong proves taker->maker->taker actually
     // round-trips (a swap needs that direction; discovery only needs the reverse).
     const ping = setInterval(() => sendJson(conn, { type: "ping", from: "maker", t: Date.now() }), HEARTBEAT_MS);
-    conn.on("close", () => { conns.delete(conn); clearInterval(ping); });
-    conn.on("error", () => {});
+    conn.on("close", () => { conns.delete(conn); clearInterval(ping); log(`maker: board connection CLOSED (${conns.size} left)`); });
+    conn.on("error", (e) => log(`maker: board connection error: ${e.message}`));
     makeAnnounce().then((a) => sendJson(conn, a)).catch(() => {});
     sendJson(conn, { type: "ping", from: "maker", t: Date.now() });
     onJson(conn, (msg) => {
@@ -188,7 +198,7 @@ function startMaker(opts) {
 // opts: { onUpdate, log }. onUpdate(makers[]) fires as announces arrive/expire.
 function startDiscovery(opts = {}) {
   const { onUpdate = () => {}, log = () => {} } = opts;
-  const board = joinTopic(BOARD_KEY, { server: false, client: true, maxPeers: 128 });
+  const board = joinTopic(BOARD_KEY, { maxPeers: 128, log });
   const makers = new Map(); // xkrAddress -> { xkrAddress, peerId, quote, seen, conn }
   log("discovery: joined board, searching for makers on the DHT…");
 
@@ -203,8 +213,8 @@ function startDiscovery(opts = {}) {
     // Recurring heartbeat both ways: a pong proves this side can reach the maker
     // AND get a reply back -- the exact round-trip a swap's swap-init depends on.
     const ping = setInterval(() => sendJson(conn, { type: "ping", from: "taker", t: Date.now() }), HEARTBEAT_MS);
-    conn.on("close", () => clearInterval(ping));
-    conn.on("error", () => {});
+    conn.on("close", () => { clearInterval(ping); log("discovery: board connection CLOSED"); });
+    conn.on("error", (e) => log(`discovery: board connection error: ${e.message}`));
     sendJson(conn, { type: "ping", from: "taker", t: Date.now() });
     onJson(conn, async (msg) => {
       if (!msg) return;
@@ -232,13 +242,19 @@ function startDiscovery(opts = {}) {
   // Rust taker dials. Resolves { multiaddr, peerId, close } for buy_xmr_direct.
   function openSwapBridge(xkrAddress) {
     return new Promise((resolve, reject) => {
+      log(`taker: swap requested for maker ${String(xkrAddress).slice(0, 12)}…; ${makers.size} maker(s) known`);
       const maker = makers.get(xkrAddress);
-      if (!maker || !maker.conn) return reject(new Error("maker not found / offline"));
+      if (!maker || !maker.conn) {
+        // The board connection went stale/dead, so the announce was TTL-evicted
+        // before we could act on it. This is the swap silently failing pre-beam.
+        log("taker: ABORT — maker not in board map (its announce went stale). Board connection likely dropped.");
+        return reject(new Error("maker not found / offline (board connection stale)"));
+      }
 
       const beamKey = randomKey();
       log(`taker: swap-init sent, joining private beam ${beamKey.slice(0, 8)}…`);
       sendJson(maker.conn, { type: "swap-init", beamKey });
-      const beam = joinTopic(beamKey, { server: false, client: true, maxPeers: 4 });
+      const beam = joinTopic(beamKey, { maxPeers: 4, log });
 
       let settled = false;
       const timeout = setTimeout(() => {
