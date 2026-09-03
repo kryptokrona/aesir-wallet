@@ -15,6 +15,29 @@ const path = require("path");
 
 let asbProcess;
 
+// Force-disable the ASB's Tor features in an existing config. We do our own NAT
+// traversal over HyperSwarm, so the ASB must NOT stand up a Tor onion service or
+// negotiate a Tor "wormhole": those advertise /onion3/... addresses that the
+// taker engine (no Tor transport) can't dial, poisoning its address book and
+// making redial fail with MultiaddrNotSupported. The ASB's generate-config
+// defaults wormhole_enabled=true, so we patch it every start (idempotent).
+function disableTor(configPath) {
+  try {
+    if (!configPath || !fs.existsSync(configPath)) return;
+    let toml = fs.readFileSync(configPath, "utf8");
+    const before = toml;
+    toml = toml
+      .replace(/^\s*register_hidden_service\s*=\s*true\s*$/m, "register_hidden_service = false")
+      .replace(/^\s*wormhole_enabled\s*=\s*true\s*$/m, "wormhole_enabled = false");
+    if (toml !== before) {
+      fs.writeFileSync(configPath, toml);
+      console.log("[xkr-swap-asb] disabled Tor (hidden service + wormhole) in config");
+    }
+  } catch (e) {
+    console.warn(`[xkr-swap-asb] could not patch Tor settings: ${e.message}`);
+  }
+}
+
 // Resolve the ASB binary (the swap-asb crate builds a bin named `asb`):
 //   1. XKR_SWAP_ASB_BIN env var (dev / explicit override)
 //   2. packaged app: <resources>/bin/asb[.exe]
@@ -102,6 +125,9 @@ async function startAsb({ app, configPath, testnet = true, autoGenerateConfig = 
       return null;
     }
   }
+
+  // Ensure Tor (onion service + wormhole) is off before every start.
+  disableTor(configPath);
 
   const args = [];
   if (testnet) args.push("--testnet");
