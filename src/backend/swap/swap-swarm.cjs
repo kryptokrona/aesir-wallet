@@ -34,18 +34,34 @@ function joinTopic(key, { server = false, client = true, maxPeers = 64 } = {}) {
 }
 
 // Bidirectional pipe between two duplex streams, with mutual teardown.
-function bridge(a, b) {
+// opts: { log, label } — when set, counts bytes each way and logs the first
+// byte in each direction plus final totals on close, so a stalled swap shows
+// exactly which hop never moved data.
+function bridge(a, b, opts = {}) {
+  const { log, label = "bridge" } = opts;
   let done = false;
-  const cleanup = () => {
+  let ab = 0, ba = 0, firstAB = false, firstBA = false;
+  const cleanup = (who) => {
     if (done) return;
     done = true;
+    if (log) log(`${label}: closed by ${who} — a→b ${ab}B, b→a ${ba}B`);
     try { a.destroy(); } catch (_) {}
     try { b.destroy(); } catch (_) {}
   };
-  a.on("error", cleanup);
-  b.on("error", cleanup);
-  a.on("close", cleanup);
-  b.on("close", cleanup);
+  if (log) {
+    a.on("data", (d) => {
+      ab += d.length;
+      if (!firstAB) { firstAB = true; log(`${label}: first bytes a→b (${d.length}B)`); }
+    });
+    b.on("data", (d) => {
+      ba += d.length;
+      if (!firstBA) { firstBA = true; log(`${label}: first bytes b→a (${d.length}B)`); }
+    });
+  }
+  a.on("error", () => cleanup("a"));
+  b.on("error", () => cleanup("b"));
+  a.on("close", () => cleanup("a"));
+  b.on("close", () => cleanup("b"));
   a.pipe(b);
   b.pipe(a);
 }
@@ -107,10 +123,15 @@ function startMaker(opts) {
   function openMakerBeam(beamKey) {
     const beam = joinTopic(beamKey, { server: true, client: false, maxPeers: 4 });
     beams.add(beam);
+    log(`maker: joined private beam ${beamKey.slice(0, 8)}…, waiting for taker`);
     beam.swarm.on("connection", (conn) => {
-      const sock = net.connect(asbPort, asbHost);
-      bridge(conn, sock);
-      log(`maker: bridged swap peer -> ASB ${asbHost}:${asbPort}`);
+      log("maker: taker connected on private beam, dialing ASB");
+      conn.on("error", (e) => log(`maker: beam conn error: ${e.message}`));
+      const sock = net.connect(asbPort, asbHost, () => {
+        log(`maker: ASB ${asbHost}:${asbPort} connected, bridging`);
+      });
+      sock.on("error", (e) => log(`maker: ASB socket error (${asbHost}:${asbPort}): ${e.message}`));
+      bridge(conn, sock, { log, label: "maker-beam↔asb" });
     });
     // reclaim the beam once the swap has had time to finish
     setTimeout(() => {
@@ -125,8 +146,19 @@ function startMaker(opts) {
     conn.on("close", () => conns.delete(conn));
     conn.on("error", () => {});
     makeAnnounce().then((a) => sendJson(conn, a)).catch(() => {});
+    // Prove the board channel carries bytes both ways: ping the taker, echo pongs.
+    sendJson(conn, { type: "ping", from: "maker", t: Date.now() });
     onJson(conn, (msg) => {
-      if (msg && msg.type === "swap-init" && typeof msg.beamKey === "string") {
+      if (!msg) return;
+      if (msg.type === "ping") {
+        sendJson(conn, { type: "pong", from: "maker", t: msg.t });
+        return;
+      }
+      if (msg.type === "pong") {
+        log(`maker: board pong from taker, RTT ${Date.now() - msg.t}ms`);
+        return;
+      }
+      if (msg.type === "swap-init" && typeof msg.beamKey === "string") {
         log("maker: swap-init received, opening private beam");
         openMakerBeam(msg.beamKey);
       }
@@ -166,8 +198,19 @@ function startDiscovery(opts = {}) {
   board.swarm.on("connection", (conn) => {
     log("discovery: peer connected on board");
     conn.on("error", () => {});
+    // Prove the board channel carries bytes both ways: ping the maker, echo pongs.
+    sendJson(conn, { type: "ping", from: "taker", t: Date.now() });
     onJson(conn, async (msg) => {
-      if (!msg || msg.type !== "announce" || !msg.payload || !msg.sig) return;
+      if (!msg) return;
+      if (msg.type === "ping") {
+        sendJson(conn, { type: "pong", from: "taker", t: msg.t });
+        return;
+      }
+      if (msg.type === "pong") {
+        log(`discovery: board pong from maker, RTT ${Date.now() - msg.t}ms`);
+        return;
+      }
+      if (msg.type !== "announce" || !msg.payload || !msg.sig) return;
       const ok = await verifyXkr(JSON.stringify(msg.payload), msg.payload.xkrAddress, msg.sig);
       if (!ok) {
         log("discovery: dropped announce with bad signature");
@@ -187,12 +230,14 @@ function startDiscovery(opts = {}) {
       if (!maker || !maker.conn) return reject(new Error("maker not found / offline"));
 
       const beamKey = randomKey();
+      log(`taker: swap-init sent, joining private beam ${beamKey.slice(0, 8)}…`);
       sendJson(maker.conn, { type: "swap-init", beamKey });
       const beam = joinTopic(beamKey, { server: false, client: true, maxPeers: 4 });
 
       let settled = false;
       const timeout = setTimeout(() => {
         if (settled) return;
+        log("taker: TIMED OUT — private beam to maker never connected");
         try { beam.swarm.destroy(); } catch (_) {}
         reject(new Error("timed out reaching maker over HyperSwarm"));
       }, BEAM_CONNECT_TIMEOUT_MS);
@@ -202,18 +247,21 @@ function startDiscovery(opts = {}) {
           try { conn.destroy(); } catch (_) {}
           return;
         }
+        log("taker: connected to maker on private beam");
+        conn.on("error", (e) => log(`taker: beam conn error: ${e.message}`));
         // Local server the Rust taker dials; its (single) socket <-> the beam conn.
         // Single-shot: bridge the first dial and stop accepting, so a libp2p retry
         // can't double-pipe the same beam connection.
         const srv = net.createServer((sock) => {
+          log("taker: Rust engine dialed the local bridge, piping to beam");
           try { srv.close(); } catch (_) {}
-          bridge(conn, sock);
+          bridge(conn, sock, { log, label: "taker-engine↔beam" });
         });
         srv.listen(0, "127.0.0.1", () => {
           settled = true;
           clearTimeout(timeout);
           const port = srv.address().port;
-          log(`taker: bridged beam <-> 127.0.0.1:${port} (maker ${maker.peerId})`);
+          log(`taker: beam ready, local bridge on 127.0.0.1:${port} (maker ${maker.peerId})`);
           resolve({
             multiaddr: `/ip4/127.0.0.1/tcp/${port}`,
             peerId: maker.peerId,
