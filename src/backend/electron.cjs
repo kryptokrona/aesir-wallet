@@ -475,22 +475,41 @@ function startMakerBoard(args, priceSats) {
   try {
     if (swapMaker) swapMaker.stop();
     const [spend] = walletBackend.getPrimaryAddressPrivateKeys();
-    // The quote we actually advertise -- captured at start (a running maker keeps
-    // its price; changing it needs a restart). The panel reads this back so the
-    // shown price can't diverge from reality. Set before startMaker so the first
-    // announce uses it. The swap-setup gate re-validates against real balance.
-    swapMakerAdvertised = {
-      price: Number(priceSats),
-      min_quantity: Number(args.minSat || 10000),
-      max_quantity: Number(args.maxSat || 4999999),
-    };
+    const configuredMaxSat = Number(args.maxSat || 4999999);
+    const minSat = Number(args.minSat || 10000);
+
+    // The advertised max is re-derived from the maker's LIVE unlocked XKR balance
+    // on every announce, so a taker can never request (or the maker advertise)
+    // more XKR than is actually spendable. max_quantity is in BTC satoshis, and
+    // the maker delivers XKR for BTC, so the cap is unlockedXKR * price(sats/XKR),
+    // minus a small haircut for the on-chain lock fee/change. The ASB swap-setup
+    // gate re-validates against the real balance as the hard backstop. Also kept
+    // in swapMakerAdvertised so the panel shows the true, balance-capped quote.
+    async function computeQuote() {
+      let maxSat = configuredMaxSat;
+      try {
+        const [unlockedAtomic] = await walletBackend.getBalance();
+        const unlockedXkr = Number(unlockedAtomic) / 100000; // XKR has 5 decimals
+        const balanceCapSat = Math.floor(unlockedXkr * Number(priceSats) * 0.98);
+        maxSat = Math.max(0, Math.min(configuredMaxSat, balanceCapSat));
+      } catch (_) {
+        // On a balance-read failure, fall back to the configured max; the ASB gate
+        // still protects against overcommitting.
+      }
+      swapMakerAdvertised = { price: Number(priceSats), min_quantity: minSat, max_quantity: maxSat };
+      return swapMakerAdvertised;
+    }
+
+    // Seed the advertised quote before the first announce so the panel and the
+    // initial broadcast both have a value.
+    swapMakerAdvertised = { price: Number(priceSats), min_quantity: minSat, max_quantity: configuredMaxSat };
     swapMaker = swapSwarm.startMaker({
       xkrAddress: walletBackend.getPrimaryAddress(),
       xkrPrivateSpendKey: spend,
       libp2pPeerId: swapMakerPeerId,
       asbHost: "127.0.0.1",
       asbPort: ASB_LISTEN_PORT,
-      getQuote: async () => swapMakerAdvertised,
+      getQuote: computeQuote,
       log: (m) => console.log("[swap-swarm] " + m),
     });
     swapMakerError = null;
