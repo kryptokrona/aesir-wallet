@@ -240,58 +240,74 @@ function startDiscovery(opts = {}) {
 
   // Open a private beam to `xkrAddress` and bridge it to a fresh local socket the
   // Rust taker dials. Resolves { multiaddr, peerId, close } for buy_xmr_direct.
+  // Open a durable local bridge to `xkrAddress`. The local TCP server stays up for
+  // the whole swap: EACH connection the Rust engine makes to it (the initial dial
+  // AND every `redial` reconnect the libp2p stack does when a connection drops)
+  // gets its OWN fresh private beam to the maker. A single-shot bridge broke here
+  // — once the first beam closed, redial hit a refused port and the swap wedged.
+  // The maker opens a new ASB-bridged beam per swap-init, so this fans out cleanly.
   function openSwapBridge(xkrAddress) {
     return new Promise((resolve, reject) => {
       log(`taker: swap requested for maker ${String(xkrAddress).slice(0, 12)}…; ${makers.size} maker(s) known`);
       const maker = makers.get(xkrAddress);
       if (!maker || !maker.conn) {
-        // The board connection went stale/dead, so the announce was TTL-evicted
-        // before we could act on it. This is the swap silently failing pre-beam.
         log("taker: ABORT — maker not in board map (its announce went stale). Board connection likely dropped.");
         return reject(new Error("maker not found / offline (board connection stale)"));
       }
 
-      const beamKey = randomKey();
-      log(`taker: swap-init sent, joining private beam ${beamKey.slice(0, 8)}…`);
-      sendJson(maker.conn, { type: "swap-init", beamKey });
-      const beam = joinTopic(beamKey, { maxPeers: 4, log });
+      const liveBeams = new Set();
 
-      let settled = false;
-      const timeout = setTimeout(() => {
-        if (settled) return;
-        log("taker: TIMED OUT — private beam to maker never connected");
-        try { beam.swarm.destroy(); } catch (_) {}
-        reject(new Error("timed out reaching maker over HyperSwarm"));
-      }, BEAM_CONNECT_TIMEOUT_MS);
-
-      beam.swarm.on("connection", (conn) => {
-        if (settled) {
-          try { conn.destroy(); } catch (_) {}
+      // For one engine socket: spin up a private beam, bridge them, tear both down
+      // together. Independent of every other engine socket.
+      const bridgeOneConnection = (sock) => {
+        const beamKey = randomKey();
+        log(`taker: engine dialed bridge — opening private beam ${beamKey.slice(0, 8)}…`);
+        if (!maker.conn) {
+          log("taker: maker board connection gone, cannot open beam for this dial");
+          try { sock.destroy(); } catch (_) {}
           return;
         }
-        log("taker: connected to maker on private beam");
-        conn.on("error", (e) => log(`taker: beam conn error: ${e.message}`));
-        // Local server the Rust taker dials; its (single) socket <-> the beam conn.
-        // Single-shot: bridge the first dial and stop accepting, so a libp2p retry
-        // can't double-pipe the same beam connection.
-        const srv = net.createServer((sock) => {
-          log("taker: Rust engine dialed the local bridge, piping to beam");
-          try { srv.close(); } catch (_) {}
+        sendJson(maker.conn, { type: "swap-init", beamKey });
+        const beam = joinTopic(beamKey, { maxPeers: 4, log });
+        liveBeams.add(beam);
+
+        let bridged = false;
+        const teardown = () => {
+          liveBeams.delete(beam);
+          try { beam.swarm.destroy(); } catch (_) {}
+        };
+        const timeout = setTimeout(() => {
+          if (bridged) return;
+          log("taker: private beam for this dial never connected — closing socket");
+          try { sock.destroy(); } catch (_) {}
+          teardown();
+        }, BEAM_CONNECT_TIMEOUT_MS);
+
+        beam.swarm.on("connection", (conn) => {
+          if (bridged) { try { conn.destroy(); } catch (_) {} return; }
+          bridged = true;
+          clearTimeout(timeout);
+          log("taker: connected to maker on private beam, piping to engine");
+          conn.on("error", (e) => log(`taker: beam conn error: ${e.message}`));
+          conn.on("close", teardown);
           bridge(conn, sock, { log, label: "taker-engine↔beam" });
         });
-        srv.listen(0, "127.0.0.1", () => {
-          settled = true;
-          clearTimeout(timeout);
-          const port = srv.address().port;
-          log(`taker: beam ready, local bridge on 127.0.0.1:${port} (maker ${maker.peerId})`);
-          resolve({
-            multiaddr: `/ip4/127.0.0.1/tcp/${port}`,
-            peerId: maker.peerId,
-            close() {
-              try { srv.close(); } catch (_) {}
-              try { beam.swarm.destroy(); } catch (_) {}
-            },
-          });
+        sock.on("close", () => { clearTimeout(timeout); teardown(); });
+      };
+
+      const srv = net.createServer(bridgeOneConnection);
+      srv.on("error", (e) => reject(e));
+      srv.listen(0, "127.0.0.1", () => {
+        const port = srv.address().port;
+        log(`taker: bridge server up on 127.0.0.1:${port} (maker ${maker.peerId})`);
+        resolve({
+          multiaddr: `/ip4/127.0.0.1/tcp/${port}`,
+          peerId: maker.peerId,
+          close() {
+            try { srv.close(); } catch (_) {}
+            for (const b of liveBeams) try { b.swarm.destroy(); } catch (_) {}
+            liveBeams.clear();
+          },
         });
       });
     });
