@@ -349,11 +349,15 @@ ipcMain.handle("swap-btc-txs", () => swapRpc(() => xkrSwapRpc.bitcoinTransaction
 // Makers discovered over the HyperSwarm board (replaces the rendezvous). Shape
 // matches the old quote-board so the UI is unchanged: { peer_id, xkrAddress, quote }.
 ipcMain.handle("swap-list-sellers", () =>
-  swapRpc(async () =>
-    ensureDiscovery()
+  swapRpc(async () => {
+    // Don't offer ourselves as a maker: our own announce is on the same board.
+    const ownAddress =
+      walletBackend && walletBackend.getPrimaryAddress ? walletBackend.getPrimaryAddress() : null;
+    return ensureDiscovery()
       .list()
-      .map((m) => ({ peer_id: m.peerId, xkrAddress: m.xkrAddress, multiaddr: null, quote: m.quote })),
-  ),
+      .filter((m) => m.xkrAddress !== ownAddress)
+      .map((m) => ({ peer_id: m.peerId, xkrAddress: m.xkrAddress, multiaddr: null, quote: m.quote }));
+  }),
 );
 // Resume a swap by id.
 ipcMain.handle("swap-resume", (e, swapId) => swapRpc(() => xkrSwapRpc.resume(swapId)));
