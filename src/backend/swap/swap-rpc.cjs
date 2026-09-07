@@ -65,7 +65,8 @@ const listSellers = () => call("list_sellers");
 // Send BTC. amountSat omitted => drain the wallet.
 const withdrawBtc = ({ address, amountSat }) =>
   call("withdraw_btc", { address, amount_sat: amountSat ?? null });
-const resume = (swapId) => call("resume", { swap_id: swapId });
+const resume = (swapId, sellerMultiaddr) =>
+  call("resume", sellerMultiaddr ? { swap_id: swapId, seller_multiaddr: sellerMultiaddr } : { swap_id: swapId });
 // Start a swap against an explicit maker. amountSat is the BTC amount to lock.
 const buyXmrDirect = ({ sellerMultiaddr, sellerPeerId, amountSat, xkrReceiveAddress, changeAddress }) =>
   call("buy_xmr_direct", {
