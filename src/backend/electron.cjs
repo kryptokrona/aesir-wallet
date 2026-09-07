@@ -260,17 +260,51 @@ async function startXkrSwapService(node) {
 // Resume any swap the daemon has persisted as not-yet-completed. Safe to call
 // repeatedly: resuming an already-finished swap is a no-op, and the daemon
 // serialises work per swap behind its own lock.
+// Wait (bounded) for a maker peer to (re)appear on the HyperSwarm board, so a
+// resumed swap can be re-bridged to it. Returns the maker record or null.
+async function waitForMakerOnBoard(discovery, peerId, timeoutMs = 45000) {
+  const start = Date.now();
+  for (;;) {
+    const m = discovery.list().find((x) => x.peerId === peerId);
+    if (m) return m;
+    if (Date.now() - start >= timeoutMs) return null;
+    await sleep(2000);
+  }
+}
+
+// Resume every unfinished swap after an engine (re)start. Crucially, the engine's
+// stored maker address is a dead HyperSwarm bridge port from the previous process,
+// so we re-open a fresh bridge to the maker and hand resume() its new address --
+// otherwise the resumed swap keeps dialing the dead port ("request channel
+// closed") and can never finish, even though its XKR/BTC are on-chain.
 async function resumeInFlightSwaps() {
   try {
     const infos = await xkrSwapRpc.swapInfos();
     if (!Array.isArray(infos)) return;
-    for (const info of infos) {
-      if (info && info.completed === false && info.swap_id) {
-        xkrSwapRpc
-          .resume(info.swap_id)
-          .then(() => console.log("resumed in-flight swap", info.swap_id))
-          .catch((err) => console.error("resume failed for", info.swap_id, err.message));
+    const inflight = infos.filter((i) => i && i.completed === false && i.swap_id);
+    if (!inflight.length) return;
+    const discovery = ensureDiscovery();
+    for (const info of inflight) {
+      const peerId = info.seller && info.seller.peer_id;
+      let multiaddr;
+      try {
+        const maker = peerId ? await waitForMakerOnBoard(discovery, peerId) : null;
+        if (maker) {
+          const bridge = await discovery.openSwapBridge(maker.xkrAddress);
+          multiaddr = bridge.multiaddr;
+          console.log(`resume: re-bridged swap ${info.swap_id} -> ${multiaddr}`);
+        } else {
+          console.warn(
+            `resume: maker ${peerId} for swap ${info.swap_id} not on board; resuming without a fresh bridge (will refund on timelock if it can't reconnect)`,
+          );
+        }
+      } catch (e) {
+        console.error("resume: bridge setup failed for", info.swap_id, e.message);
       }
+      xkrSwapRpc
+        .resume(info.swap_id, multiaddr)
+        .then(() => console.log("resumed in-flight swap", info.swap_id))
+        .catch((err) => console.error("resume failed for", info.swap_id, err.message));
     }
   } catch (e) {
     console.error("failed to enumerate swaps for resume:", e.message);
