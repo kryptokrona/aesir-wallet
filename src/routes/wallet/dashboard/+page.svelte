@@ -233,8 +233,13 @@
               </p>
             </div>
           {:else}
-            <div class="row" class:unconfirmed={!tx.confirmed} class:blink_me={!tx.confirmed}>
-              <p style="opacity: 80%;">₿ {shortId(tx.id)}</p>
+            <div
+              class="row"
+              class:unconfirmed={!tx.confirmed}
+              class:blink_me={!tx.confirmed}
+              on:click={() => goto(`/wallet/transaction/${tx.id}?kind=btc`)}
+            >
+              <p style="opacity: 80%;">{shortId(tx.id)}</p>
               <p class="tx" style="background: none" class:sent={tx.amount > 0}>
                 {tx.amount.toFixed(8)} BTC
               </p>
@@ -286,6 +291,10 @@
     &:active {
       color: #121212;
     }
+  }
+
+  .row:first-of-type {
+    border-top: 1px solid var(--border-color);
   }
 
   .row:last-of-type {

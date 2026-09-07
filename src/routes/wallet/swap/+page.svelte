@@ -126,6 +126,19 @@
 
   $: activeInfo = infos.find((i) => i.swap_id === activeSwapId) || null;
   $: activeTerminal = activeInfo ? isTerminal(activeInfo.state_name) : false;
+  // Swaps newest-first, for the recent list (top 3) and the full history view.
+  $: sortedInfos = [...infos].sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
+
+  // Full swap-history pagination, mirroring /history (10 per page).
+  const HISTORY_PER_PAGE = 10;
+  let historyPageNum = 0;
+  $: historyPages = Math.max(1, Math.ceil(sortedInfos.length / HISTORY_PER_PAGE));
+  $: if (historyPageNum > historyPages - 1) historyPageNum = historyPages - 1;
+  $: historyPage = historyPageNum + 1;
+  $: pagedHistory = sortedInfos.slice(
+    historyPageNum * HISTORY_PER_PAGE,
+    historyPageNum * HISTORY_PER_PAGE + HISTORY_PER_PAGE,
+  );
 
   function setMax() {
     if ($btc.balanceSat == null) return;
@@ -297,9 +310,26 @@
 </script>
 
 <div class="header" in:fade>
-  <h3>{view === 'maker' ? 'Market Maker' : 'Swap BTC → XKR'}</h3>
+  <h3>{view === 'maker' ? 'Market Maker' : view === 'history' ? 'Swap history' : 'Swap BTC → XKR'}</h3>
   {#if view === 'form'}
-    <button class="link" on:click={openMaker}>Market Maker</button>
+    <div class="head-actions">
+      <Button text="Market Maker" on:click={openMaker} />
+      <Button
+        text="Swap"
+        highlight
+        disabled={!engineUp || !bestSeller || !amountNum || !withinRange || overBalance}
+        on:click={openPrepare}
+      />
+    </div>
+  {:else if view === 'history'}
+    <div class="pager">
+      <p>{historyPage}/{historyPages}</p>
+      {#if historyPageNum > 0}<Button text="-" on:click={() => historyPageNum--} />{/if}
+      {#if historyPage < historyPages}<Button text="+" on:click={() => historyPageNum++} />{/if}
+      <button class="backbutton" on:click={() => (view = 'form')}>
+        <ArrowLeft />
+      </button>
+    </div>
   {:else}
     <button class="backbutton" on:click={() => (view === 'maker' ? (view = 'form') : newSwap())}>
       <ArrowLeft />
@@ -350,19 +380,15 @@
     <p class="hint warn">Amount exceeds your available BTC balance.</p>
   {/if}
 
-  <button
-    class="primary"
-    on:click={openPrepare}
-    disabled={!engineUp || !bestSeller || !amountNum || !withinRange || overBalance}
-    in:fly={{ y: 16, delay: 100 }}
-  >
-    Swap
-  </button>
-
   {#if infos.length}
-    <div class="card recent" in:fly={{ y: 16, delay: 120 }}>
-      <h4>Recent swaps</h4>
-      {#each infos.slice(0, 5) as info (info.swap_id)}
+    <div class="recent" in:fly={{ y: 16, delay: 120 }}>
+      <div class="list-header">
+        <h3>Recent swaps</h3>
+        {#if sortedInfos.length > 3}
+          <Button text="See full history →" on:click={() => (view = 'history')} />
+        {/if}
+      </div>
+      {#each sortedInfos.slice(0, 3) as info (info.swap_id)}
         <button class="swap-row" on:click={() => openMonitor(info.swap_id)}>
           <div>
             <div class="swap-id">{short(info.swap_id)}</div>
@@ -375,6 +401,22 @@
       {/each}
     </div>
   {/if}
+{/if}
+
+{#if view === 'history'}
+  <div class="recent" in:fly={{ y: 16, delay: 40 }}>
+    {#each pagedHistory as info (info.swap_id)}
+      <button class="swap-row" on:click={() => openMonitor(info.swap_id)}>
+        <div>
+          <div class="swap-id">{short(info.swap_id)}</div>
+          <div class="swap-amt">{(info.btc_amount / 1e8).toFixed(8)} BTC</div>
+        </div>
+        <div class="state" class:done={info.state_name === 'xmr is redeemed'}>
+          {friendlyState(info.state_name)}
+        </div>
+      </button>
+    {/each}
+  </div>
 {/if}
 
 {#if view === 'monitor'}
@@ -560,12 +602,23 @@
       margin: 0;
       color: var(--text-color);
     }
-    .link {
-      background: none;
-      border: none;
-      color: var(--primary-color);
-      cursor: pointer;
-      font-size: 0.85rem;
+
+    .head-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .pager {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+
+      p {
+        margin: 0;
+        opacity: 0.7;
+        font-size: 0.9rem;
+      }
     }
   }
   .notice {
@@ -708,32 +761,55 @@
     }
   }
 
+  // Full-width swap list, styled exactly like the transaction list on /history:
+  // a header bar (title left, action right) followed by full-bleed rows.
   .recent {
+    width: 100%;
+
+    .list-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      min-height: 60px;
+      border-top: 1px solid var(--border-color);
+      border-bottom: 1px solid var(--border-color);
+      padding: 0 2rem;
+
+      h3 {
+        margin: 0;
+        color: var(--text-color);
+      }
+    }
+
     .swap-row {
       display: flex;
       justify-content: space-between;
       align-items: center;
       width: 100%;
+      height: 52.1px;
+      padding: 0 2rem;
       background: transparent;
       border: none;
-      border-top: 1px solid var(--border-color);
-      padding: 0.6rem 0;
+      border-bottom: 1px solid var(--border-color);
       cursor: pointer;
       text-align: left;
       color: var(--text-color);
 
-      &:first-of-type {
-        border-top: none;
+      &:hover {
+        background-color: var(--border-color);
+        border-bottom: 1px solid transparent;
       }
+      // Match the /history transaction rows: the id reads like the hash there
+      // (default body size, slightly dimmed), with the amount as a smaller detail.
       .swap-id {
-        font-size: 0.85rem;
+        opacity: 0.8;
       }
       .swap-amt {
         opacity: 0.6;
-        font-size: 0.75rem;
+        font-size: 0.8rem;
       }
       .state {
-        font-size: 0.78rem;
         opacity: 0.8;
         text-align: right;
         max-width: 55%;
