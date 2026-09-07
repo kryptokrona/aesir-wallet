@@ -137,6 +137,9 @@
     updateTxs();
   }
 
+  // Auto-lock on idle by returning to the login screen. Unlocking there does NOT
+  // restart the wallet when it's already running (see login-wallet's login()),
+  // so an in-flight swap keeps going untouched -- only the screen locks.
   $: if ($user.idleTime >= 300) goto('/auth/login-wallet');
 </script>
 
