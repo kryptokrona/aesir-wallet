@@ -204,7 +204,7 @@
   }
 
   // ---- market maker (sell XKR for BTC) -------------------------------------
-  let makerStatus = { advertising: false, asbRunning: false, peerId: null, error: null, advertised: null };
+  let makerStatus = { advertising: false, asbRunning: false, peerId: null, error: null, advertised: null, btcBalanceSat: null };
   let makerPrice = '5'; // sats per XKR
   let makerMinBtc = '0.0001';
   let makerMaxBtc = '0.05';
@@ -269,16 +269,27 @@
     makerStarting = false;
   }
 
+  // If a swap is in flight, jump to watching it. This must survive the engine
+  // being briefly down (e.g. right after the wallet auto-locks and you log back
+  // in, which restarts the engine): the in-flight swap won't appear in swap-infos
+  // until the engine is back up, so we keep trying on every poll and restore the
+  // first time it surfaces -- once per page mount, so it won't fight navigation.
+  let didRestore = false;
+  function maybeRestoreLiveSwap() {
+    if (didRestore || view !== 'form') return;
+    const live = infos.filter((i) => !isTerminal(i.state_name));
+    if (!live.length) return;
+    live.sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
+    didRestore = true;
+    openMonitor(live[0].swap_id);
+  }
+
   onMount(async () => {
     await Promise.all([refreshStatus(), refreshSellers(), refreshInfos(), loadAddress(), refreshBtc()]);
-    // If a swap is already in flight, jump straight to watching it.
-    const live = infos.filter((i) => !isTerminal(i.state_name));
-    if (live.length) {
-      live.sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
-      openMonitor(live[0].swap_id);
-    }
+    maybeRestoreLiveSwap();
     poll = setInterval(async () => {
       await Promise.all([refreshStatus(), refreshSellers(), refreshInfos(), refreshBtc()]);
+      maybeRestoreLiveSwap();
       if (view === 'maker') await refreshMakerStatus();
     }, 4000);
   });
@@ -448,6 +459,14 @@
         <div class="rt">
           <span class="k">Price</span>
           <span class="v">{makerStatus.advertised ? makerStatus.advertised.price : makerPrice} sat/XKR</span>
+        </div>
+      </div>
+      <div class="recap">
+        <div>
+          <span class="k">BTC earned</span>
+          <span class="v">
+            {#if makerStatus.btcBalanceSat != null}{(makerStatus.btcBalanceSat / 1e8).toFixed(8)} BTC{:else}—{/if}
+          </span>
         </div>
       </div>
       {#if makerStatus.peerId}<div class="meta"><span>Peer {short(makerStatus.peerId)}</span></div>{/if}

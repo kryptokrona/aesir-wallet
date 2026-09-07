@@ -55,6 +55,25 @@
     animate = false;
     wrongPassword = false;
 
+    // Auto-lock case: the wallet is ALREADY running (this screen is just acting as
+    // a lock). Don't call walletStart -- that would tear down and restart the
+    // wallet + swap engine, interrupting any in-flight swap. Just verify the
+    // password and slip back in; the backend never stopped.
+    if ($wallet.started) {
+      const ok = await window.api.verifyPass(password);
+      if (!ok) {
+        await sleep(250);
+        wrongPassword = true;
+        password = '';
+        loading = false;
+        return;
+      }
+      password = '';
+      loading = false;
+      await goto('/wallet/dashboard');
+      return;
+    }
+
     nodeOnline = await window.api.checkNode($node.selectedNode);
     if (!nodeOnline) {
       // Don't start the wallet against a dead node -- that leaves it half-started
