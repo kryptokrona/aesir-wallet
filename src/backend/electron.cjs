@@ -436,6 +436,10 @@ ipcMain.handle("swap-maker-start", async (e, args = {}) => {
         XKR_ASB_PRICE_SATS: priceSats,
         XKR_ASB_SPEND_SECRET: makerSpend,
         XKR_ASB_VIEW_SECRET: makerView,
+        // Derive the ASB's Bitcoin wallet from the XKR spend key -- the SAME seed
+        // the taker engine uses -- so maker BTC proceeds land in the one shared
+        // BTC wallet (visible/withdrawable in the app), not a separate ASB wallet.
+        XKR_SWAP_SEED_KEY: makerSpend,
         ...(args.env || {}),
       },
       startArgs: [
@@ -504,16 +508,29 @@ ipcMain.handle("swap-maker-stop", () => {
 });
 
 // Market-making status for the maker panel.
-ipcMain.handle("swap-maker-status", () => ({
-  ok: true,
-  result: {
-    advertising: !!swapMaker,
-    asbRunning: xkrSwapAsb.isRunning ? xkrSwapAsb.isRunning() : false,
-    peerId: swapMakerPeerId,
-    error: swapMakerError,
-    advertised: swapMaker ? swapMakerAdvertised : null,
-  },
-}));
+ipcMain.handle("swap-maker-status", async () => {
+  // The maker RECEIVES BTC into the ASB's own Bitcoin wallet (a separate wallet
+  // from the taker engine's, which is what the main BTC balance shows), so query
+  // the ASB directly for the maker's earned BTC. Best-effort: only while running.
+  let btcBalanceSat = null;
+  if (swapMakerRpc) {
+    try {
+      const r = await swapMakerRpc.bitcoinBalance();
+      if (r && typeof r.balance === "number") btcBalanceSat = r.balance;
+    } catch (_) {}
+  }
+  return {
+    ok: true,
+    result: {
+      advertising: !!swapMaker,
+      asbRunning: xkrSwapAsb.isRunning ? xkrSwapAsb.isRunning() : false,
+      peerId: swapMakerPeerId,
+      error: swapMakerError,
+      advertised: swapMaker ? swapMakerAdvertised : null,
+      btcBalanceSat,
+    },
+  };
+});
 
 function startMakerBoard(args, priceSats) {
   try {
