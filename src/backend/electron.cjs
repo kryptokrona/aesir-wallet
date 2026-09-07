@@ -205,20 +205,30 @@ async function startXkrSwapService(node) {
       xkrSwapServer = undefined;
     }
     if (!node) return;
-    // Floor the swap wallet reconstructions near the chain tip so they don't try
-    // to sync from genesis (mainnet is 2.5M+ blocks). The swap's shared-output
-    // deposit and any inventory we spend are always at or above 'now', so a
-    // recent floor is safe. Best-effort: on failure we leave the env untouched.
+    // Floor the *shared-address* wallet reconstructions (watchForLock / sweep /
+    // confirmTx re-import the ephemeral 2-of-2 deposit from keys) near the chain
+    // tip so they don't sync from genesis (mainnet is 2.5M+ blocks). The shared
+    // deposit is always created "now", so a recent floor is safe. The maker's own
+    // balance and lock no longer go through a re-import at all -- they read/spend
+    // the already-synced primary wallet directly (getMainWallet below), so there's
+    // no coinbase-scan or scan-height guessing for the maker's inventory anymore.
+    // Respect an explicit XKR_WALLET_SCAN_HEIGHT if the operator set one.
     try {
-      const info = await fetchTimeout(`${node.ssl ? "https://" : "http://"}${node.url}:${node.port}/getinfo`);
-      const j = info.ok ? await info.json() : null;
-      if (j && j.height) process.env.XKR_WALLET_SCAN_HEIGHT = String(Math.max(0, j.height - 1000));
+      if (!process.env.XKR_WALLET_SCAN_HEIGHT) {
+        const info = await fetchTimeout(`${node.ssl ? "https://" : "http://"}${node.url}:${node.port}/getinfo`);
+        const j = info.ok ? await info.json() : null;
+        if (j && j.height) process.env.XKR_WALLET_SCAN_HEIGHT = String(Math.max(0, j.height - 1000));
+      }
     } catch (_) {}
     xkrSwapServer = xkrSwap.start({
       port: XKR_SWAP_RPC_PORT,
       daemonHost: node.url,
       daemonPort: node.port,
       ssl: node.ssl,
+      // Option A: the maker's balance/lock use the app's live, already-synced
+      // wallet instead of a separate re-imported instance, so the ASB and the UI
+      // can never disagree about the balance. Only maker-key operations match.
+      getMainWallet: () => walletBackend,
     });
     xkrSwapServer.on("error", (err) => {
       console.error("xkr-swap RPC service error:", err.message);

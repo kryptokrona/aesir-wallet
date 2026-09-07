@@ -62,6 +62,33 @@ function makeDaemon(daemonHost, daemonPort, ssl) {
     return new WB.Daemon(daemonHost, daemonPort, false, !!ssl);
 }
 
+// Option A: when a maker-side call (`balance` / `lockSend`) is for the app's OWN
+// primary wallet, use that live, already-synced instance instead of re-importing
+// and re-syncing a second copy. The two would otherwise diverge (different scan
+// height / coinbase setting) and the ASB would quote a balance it can't spend.
+// Returns the live wallet iff the supplied spend secret is the primary wallet's.
+function mainWalletIfMatches(ctx, spendSecret) {
+    try {
+        const w = ctx.getMainWallet && ctx.getMainWallet();
+        if (!w || typeof w.getPrimaryAddressPrivateKeys !== 'function') return null;
+        const [primarySpend] = w.getPrimaryAddressPrivateKeys();
+        return primarySpend && spendSecret && primarySpend === spendSecret ? w : null;
+    } catch (_) {
+        return null;
+    }
+}
+
+// Serialize writes against the live primary wallet so two concurrent swap locks
+// can't both select the same inputs. (A manual UI send racing a lock is still
+// possible; wallet-backend-js marks inputs as it builds a tx, which bounds that
+// window, and a lock takes only seconds.)
+let mainWalletWriteChain = Promise.resolve();
+function withMainWalletWriteLock(fn) {
+    const run = mainWalletWriteChain.then(fn, fn);
+    mainWalletWriteChain = run.catch(() => {});
+    return run;
+}
+
 // Import a wallet, sync it, run `fn(wallet)`, and always stop it afterwards.
 async function withWallet(makeWallet, fn) {
     const [wallet, err] = await makeWallet();
@@ -190,6 +217,32 @@ const methods = {
             throw new Error('senderSpendSecret, senderViewSecret, destAddress, amount required');
         }
         const useFee = typeof fee === 'number' ? fee : DEFAULT_FEE;
+
+        // Maker path: spend directly from the app's live primary wallet (already
+        // synced, so no re-import/poll) -- this is the same wallet the ASB quoted
+        // its balance from, so what it advertised is what it can lock.
+        const mainWallet = mainWalletIfMatches(ctx, senderSpendSecret);
+        if (mainWallet) {
+            return withMainWalletWriteLock(async () => {
+                const [unlocked] = await mainWallet.getBalance();
+                if (unlocked < amount + useFee) {
+                    throw new Error(`insufficient spendable XKR for lock: have ${unlocked}, need ${amount + useFee}`);
+                }
+                const result = await mainWallet.sendTransactionAdvanced(
+                    [[destAddress, amount]],
+                    swapMixin(),
+                    WB.FeeType.FixedFee(useFee),
+                    undefined, // paymentID
+                    undefined, // subWalletsToTakeFrom
+                    mainWallet.getPrimaryAddress(), // change back to us
+                    true, // relayToNetwork
+                    false, // sendAll
+                );
+                if (!result.success) throw new Error(result.error.toString());
+                return { txHash: result.transactionHash, amount, fee: useFee };
+            });
+        }
+
         return withWallet(
             () => WB.WalletBackend.importWalletFromKeys(makeDaemon(ctx.daemonHost, ctx.daemonPort, ctx.ssl), scanHeight || floorScanHeight(), senderViewSecret, senderSpendSecret),
             async (wallet) => {
@@ -220,6 +273,16 @@ const methods = {
     // reports whatever balance it has.
     async balance({ spendSecret, viewSecret, scanHeight }, ctx) {
         if (!spendSecret || !viewSecret) throw new Error('spendSecret, viewSecret required');
+
+        // Maker path: read the app's live, already-synced primary wallet. It is
+        // authoritative and instant -- no re-import, no scan-height/coinbase
+        // guessing, and it can't diverge from the balance the maker will lock.
+        const mainWallet = mainWalletIfMatches(ctx, spendSecret);
+        if (mainWallet) {
+            const [unlocked, locked] = await mainWallet.getBalance();
+            return { unlocked, locked };
+        }
+
         return withWallet(
             () => WB.WalletBackend.importWalletFromKeys(makeDaemon(ctx.daemonHost, ctx.daemonPort, ctx.ssl), scanHeight || floorScanHeight(), viewSecret, spendSecret),
             async (wallet) => {
@@ -238,8 +301,8 @@ const methods = {
 
 // ---- JSON-RPC HTTP server --------------------------------------------------
 
-function start({ port, daemonHost, daemonPort, ssl }) {
-    const ctx = { daemonHost, daemonPort, ssl: !!ssl };
+function start({ port, daemonHost, daemonPort, ssl, getMainWallet }) {
+    const ctx = { daemonHost, daemonPort, ssl: !!ssl, getMainWallet };
     const server = http.createServer((req, res) => {
         if (req.method !== 'POST') {
             res.writeHead(405).end();
