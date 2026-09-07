@@ -147,6 +147,19 @@
     showPrepare = true;
   }
 
+  // A started swap can fail during setup (e.g. the maker is out of XKR) before it
+  // ever shows up in swap-infos, which would otherwise leave the monitor spinning
+  // on "Loading swap…" forever. If nothing loads within the window, surface it.
+  let monitorLoadFailed = false;
+  let monitorTimer = null;
+  function watchMonitorLoad() {
+    monitorLoadFailed = false;
+    if (monitorTimer) clearTimeout(monitorTimer);
+    monitorTimer = setTimeout(() => {
+      if (view === 'monitor' && !activeInfo) monitorLoadFailed = true;
+    }, 25000);
+  }
+
   async function confirmSwap() {
     if (starting) return;
     if (!bestSeller) {
@@ -168,6 +181,7 @@
         amountXkr = '';
         showPrepare = false;
         view = 'monitor';
+        watchMonitorLoad();
         await refreshInfos();
       } else {
         err(res?.error || 'Failed to start swap');
@@ -181,6 +195,7 @@
     activeSwapId = id;
     snapshot = null;
     view = 'monitor';
+    watchMonitorLoad();
   }
   function newSwap() {
     view = 'form';
@@ -374,6 +389,12 @@
         <span>Swap {short(activeInfo.swap_id)}</span>
         {#if snapshot?.maker}<span>Maker {snapshot.maker}</span>{/if}
       </div>
+    {:else if monitorLoadFailed}
+      <p class="hint warn">
+        This swap didn't get off the ground — the maker likely has no spendable XKR (out of inventory)
+        or became unreachable during setup. No BTC was sent. Check the app logs for details.
+      </p>
+      <button class="primary inline" on:click={newSwap}>Back</button>
     {:else}
       <p class="hint">Loading swap…</p>
     {/if}
