@@ -5,10 +5,21 @@
   export let rounded = false;
   export let wUnit;
   export let hUnit;
-  export let active
+  export let active;
+  // Fill with the theme highlight (primary) colour -- for the main action buttons
+  // (Swap, Send) so they stand out from the neutral header buttons.
+  export let highlight = false;
+  export let disabled = false;
 </script>
 
-<button on:click style="width: {width}{wUnit ? wUnit : 'px'}; height: {height}{hUnit ? hUnit : 'px'}" class:rounded class:active>
+<button
+  on:click
+  {disabled}
+  style="width: {width}{wUnit ? wUnit : 'px'}; height: {height}{hUnit ? hUnit : 'px'}"
+  class:rounded
+  class:active
+  class:highlight
+>
   {text}
   <slot />
 </button>
@@ -39,5 +50,32 @@
 
   .active {
     background-color: var(--button-hover-bg-color);
+  }
+
+  .highlight {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+    color: #fff;
+
+    &:hover {
+      background: var(--primary-color);
+      color: #fff;
+      opacity: 0.9;
+    }
+  }
+
+  button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+
+    &:hover {
+      background-color: var(--button-bg-color);
+      color: var(--button-text-color);
+    }
+
+    &.highlight:hover {
+      background-color: var(--primary-color);
+      color: #fff;
+    }
   }
 </style>

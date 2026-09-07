@@ -2,6 +2,7 @@
   import { fade } from "svelte/transition";
   import PrepareTransaction from "./PrepareTransaction.svelte";
   import ConfirmTransaction from "./ConfirmTransaction.svelte";
+  import ConfirmBtcTransaction from "./ConfirmBtcTransaction.svelte";
   import { wallet } from "$lib/stores/wallet.js";
   import Button from "$lib/components/buttons/Button.svelte";
 
@@ -16,7 +17,7 @@
       <button class:active={mode === "xkr"} on:click={() => (mode = "xkr")}>XKR</button>
       <button class:active={mode === "btc"} on:click={() => (mode = "btc")}>BTC</button>
     </div>
-    <Button text="Send" on:click={prepare.prepareTx} />
+    <Button text="Send" highlight on:click={prepare.prepareTx} />
   </div>
 </div>
 
@@ -24,6 +25,8 @@
   <PrepareTransaction bind:this={prepare} {mode} />
   {#if mode === "xkr"}
     <ConfirmTransaction />
+  {:else}
+    <ConfirmBtcTransaction />
   {/if}
 </div>
 

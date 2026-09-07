@@ -5,7 +5,7 @@
   import { fade } from 'svelte/transition';
   import { onMount } from 'svelte';
   import { fiat } from '$lib/stores/fiat.js';
-  import { btc, refreshBtc } from '$lib/stores/btc.js';
+  import { btc } from '$lib/stores/btc.js';
 
   // "xkr" -> normal Kryptokrona send; "btc" -> withdraw from the engine's
   // Bitcoin wallet via the swap daemon.
@@ -15,8 +15,6 @@
   let amount;
   let paymentId;
   let sendAll;
-
-  const short = (s) => (s ? s.slice(0, 10) + '…' + s.slice(-6) : '');
 
   onMount(() => {
     //Get address from url if user clicked contact
@@ -29,9 +27,10 @@
     ? '$' + ((mode === 'btc' ? $fiat.btcPrice : $fiat.balance) * amount).toFixed(mode === 'btc' ? 2 : 5)
     : '$0.00';
 
-  // Withdraw BTC from the engine's Bitcoin wallet. The daemon validates the
-  // address and broadcasts; blank amount + Max drains the wallet.
-  async function sendBtc() {
+  // Stage a BTC withdrawal for confirmation (mirrors the XKR prepare step): just
+  // validate and set the prepared tx -- ConfirmBtcTransaction broadcasts it on
+  // Confirm. Blank amount + Max drains the wallet.
+  function prepareBtc() {
     const toastStyle = {
       position: 'top-right',
       style:
@@ -39,23 +38,19 @@
     };
     if (!address) return toast.error('Enter address', toastStyle);
     if (!sendAll && (!amount || amount <= 0)) return toast.error('Enter amount', toastStyle);
-    const res = await window.api.invoke('swap-withdraw-btc', {
+    $wallet.preparedBtcTransaction = {
       address,
       amountSat: sendAll ? undefined : Math.round(parseFloat(amount) * 1e8),
-    });
-    if (res && res.ok) {
-      toast.success('Sent BTC — ' + short(res.result?.txid || ''), toastStyle);
-      address = '';
-      amount = '';
-      sendAll = false;
-      refreshBtc();
-    } else {
-      toast.error(res?.error || 'Failed to send', toastStyle);
-    }
+      amountDisplay: sendAll ? 'All (max)' : amount + ' BTC',
+      sendAll: !!sendAll,
+    };
+    address = '';
+    amount = '';
+    sendAll = false;
   }
 
   export const prepareTx = async () => {
-    if (mode === 'btc') return sendBtc();
+    if (mode === 'btc') return prepareBtc();
     let validAddress = await window.api.validateAddress(address);
     if (!amount) {
       toast.error('Enter amount', {

@@ -1,49 +1,61 @@
 <script>
   import { onMount } from 'svelte';
-  import { node } from '$lib/stores/node.js';
   import { page } from '$app/stores';
   import { fade } from 'svelte/transition';
   import ArrowLeft from '$lib/components/icons/ArrowLeft.svelte';
   import { transactions } from '$lib/stores/wallet.js';
+  import { btc, refreshBtc } from '$lib/stores/btc.js';
   import { goto } from '$app/navigation';
   let transaction;
   export let previousPage = '/wallet/dashboard';
 
   onMount(async () => {
-    let prevParam = $page.url.searchParams.get('prev');
+    const prevParam = $page.url.searchParams.get('prev');
     if (prevParam) previousPage = '/wallet/' + prevParam;
-
-    if (!$node.selectedNode) return;
-    await getTransaction($page.params['hash']);
+    const kind = $page.url.searchParams.get('kind') || 'xkr';
+    if (kind === 'btc') await refreshBtc();
+    load($page.params['hash'], kind);
   });
 
-  async function getTransaction(hash) {
-    let thisTX = $transactions.txs.find((a) => a.hash === hash);
-    if (!thisTX) thisTX = $transactions.pending.find((a) => a.hash === hash);
-    if (thisTX.amount < 0) thisTX.incoming = false;
-    else thisTX.incoming = true;
-    transaction = thisTX;
-    return;
+  function load(id, kind) {
+    if (kind === 'btc') {
+      const t = ($btc.txs || []).find((a) => a.txid === id);
+      if (!t) return;
+      transaction = {
+        kind: 'btc',
+        id: t.txid,
+        amount: (t.amount_sat || 0) / 1e8,
+        incoming: (t.amount_sat || 0) > 0,
+        time: t.timestamp || 0,
+        height: t.confirmed ? t.height : 'Unconfirmed',
+      };
+    } else {
+      let t = $transactions.txs.find((a) => a.hash === id);
+      if (!t) t = ($transactions.pending || []).find((a) => a.hash === id);
+      if (!t) return;
+      transaction = {
+        kind: 'xkr',
+        id: t.hash,
+        amount: t.amount / 100000,
+        incoming: t.amount > 0,
+        time: t.time,
+        height: t.height,
+      };
+    }
   }
 
-  function getTxDetails(hash) {
-    const url = `https://xkr.network/transaction?hash=${hash}`;
+  function openExplorer() {
+    const url =
+      transaction.kind === 'btc'
+        ? `https://mempool.space/testnet/tx/${transaction.id}`
+        : `https://xkr.network/transaction?hash=${transaction.id}`;
     window.api.openLink(url);
-  }
-
-  function getBlockDetails(hash) {
-    //We need the block hash for this
-    return;
   }
 </script>
 
 <div class="header">
   <h3 in:fade>Transaction</h3>
-  <button
-    on:click={() => {
-      goto(previousPage);
-    }}
-  >
+  <button on:click={() => goto(previousPage)}>
     <ArrowLeft />
   </button>
 </div>
@@ -52,20 +64,21 @@
     <div>
       <h4>Amount</h4>
       <p class="amount" class:incoming={transaction.incoming}>
-        {#if transaction.incoming}+{/if}{transaction.amount / 100000} XKR
+        {#if transaction.incoming}+{/if}{transaction.amount}
+        {transaction.kind === 'btc' ? 'BTC' : 'XKR'}
       </p>
     </div>
     <div style="margin-top: .8em">
-      <h4>Hash</h4>
-      <p style="cursor: pointer;" on:click={() => getTxDetails(transaction.hash)}>{transaction.hash}</p>
+      <h4>{transaction.kind === 'btc' ? 'Transaction ID' : 'Hash'}</h4>
+      <p style="cursor: pointer;" on:click={openExplorer}>{transaction.id}</p>
     </div>
     <div style="margin-top: .8em">
       <h4>Timestamp</h4>
-      <p>{new Date(transaction.time * 1000).toLocaleString()}</p>
+      <p>{transaction.time ? new Date(transaction.time * 1000).toLocaleString() : '—'}</p>
     </div>
     <div style="margin-top: .8em">
       <h4>Block</h4>
-      <p on:click={() => getBlockDetails(transaction.height)}>{transaction.height}</p>
+      <p>{transaction.height}</p>
     </div>
   {/if}
 </div>
@@ -126,5 +139,14 @@
 
   .incoming {
     color: var(--primary-color);
+  }
+
+  .explorer {
+    cursor: pointer;
+    color: var(--primary-color);
+    font-size: 0.9em;
+    &:hover {
+      text-decoration: underline;
+    }
   }
 </style>

@@ -6,6 +6,7 @@ export const wallet = writable({
     balance: null,
     addresses: [],
     preparedTransaction: undefined,
+    preparedBtcTransaction: undefined,
     file: false,
     path: false,
     started: false,
