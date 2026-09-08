@@ -67,6 +67,7 @@
     z-index: 0;
     overflow: hidden;
     pointer-events: none;
+    border-radius: 15px;
   }
 
   // Oversized, centred and rotated so the tilted rows still cover every corner.

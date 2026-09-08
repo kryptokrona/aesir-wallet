@@ -14,6 +14,13 @@ const fs = require("fs");
 const path = require("path");
 
 let asbProcess;
+let asbFingerprint; // identifies the config the running ASB was started with
+
+// A stable identity for "the ASB started with these inputs". Used to decide
+// whether an already-running ASB can be reused instead of killed+respawned.
+function asbConfigFingerprint(env, startArgs, configPath) {
+  return JSON.stringify({ env: env || {}, startArgs: startArgs || [], configPath: configPath || "" });
+}
 
 // Force-disable the ASB's Tor features in an existing config. We do our own NAT
 // traversal over HyperSwarm, so the ASB must NOT stand up a Tor onion service or
@@ -99,6 +106,14 @@ function generateConfig({ app, configPath, testnet = true, force = false, env = 
 //                        XKR_ASB_VIEW_SECRET, XKR_WALLET_RPC_URL)
 //   onLog              - optional (text, stream) log callback
 async function startAsb({ app, configPath, testnet = true, autoGenerateConfig = true, env = {}, startArgs = [], onLog } = {}) {
+  // Idempotent: if an ASB is already running with the exact same config, reuse
+  // it rather than kill+respawn. A SIGTERM here tears down every live HyperSwarm
+  // beam, which breaks any swap that is currently in setup or in flight.
+  const fp = asbConfigFingerprint(env, startArgs, configPath);
+  if (asbProcess && asbFingerprint === fp) {
+    console.log("[xkr-swap-asb] already running with identical config; reusing existing process");
+    return asbProcess;
+  }
   stopAsb();
 
   const bin = resolveAsbBinary(app);
@@ -138,6 +153,7 @@ async function startAsb({ app, configPath, testnet = true, autoGenerateConfig = 
     env: { ...process.env, ...env },
   });
   asbProcess = child;
+  asbFingerprint = fp;
 
   const log = (data, stream) => {
     const text = data.toString().trim();
@@ -149,11 +165,17 @@ async function startAsb({ app, configPath, testnet = true, autoGenerateConfig = 
   child.stderr.on("data", (d) => log(d, "stderr"));
   child.on("exit", (code, signal) => {
     console.log(`[xkr-swap-asb] exited (code=${code}, signal=${signal})`);
-    if (asbProcess === child) asbProcess = undefined;
+    if (asbProcess === child) {
+      asbProcess = undefined;
+      asbFingerprint = undefined;
+    }
   });
   child.on("error", (err) => {
     console.error(`[xkr-swap-asb] spawn error: ${err.message}`);
-    if (asbProcess === child) asbProcess = undefined;
+    if (asbProcess === child) {
+      asbProcess = undefined;
+      asbFingerprint = undefined;
+    }
   });
 
   console.log(`[xkr-swap-asb] spawned ${bin} ${args.join(" ")}`);
@@ -168,6 +190,7 @@ function stopAsb() {
     console.error(`[xkr-swap-asb] failed to kill: ${e.message}`);
   }
   asbProcess = undefined;
+  asbFingerprint = undefined;
 }
 
 function isRunning() {

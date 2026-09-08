@@ -199,6 +199,20 @@ const miscs = new Store();
 // the binaries just to view it. Its own file to keep the (growing) list isolated.
 const swapsStore = new Store({ name: "swaps" });
 
+// The engine stamps start_date via Rust's `time` OffsetDateTime Display, e.g.
+// "2026-09-07 21:19:26.642276 +00:00:00" -- which JS Date can't parse. Normalize
+// to ISO-8601 so sorts order by real time (unparseable -> 0, i.e. sorts last).
+function swapDateMs(str) {
+  if (!str) return 0;
+  let t = Date.parse(str);
+  if (Number.isFinite(t)) return t;
+  const iso = String(str)
+    .replace(" ", "T")
+    .replace(/\s*([+-]\d{2}):?(\d{2})(?::\d{2})?$/, "$1:$2");
+  t = Date.parse(iso);
+  return Number.isFinite(t) ? t : 0;
+}
+
 // Merge freshly-fetched swaps into the local cache. `role` is 'taker' (from the
 // swap engine) or 'maker' (from the ASB); their state field differs, so normalize.
 function cacheSwaps(list, role) {
@@ -367,6 +381,7 @@ let swapMakerPeerId = null; // this ASB's libp2p peer id, parsed from its log
 let swapMakerError = null; // last maker-board start error, surfaced to the panel
 let swapMakerRpc = null; // asb-rpc client: peer id, XKR inventory, swaps
 let swapMakerAdvertised = null; // the quote actually being advertised (price/min/max)
+let swapMakerPriceSats = null; // price the running ASB was started with (restart only on change)
 const ASB_LISTEN_PORT = 9839; // must match the ASB config's libp2p `listen` tcp port
 const ASB_RPC_PORT = 9945; // ASB control JSON-RPC (localhost, Bearer-authed)
 
@@ -413,7 +428,7 @@ ipcMain.handle("swap-infos", async () => {
 // cache -- available instantly and even when the engine/ASB are down.
 ipcMain.handle("swap-history-cache", () => {
   const cache = swapsStore.get("swaps") || {};
-  const list = Object.values(cache).sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
+  const list = Object.values(cache).sort((a, b) => swapDateMs(b.start_date) - swapDateMs(a.start_date));
   return { ok: true, result: list };
 });
 // Completed-swap history.
@@ -441,6 +456,9 @@ ipcMain.handle("swap-list-sellers", () =>
 );
 // Resume a swap by id.
 ipcMain.handle("swap-resume", (e, swapId) => swapRpc(() => xkrSwapRpc.resume(swapId)));
+// The engine's recorded failure reason for a swap (async setup failures never
+// reach swap-infos), so the monitor can show WHY a swap didn't get off the ground.
+ipcMain.handle("swap-error", (e, swapId) => swapRpc(() => xkrSwapRpc.swapError(swapId)));
 
 // Start market-making: launch the local ASB with its control JSON-RPC enabled,
 // ask it (over RPC, not by scraping logs) for its libp2p peer id, then advertise
@@ -449,10 +467,21 @@ ipcMain.handle("swap-resume", (e, swapId) => swapRpc(() => xkrSwapRpc.resume(swa
 // args: { configPath?, priceSats?, minSat?, maxSat?, env? }
 ipcMain.handle("swap-maker-start", async (e, args = {}) => {
   try {
+    const priceSats = String(args.priceSats || process.env.XKR_ASB_PRICE_SATS || "5");
+
+    // Idempotent: if the maker engine is already running with the same price,
+    // do NOT tear it down. Killing+respawning the ASB (SIGTERM) drops every live
+    // HyperSwarm beam and breaks any swap currently in setup/flight -- the exact
+    // cause of "the swap didn't get off the ground" on the taker. Just make sure
+    // we're still advertising on the board and return the existing identity.
+    if (xkrSwapAsb.isRunning() && swapMakerPriceSats === priceSats && !swapMakerError) {
+      if (!swapMaker && swapMakerPeerId) startMakerBoard(args, priceSats);
+      return { ok: true, reused: true };
+    }
+
     swapMakerPeerId = null;
     swapMakerError = null;
     swapMakerRpc = null;
-    const priceSats = String(args.priceSats || process.env.XKR_ASB_PRICE_SATS || "5");
     // The maker's XKR inventory IS this wallet -- the ASB locks XKR from the
     // user's own keys, so "click to market-make" needs no separate funded wallet.
     const [makerSpend, makerView] = walletBackend.getPrimaryAddressPrivateKeys();
@@ -485,6 +514,7 @@ ipcMain.handle("swap-maker-start", async (e, args = {}) => {
       ],
     });
     if (!child) {
+      swapMakerPriceSats = null;
       return {
         ok: false,
         error:
@@ -492,6 +522,10 @@ ipcMain.handle("swap-maker-start", async (e, args = {}) => {
           "or its port (9839) is in use. Check the app logs.",
       };
     }
+    // Remember what price this ASB is running with, so a later start with the
+    // same price is a no-op (see the idempotent guard above) rather than a
+    // swap-killing restart.
+    swapMakerPriceSats = priceSats;
 
     // Ask the ASB for its peer id over its control RPC, retrying while it boots,
     // then advertise on the board. Robust -- no stdout parsing.
@@ -521,6 +555,7 @@ ipcMain.handle("swap-maker-start", async (e, args = {}) => {
 
     return { ok: true };
   } catch (err) {
+    swapMakerPriceSats = null;
     return { ok: false, error: err.message };
   }
 });
@@ -539,6 +574,7 @@ ipcMain.handle("swap-maker-stop", () => {
     swapMakerPeerId = null;
     swapMakerError = null;
     swapMakerAdvertised = null;
+    swapMakerPriceSats = null;
   } catch (_) {}
   return { ok: true };
 });
