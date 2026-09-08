@@ -61,12 +61,64 @@
     await renderchart(update);
   }
 
+  // Interpolate a series of {t (unix secs), v} with a monotone cubic (Fritsch–
+  // Carlson) spline into many points, so the plotted line is a true smooth curve
+  // instead of a few straight segments with visible corners. Monotone => it never
+  // overshoots between points (no phantom dips below the balance).
+  function densifyMonotone(pts, perGap = 14) {
+    const n = pts.length;
+    if (n < 3) return pts.map((p) => ({ time: p.t, value: p.v }));
+    const xs = pts.map((p) => p.t);
+    const ys = pts.map((p) => p.v);
+    const m = []; // secant slopes
+    for (let i = 0; i < n - 1; i++) m[i] = (ys[i + 1] - ys[i]) / (xs[i + 1] - xs[i]);
+    const c = new Array(n); // tangents
+    c[0] = m[0];
+    c[n - 1] = m[n - 2];
+    for (let i = 1; i < n - 1; i++) c[i] = m[i - 1] * m[i] <= 0 ? 0 : (m[i - 1] + m[i]) / 2;
+    for (let i = 0; i < n - 1; i++) {
+      if (m[i] === 0) {
+        c[i] = 0;
+        c[i + 1] = 0;
+        continue;
+      }
+      const a = c[i] / m[i];
+      const b = c[i + 1] / m[i];
+      const h = Math.hypot(a, b);
+      if (h > 3) {
+        const t = 3 / h;
+        c[i] = t * a * m[i];
+        c[i + 1] = t * b * m[i];
+      }
+    }
+    const out = [];
+    for (let i = 0; i < n - 1; i++) {
+      const x0 = xs[i];
+      const h = xs[i + 1] - x0;
+      for (let k = 0; k < perGap; k++) {
+        const t = k / perGap;
+        const t2 = t * t;
+        const t3 = t2 * t;
+        const value =
+          (2 * t3 - 3 * t2 + 1) * ys[i] +
+          (t3 - 2 * t2 + t) * h * c[i] +
+          (-2 * t3 + 3 * t2) * ys[i + 1] +
+          (t3 - t2) * h * c[i + 1];
+        out.push({ time: Math.round(x0 + t * h), value });
+      }
+    }
+    out.push({ time: xs[n - 1], value: ys[n - 1] });
+    return out;
+  }
+
   async function renderchart(update) {
     let data = [];
     let runningBalance = 0.0;
-    console.log(transactionsList);
-    for (const tx in transactionsList) {
-      const thisTx = transactionsList[tx];
+    // Accumulate the running balance in chronological (oldest-first) order --
+    // wallet-backend-js returns transactions newest-first, and summing them in
+    // that order produces a nonsensical, spiky curve.
+    const chronological = [...transactionsList].sort((a, b) => (a.time || 0) - (b.time || 0));
+    for (const thisTx of chronological) {
       runningBalance += thisTx.amount;
       let dateFormatted = new Date(thisTx.time * 1000).toISOString().split('T')[0];
       let formattedTx = { time: dateFormatted, value: runningBalance / 100000 };
@@ -80,6 +132,23 @@
         return acc;
       }, {}),
     );
+
+    // Smooth the daily balance series with a centered moving average so a single
+    // large tx doesn't dominate the whole chart with a spike. The window scales
+    // with the amount of data; short series are left as-is.
+    const smoothed = (() => {
+      const n = summarizedData.length;
+      if (n < 5) return summarizedData;
+      const window = Math.max(3, Math.min(9, Math.round(n / 8)));
+      const half = Math.floor(window / 2);
+      return summarizedData.map((pt, i) => {
+        const start = Math.max(0, i - half);
+        const end = Math.min(n, i + half + 1);
+        let sum = 0;
+        for (let j = start; j < end; j++) sum += summarizedData[j].value;
+        return { time: pt.time, value: sum / (end - start) };
+      });
+    })();
 
     //Get colors
     let color = getComputedStyle(document.documentElement).getPropertyValue('--primary-color');
@@ -115,7 +184,7 @@
         lineColor: color,
         lineWidth: 2,
         crossHairMarkerVisible: false,
-        lineType: 2,
+        lineType: 0,
         priceLineVisible: false,
         lineVisible: true,
       });
@@ -125,7 +194,11 @@
 
     area.priceScale().applyOptions({ visible: false });
     chart.timeScale().applyOptions({ borderColor: border_color, visible: false });
-    area.setData(summarizedData);
+    // Timestamp the (smoothed) daily points, then interpolate into a dense,
+    // genuinely smooth curve.
+    const toTs = (d) => Math.floor(Date.parse(d + 'T00:00:00Z') / 1000);
+    const dense = densifyMonotone(smoothed.map((p) => ({ t: toTs(p.time), v: p.value })));
+    area.setData(dense);
 
     chart.timeScale().fitContent();
 
@@ -158,7 +231,11 @@
       } else {
         // time will be in the same format that we supplied to setData.
         // thus it will be YYYY-MM-DD
-        const dateStr = param.time;
+        // param.time is now a unix timestamp (we interpolate on a seconds axis).
+        const dateStr =
+          typeof param.time === 'number'
+            ? new Date(param.time * 1000).toISOString().split('T')[0]
+            : param.time;
         toolTip.style.display = 'block';
         const data = param.seriesData.get(area);
         const price = data.value !== undefined ? data.value : data.close;

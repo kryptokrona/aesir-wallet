@@ -1,7 +1,7 @@
 <script>
   export let text;
-  export let width = "auto";
-  export let height = "auto";
+  export let width = 'auto';
+  export let height = 'auto';
   export let rounded = false;
   export let wUnit;
   export let hUnit;
@@ -37,6 +37,7 @@
     cursor: pointer;
     text-align: center;
     transition: 150ms ease-in-out;
+    backdrop-filter: blur(7px);
 
     &:hover {
       background: var(--button-hover-bg-color);

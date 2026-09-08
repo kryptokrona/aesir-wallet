@@ -19,7 +19,8 @@
 
   let engineUp = false;
   let sellers = [];
-  let infos = [];
+  let infos = []; // live taker swaps (drives the in-progress monitor)
+  let historyList = []; // merged, persistent swap history (taker + maker) from the local cache
   let primaryAddress = ''; // our own XKR receive address (never shown as a field)
   let poll;
 
@@ -113,8 +114,14 @@
     if (res && res.ok && Array.isArray(res.result)) sellers = res.result;
   }
   async function refreshInfos() {
+    // Live taker swaps drive the in-progress monitor and refresh the taker cache.
     const res = await window.api.invoke('swap-infos');
     if (res && res.ok && Array.isArray(res.result)) infos = res.result;
+    // Refresh the maker cache too (no-op result unless market-making is running).
+    await window.api.invoke('swap-maker-swaps');
+    // Read the merged, persistent history (survives engine/ASB being down).
+    const hist = await window.api.invoke('swap-history-cache');
+    if (hist && hist.ok && Array.isArray(hist.result)) historyList = hist.result;
   }
   async function loadAddress() {
     try {
@@ -124,10 +131,18 @@
     } catch (_) {}
   }
 
-  $: activeInfo = infos.find((i) => i.swap_id === activeSwapId) || null;
-  $: activeTerminal = activeInfo ? isTerminal(activeInfo.state_name) : false;
-  // Swaps newest-first, for the recent list (top 3) and the full history view.
-  $: sortedInfos = [...infos].sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
+  // Prefer the LIVE taker swap (freshest state); fall back to the persistent cache
+  // so maker swaps (and older taker swaps) can still open the progress page.
+  $: activeInfo =
+    (() => {
+      const live = infos.find((i) => i.swap_id === activeSwapId);
+      if (live) return { ...live, role: 'taker' };
+      return sortedInfos.find((i) => i.swap_id === activeSwapId) || null;
+    })();
+  $: activeTerminal = activeInfo ? isTerminal(activeInfo.state_name, activeInfo.role) : false;
+  // The cached history is already merged (taker + maker) and normalized; sort it
+  // newest-first for the recent list (top 3) and the full history view.
+  $: sortedInfos = [...historyList].sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
 
   // Full swap-history pagination, mirroring /history (10 per page).
   const HISTORY_PER_PAGE = 10;
@@ -391,11 +406,14 @@
       {#each sortedInfos.slice(0, 3) as info (info.swap_id)}
         <button class="swap-row" on:click={() => openMonitor(info.swap_id)}>
           <div>
-            <div class="swap-id">{short(info.swap_id)}</div>
+            <div class="swap-id">
+              <span class="role" class:sell={info.role === 'maker'}>{info.role === 'maker' ? 'Sell' : 'Buy'}</span>
+              {short(info.swap_id)}
+            </div>
             <div class="swap-amt">{(info.btc_amount / 1e8).toFixed(8)} BTC</div>
           </div>
-          <div class="state" class:done={info.state_name === 'xmr is redeemed'}>
-            {friendlyState(info.state_name)}
+          <div class="state" class:done={info.state_name === 'xmr is redeemed' || info.state_name === 'btc is redeemed'}>
+            {friendlyState(info.state_name, info.role)}
           </div>
         </button>
       {/each}
@@ -408,11 +426,14 @@
     {#each pagedHistory as info (info.swap_id)}
       <button class="swap-row" on:click={() => openMonitor(info.swap_id)}>
         <div>
-          <div class="swap-id">{short(info.swap_id)}</div>
+          <div class="swap-id">
+            <span class="role" class:sell={info.role === 'maker'}>{info.role === 'maker' ? 'Sell' : 'Buy'}</span>
+            {short(info.swap_id)}
+          </div>
           <div class="swap-amt">{(info.btc_amount / 1e8).toFixed(8)} BTC</div>
         </div>
-        <div class="state" class:done={info.state_name === 'xmr is redeemed'}>
-          {friendlyState(info.state_name)}
+        <div class="state" class:done={info.state_name === 'xmr is redeemed' || info.state_name === 'btc is redeemed'}>
+          {friendlyState(info.state_name, info.role)}
         </div>
       </button>
     {/each}
@@ -423,20 +444,34 @@
   <div class="card monitor" in:fly={{ y: 16, delay: 40 }}>
     {#if activeInfo}
       <div class="recap">
-        <div>
-          <span class="k">You send</span>
-          <span class="v">{(snapshot?.btc ?? activeInfo.btc_amount / 1e8).toFixed(8)} BTC</span>
-        </div>
-        <div class="to">
-          <span style="display: inline-flex; transform: rotate(180deg)"><ArrowLeft /></span>
-        </div>
-        <div class="rt">
-          <span class="k">You receive</span>
-          <span class="v">≈ {fmtXkr(snapshot?.xkr ?? xkrFromInfo(activeInfo))} XKR</span>
-        </div>
+        {#if activeInfo.role === 'maker'}
+          <div>
+            <span class="k">You send</span>
+            <span class="v">≈ {fmtXkr(xkrFromInfo(activeInfo))} XKR</span>
+          </div>
+          <div class="to">
+            <span style="display: inline-flex; transform: rotate(180deg)"><ArrowLeft /></span>
+          </div>
+          <div class="rt">
+            <span class="k">You receive</span>
+            <span class="v">{(activeInfo.btc_amount / 1e8).toFixed(8)} BTC</span>
+          </div>
+        {:else}
+          <div>
+            <span class="k">You send</span>
+            <span class="v">{(snapshot?.btc ?? activeInfo.btc_amount / 1e8).toFixed(8)} BTC</span>
+          </div>
+          <div class="to">
+            <span style="display: inline-flex; transform: rotate(180deg)"><ArrowLeft /></span>
+          </div>
+          <div class="rt">
+            <span class="k">You receive</span>
+            <span class="v">≈ {fmtXkr(snapshot?.xkr ?? xkrFromInfo(activeInfo))} XKR</span>
+          </div>
+        {/if}
       </div>
 
-      <SwapTimeline stateName={activeInfo.state_name} />
+      <SwapTimeline stateName={activeInfo.state_name} role={activeInfo.role} />
 
       <div class="meta">
         <span>Swap {short(activeInfo.swap_id)}</span>
@@ -800,10 +835,39 @@
         background-color: var(--border-color);
         border-bottom: 1px solid transparent;
       }
+      // Maker (sell) swaps aren't monitorable through the taker engine, so they're
+      // read-only rows -- no pointer, no hover highlight.
+      &.readonly {
+        cursor: default;
+
+        &:hover {
+          background-color: transparent;
+          border-bottom: 1px solid var(--border-color);
+        }
+      }
       // Match the /history transaction rows: the id reads like the hash there
       // (default body size, slightly dimmed), with the amount as a smaller detail.
       .swap-id {
         opacity: 0.8;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .role {
+        font-size: 0.62rem;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        padding: 0.1rem 0.4rem;
+        border-radius: 4px;
+        color: #fff;
+        background: var(--primary-color);
+        opacity: 0.9;
+
+        &.sell {
+          background: var(--text-color);
+          opacity: 0.55;
+        }
       }
       .swap-amt {
         opacity: 0.6;

@@ -3,6 +3,7 @@
   import { fade } from 'svelte/transition';
   import { quadIn } from 'svelte/easing';
   import StartFlash from '$lib/components/layout/StartFlash.svelte';
+  import LoginRibbon from '$lib/components/layout/LoginRibbon.svelte';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { Moon } from 'svelte-loading-spinners';
@@ -126,20 +127,24 @@
 {#if openNodeSelector}
   <NodeSelector on:connect={(e) => handleNodeChange(e.detail.node)} />
 {:else}
-  <div
-    style="display: flex; flex-direction: column; gap: 2rem;  align-items: center"
-    in:fade={{ duration: 200, delay: 400, easing: quadIn }}
-  >
-    <div />
-    <div class="field" class:shake={wrongPassword}>
-      <input placeholder="Password..." type="password" bind:value={password} />
-      <button on:click={login}>
-        {#if loading}
-          <Moon color="#ffffff" size="20" unit="px" />
-        {:else}
-          <ArrowRight green={password.length >= 3} />
-        {/if}
-      </button>
+  <div class="login-stage">
+    <LoginRibbon />
+    <div
+      class="content"
+      style="display: flex; flex-direction: column; gap: 2rem; align-items: center;"
+      in:fade={{ duration: 200, delay: 400, easing: quadIn }}
+    >
+      <div />
+      <div class="field" class:shake={wrongPassword}>
+        <input placeholder="Password..." type="password" bind:value={password} />
+        <button on:click={login}>
+          {#if loading}
+            <Moon color="#ffffff" size="20" unit="px" />
+          {:else}
+            <ArrowRight green={password.length >= 3} />
+          {/if}
+        </button>
+      </div>
     </div>
     <div class="info">
       <div style="text-align: center; display: flex; flex-direction: column; align-items: center;">
@@ -166,6 +171,22 @@
 {/if}
 
 <style lang="scss">
+  // Fills the login viewport and contains the decorative ribbon (absolute)
+  // without affecting the rest of the wallet's layout.
+  .login-stage {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .content {
+    position: relative;
+    z-index: 1; // sit above the ribbon
+  }
+
   .field {
     z-index: 99;
     display: flex;
@@ -176,6 +197,7 @@
     border: 1px solid var(--input-border);
     border-radius: 8px;
     transition: 100ms ease-in-out;
+    backdrop-filter: blur(7px);
 
     &:focus-within {
       border: 1px solid #404040;
@@ -231,6 +253,7 @@
   .info {
     position: absolute;
     bottom: 30px;
+    z-index: 1;
     display: flex;
     flex-direction: column;
     gap: 1rem;
