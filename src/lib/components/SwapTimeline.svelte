@@ -1,13 +1,15 @@
 <script>
   // Horizontal progress timeline (o—o—o—o) for a live swap. Driven purely by the
   // taker's `state_name`; see $lib/utils/swapProgress.js for the mapping.
-  import { STEPS, stateToStep, friendlyState, swapOutcome } from "$lib/utils/swapProgress.js";
+  import { stepsFor, stateToStep, friendlyState, swapOutcome } from "$lib/utils/swapProgress.js";
 
   export let stateName = "";
+  export let role = "taker"; // "taker" (buy) or "maker" (sell)
 
-  $: outcome = swapOutcome(stateName);
-  $: current = outcome === "done" ? STEPS.length - 1 : stateToStep(stateName);
-  $: friendly = friendlyState(stateName);
+  $: steps = stepsFor(role);
+  $: outcome = swapOutcome(stateName, role);
+  $: current = outcome === "done" ? steps.length - 1 : stateToStep(stateName, role);
+  $: friendly = friendlyState(stateName, role);
   $: failed = ["refunded", "refunding", "punished", "aborted"].includes(outcome);
 </script>
 
@@ -25,13 +27,15 @@
         The swap failed at the redeem step. This is the rare punish outcome.
       {:else if outcome === "aborted"}
         The swap was aborted before any funds moved. Nothing was lost.
+      {:else if role === "maker"}
+        Your XKR is being returned to your wallet. No Bitcoin was received.
       {:else}
         Your Bitcoin is being returned to your wallet. No XKR was exchanged.
       {/if}
     </div>
   {:else}
     <div class="rail">
-      {#each STEPS as label, i}
+      {#each steps as label, i}
         <div
           class="step"
           class:reached={i <= current}

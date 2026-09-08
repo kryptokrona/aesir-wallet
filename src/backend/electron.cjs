@@ -194,6 +194,31 @@ const wallets = new Store();
 const nodes = new Store();
 const contacts = new Store();
 const miscs = new Store();
+// Persistent cache of every swap ever seen (taker + maker), keyed by swap_id, so
+// the history survives the engine/ASB being down and needn't be re-fetched from
+// the binaries just to view it. Its own file to keep the (growing) list isolated.
+const swapsStore = new Store({ name: "swaps" });
+
+// Merge freshly-fetched swaps into the local cache. `role` is 'taker' (from the
+// swap engine) or 'maker' (from the ASB); their state field differs, so normalize.
+function cacheSwaps(list, role) {
+  if (!Array.isArray(list) || !list.length) return;
+  const cache = swapsStore.get("swaps") || {};
+  for (const s of list) {
+    if (!s || !s.swap_id) continue;
+    cache[s.swap_id] = {
+      swap_id: s.swap_id,
+      btc_amount: s.btc_amount,
+      xmr_amount: s.xmr_amount, // piconero -- drives the "XKR" amount in the monitor
+      state_name: role === "maker" ? s.state : s.state_name,
+      start_date: s.start_date,
+      completed: !!s.completed,
+      role,
+      updated_at: Date.now(),
+    };
+  }
+  swapsStore.set("swaps", cache);
+}
 
 // Start (or restart) the XKR swap RPC service pointed at the given node, so a
 // swap uses the same daemon the wallet is connected to. Non-fatal on failure:
@@ -379,7 +404,18 @@ ipcMain.handle("swap-start", (e, args) =>
   }),
 );
 // Poll all swaps + their current state (for progress).
-ipcMain.handle("swap-infos", () => swapRpc(() => xkrSwapRpc.swapInfos()));
+ipcMain.handle("swap-infos", async () => {
+  const res = await swapRpc(() => xkrSwapRpc.swapInfos());
+  if (res.ok && Array.isArray(res.result)) cacheSwaps(res.result, "taker");
+  return res;
+});
+// Merged, persistent swap history (taker + maker) read straight from the local
+// cache -- available instantly and even when the engine/ASB are down.
+ipcMain.handle("swap-history-cache", () => {
+  const cache = swapsStore.get("swaps") || {};
+  const list = Object.values(cache).sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
+  return { ok: true, result: list };
+});
 // Completed-swap history.
 ipcMain.handle("swap-history", () => swapRpc(() => xkrSwapRpc.history()));
 // The taker's Bitcoin balance.
@@ -530,6 +566,20 @@ ipcMain.handle("swap-maker-status", async () => {
       btcBalanceSat,
     },
   };
+});
+
+// Maker-side swaps (from the ASB's own DB), so the swap history can show swaps
+// where YOU sold XKR for BTC too -- not just taker swaps. Only available while
+// market-making is running (the ASB control RPC is up then). Best-effort: [].
+ipcMain.handle("swap-maker-swaps", async () => {
+  if (!swapMakerRpc) return { ok: true, result: [] };
+  try {
+    const swaps = await swapMakerRpc.getSwaps();
+    if (Array.isArray(swaps)) cacheSwaps(swaps, "maker");
+    return { ok: true, result: Array.isArray(swaps) ? swaps : [] };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
 });
 
 function startMakerBoard(args, priceSats) {
