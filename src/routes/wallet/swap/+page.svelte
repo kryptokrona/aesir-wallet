@@ -34,6 +34,12 @@
   let amountXkr = '';
   let lastEdited = 'btc'; // which field the user typed in, so we know which to derive
 
+  // Headroom reserved for the taker's on-chain Bitcoin lock-tx fee, which is
+  // charged on top of the swap amount. The engine floors it to the 1000-sat
+  // min-relay fee on testnet; reserve extra so fee-rate variation never tips a
+  // near-max swap into "Insufficient funds" during setup.
+  const BTC_LOCK_FEE_BUFFER_SAT = 2000;
+
   const short = (s) => (s ? s.slice(0, 8) + '…' + s.slice(-6) : '');
   const err = (m) =>
     toast.error(m, {
@@ -54,7 +60,13 @@
   $: xkrReceive = parseFloat(amountXkr) || 0;
   $: withinRange =
     bestSeller && amountSat >= bestSeller.quote.min_quantity && amountSat <= bestSeller.quote.max_quantity;
-  $: overBalance = $btc.balanceSat != null && amountSat > $btc.balanceSat;
+  // The taker must also pay the on-chain Bitcoin lock-tx fee on top of the swap
+  // amount. On testnet this floors to the 1000-sat min-relay fee; reserve a
+  // safe headroom so "swap almost my whole balance" can't fail mid-setup with
+  // "Insufficient funds" (which shows up as a stuck/never-started swap).
+  $: maxSpendableSat =
+    $btc.balanceSat != null ? Math.max(0, $btc.balanceSat - BTC_LOCK_FEE_BUFFER_SAT) : null;
+  $: overBalance = maxSpendableSat != null && amountSat > maxSpendableSat;
 
   function fmtFiat(v) {
     const c = ($fiat.currencies || []).find((x) => x.ticker === $fiat.ticker) || {
@@ -140,9 +152,35 @@
       return sortedInfos.find((i) => i.swap_id === activeSwapId) || null;
     })();
   $: activeTerminal = activeInfo ? isTerminal(activeInfo.state_name, activeInfo.role) : false;
+  // The engine stamps start_date via the Rust `time` crate's OffsetDateTime
+  // Display, e.g. "2026-09-07 21:19:26.642276 +00:00:00" -- space-separated, with
+  // microseconds and a seconds-bearing offset, which JS `Date` can't parse.
+  // Normalize it to ISO-8601 before parsing so the sort actually orders by time.
+  function parseSwapDate(str) {
+    if (!str) return NaN;
+    let t = Date.parse(str);
+    if (Number.isFinite(t)) return t;
+    const iso = String(str)
+      .replace(' ', 'T') // date/time separator
+      .replace(/\s*([+-]\d{2}):?(\d{2})(?::\d{2})?$/, '$1:$2'); // "+00:00:00" -> "+00:00"
+    return Date.parse(iso);
+  }
+
+  // Sort key: a missing/unparseable start_date means the swap just kicked off
+  // and hasn't been dated yet, so treat it as "now" and pin it to the top.
+  const swapTime = (s) => {
+    const t = parseSwapDate(s?.start_date);
+    return Number.isFinite(t) ? t : Date.now();
+  };
+  // Active (in-flight) swaps rank above finished ones so they always show first.
+  const swapRank = (s) => (isTerminal(s?.state_name, s?.role) ? 0 : 1);
+
   // The cached history is already merged (taker + maker) and normalized; sort it
-  // newest-first for the recent list (top 3) and the full history view.
-  $: sortedInfos = [...historyList].sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
+  // active-first, then newest-first, for both the recent list (top 3) and the
+  // full history view.
+  $: sortedInfos = [...historyList].sort(
+    (a, b) => swapRank(b) - swapRank(a) || swapTime(b) - swapTime(a),
+  );
 
   // Full swap-history pagination, mirroring /history (10 per page).
   const HISTORY_PER_PAGE = 10;
@@ -157,8 +195,9 @@
 
   function setMax() {
     if ($btc.balanceSat == null) return;
-    // leave a little headroom for the on-chain lock fee
-    let sat = $btc.balanceSat - 500;
+    // Reserve headroom for the on-chain lock fee so the swap can actually afford
+    // amount + fee (see BTC_LOCK_FEE_BUFFER_SAT).
+    let sat = $btc.balanceSat - BTC_LOCK_FEE_BUFFER_SAT;
     if (maxBtc != null) sat = Math.min(sat, bestSeller.quote.max_quantity);
     amountBtc = sat > 0 ? String(+(sat / 1e8).toFixed(8)) : '0';
     lastEdited = 'btc';
@@ -171,7 +210,8 @@
     if (!primaryAddress) return err('No XKR receive address');
     if (!amountNum || amountNum <= 0) return err('Enter a BTC amount');
     if (!withinRange) return err(`Amount must be between ${minBtc} and ${maxBtc} BTC`);
-    if (overBalance) return err('Amount exceeds your BTC balance');
+    if (overBalance)
+      return err('Amount too high — leave room for the Bitcoin network fee (try Max)');
     showPrepare = true;
   }
 
@@ -179,13 +219,48 @@
   // ever shows up in swap-infos, which would otherwise leave the monitor spinning
   // on "Loading swap…" forever. If nothing loads within the window, surface it.
   let monitorLoadFailed = false;
+  let monitorErrorMsg = ''; // terminal failure reason from the engine, when we have one
+  let monitorStatusMsg = ''; // transient "still trying" reason (e.g. reaching the maker)
   let monitorTimer = null;
   function watchMonitorLoad() {
     monitorLoadFailed = false;
+    monitorErrorMsg = '';
+    monitorStatusMsg = '';
     if (monitorTimer) clearTimeout(monitorTimer);
     monitorTimer = setTimeout(() => {
       if (view === 'monitor' && !activeInfo) monitorLoadFailed = true;
     }, 25000);
+  }
+
+  // Ask the engine for the active swap's real failure reason. A swap that fails
+  // during setup never appears in swap-infos (no SwapSetupCompleted state), so we
+  // poll this by swap_id while watching a freshly-started swap. When a reason
+  // lands, show it instead of the generic timeout and stop the spinner.
+  async function checkSwapError() {
+    if (view !== 'monitor' || !activeSwapId || activeTerminal) return;
+    try {
+      const res = await window.api.invoke('swap-error', activeSwapId);
+      const r = res && res.ok && res.result;
+      const msg = r && r.error;
+      if (msg && r.terminal) {
+        // The swap gave up — show it as a failure and stop the spinner/timeout.
+        if (monitorTimer) clearTimeout(monitorTimer);
+        monitorStatusMsg = '';
+        monitorErrorMsg = msg;
+        monitorLoadFailed = true;
+      } else if (msg) {
+        // Transient: still trying (e.g. reaching the maker). Show the reason but
+        // keep waiting -- cancel the generic timeout so it doesn't flip to failed.
+        if (monitorTimer) clearTimeout(monitorTimer);
+        monitorStatusMsg = msg;
+        monitorErrorMsg = '';
+        monitorLoadFailed = false;
+      } else {
+        monitorStatusMsg = '';
+      }
+    } catch (_) {
+      // engine not reachable right now; the poll will retry
+    }
   }
 
   async function confirmSwap() {
@@ -307,7 +382,7 @@
     if (didRestore || view !== 'form') return;
     const live = infos.filter((i) => !isTerminal(i.state_name));
     if (!live.length) return;
-    live.sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
+    live.sort((a, b) => swapTime(b) - swapTime(a));
     didRestore = true;
     openMonitor(live[0].swap_id);
   }
@@ -318,6 +393,7 @@
     poll = setInterval(async () => {
       await Promise.all([refreshStatus(), refreshSellers(), refreshInfos(), refreshBtc()]);
       maybeRestoreLiveSwap();
+      await checkSwapError();
       if (view === 'maker') await refreshMakerStatus();
     }, 4000);
   });
@@ -392,7 +468,9 @@
   {#if bestSeller && amountNum > 0 && !withinRange}
     <p class="hint warn">Amount must be between {minBtc} and {maxBtc} BTC.</p>
   {:else if overBalance}
-    <p class="hint warn">Amount exceeds your available BTC balance.</p>
+    <p class="hint warn">
+      Amount too high — leave room for the Bitcoin network fee. Tap Max to fill the largest swappable amount.
+    </p>
   {/if}
 
   {#if infos.length}
@@ -478,10 +556,18 @@
         {#if snapshot?.maker}<span>Maker {snapshot.maker}</span>{/if}
       </div>
     {:else if monitorLoadFailed}
-      <p class="hint warn">
-        This swap didn't get off the ground — the maker likely has no spendable XKR (out of inventory)
-        or became unreachable during setup. No BTC was sent. Check the app logs for details.
-      </p>
+      {#if monitorErrorMsg}
+        <p class="hint warn">{monitorErrorMsg}</p>
+        <p class="hint">No BTC was sent.</p>
+      {:else}
+        <p class="hint warn">
+          This swap didn't get off the ground — the maker likely has no spendable XKR (out of inventory)
+          or became unreachable during setup. No BTC was sent. Check the app logs for details.
+        </p>
+      {/if}
+      <button class="primary inline" on:click={newSwap}>Back</button>
+    {:else if monitorStatusMsg}
+      <p class="hint">{monitorStatusMsg}</p>
       <button class="primary inline" on:click={newSwap}>Back</button>
     {:else}
       <p class="hint">Loading swap…</p>
@@ -990,7 +1076,8 @@
   .overlay {
     position: fixed;
     inset: 0;
-    background: var(--background-color);
+    // Dim scrim over the page; the theme var is `--backgound-color` (sic).
+    background: rgba(0, 0, 0, 0.55);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1000,7 +1087,8 @@
   .modal {
     width: 100%;
     max-width: 380px;
-    background: var(--component-background, var(--background-color, #1b1b1b));
+    background: var(--backgound-color);
+    color: var(--text-color);
     border: 1px solid var(--border-color);
     border-radius: 14px;
     padding: 1.3rem 1.4rem;
