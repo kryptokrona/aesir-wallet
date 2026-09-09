@@ -549,7 +549,12 @@
         {/if}
       </div>
 
-      <SwapTimeline stateName={activeInfo.state_name} role={activeInfo.role} />
+      <SwapTimeline
+        stateName={activeInfo.state_name}
+        role={activeInfo.role}
+        txLockId={activeInfo.tx_lock_id}
+        startDate={activeInfo.start_date}
+      />
 
       <div class="meta">
         <span>Swap {short(activeInfo.swap_id)}</span>
@@ -642,7 +647,9 @@
         peer-to-peer.
       </p>
       <div class="fieldlabel"><span>Price (sats per XKR)</span></div>
-      <div class="field"><input type="number" style="width: 100%" bind:value={makerPrice} placeholder="5" /></div>
+      <div class="field">
+        <input type="number" step="any" min="0" style="width: 100%" bind:value={makerPrice} placeholder="0.5" />
+      </div>
 
       <div class="fieldlabel" style="margin-top: 0.8rem"><span>Min (BTC)</span><span>Max (BTC)</span></div>
       <div class="mm-row">

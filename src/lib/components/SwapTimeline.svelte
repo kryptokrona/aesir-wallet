@@ -1,26 +1,56 @@
 <script>
-  // Horizontal progress timeline (o—o—o—o) for a live swap. Driven purely by the
-  // taker's `state_name`; see $lib/utils/swapProgress.js for the mapping.
-  import { stepsFor, stateToStep, friendlyState, swapOutcome } from "$lib/utils/swapProgress.js";
+  // Vertical progress timeline for a swap: a rail of dots (done / active / pending)
+  // with a title, description, timestamp and — for the on-chain steps — the tx hash
+  // linking to a block explorer. Driven by the swap's `state_name`; see
+  // $lib/utils/swapProgress.js for the step mapping.
+  import {
+    stepsFor,
+    stateToStep,
+    friendlyState,
+    swapOutcome,
+    descFor,
+  } from "$lib/utils/swapProgress.js";
 
   export let stateName = "";
   export let role = "taker"; // "taker" (buy) or "maker" (sell)
+  export let txLockId = null; // BTC lock txid, links to the explorer on the lock step
+  export let startDate = null; // swap start timestamp (shown on the first step)
+  // testnet for now; the wallet's BTC side runs on testnet.
+  export let btcExplorer = "https://mempool.space/testnet/tx/";
 
   $: steps = stepsFor(role);
   $: outcome = swapOutcome(stateName, role);
   $: current = outcome === "done" ? steps.length - 1 : stateToStep(stateName, role);
   $: friendly = friendlyState(stateName, role);
   $: failed = ["refunded", "refunding", "punished", "aborted"].includes(outcome);
+  // The step that represents the BTC lock (gets the tx link + confirmation note).
+  $: lockStep = steps.indexOf("BTC locked");
+
+  // The engine stamps timestamps via Rust's `time` crate (space-separated, micros,
+  // "+00:00:00" offset) which JS Date can't parse; normalize before formatting.
+  function fmtTime(str) {
+    if (!str) return "";
+    let ms = Date.parse(str);
+    if (!Number.isFinite(ms)) {
+      const iso = String(str)
+        .replace(" ", "T")
+        .replace(/\s*([+-]\d{2}):?(\d{2})(?::\d{2})?$/, "$1:$2");
+      ms = Date.parse(iso);
+    }
+    if (!Number.isFinite(ms)) return "";
+    return new Date(ms).toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  const shortId = (id) => (id ? id.slice(0, 10) + "…" + id.slice(-8) : "");
+  const openTx = (id) => window.api?.openLink?.(btcExplorer + id);
 </script>
 
-<div class="progress">
-  <div class="status" class:done={outcome === "done"} class:failed>
-    {#if outcome === "active"}
-      <span class="spinner" />
-    {/if}
-    <span class="status-text">{friendly}</span>
-  </div>
-
+<div class="vtl" class:failed>
   {#if failed}
     <div class="result" class:punish={outcome === "punished"}>
       {#if outcome === "punished"}
@@ -33,50 +63,179 @@
         Your Bitcoin is being returned to your wallet. No XKR was exchanged.
       {/if}
     </div>
-  {:else}
-    <div class="rail">
-      {#each steps as label, i}
-        <div
-          class="step"
-          class:reached={i <= current}
-          class:done={i < current || outcome === "done"}
-          class:active={i === current && outcome === "active"}
-        >
-          <div class="dot" />
-          <span class="lbl">{label}</span>
-        </div>
-      {/each}
-    </div>
   {/if}
+
+  {#each steps as label, i}
+    {@const done = i < current || outcome === "done"}
+    {@const active = i === current && outcome === "active"}
+    <div class="step" class:done class:active class:pending={i > current && !done}>
+      <div class="rail">
+        <span class="dot" />
+      </div>
+      <div class="body">
+        <div class="line1">
+          <span class="title">{label}</span>
+          {#if i === 0 && startDate}<span class="ts">{fmtTime(startDate)}</span>{/if}
+        </div>
+        <div class="desc">
+          {#if active}{friendly}{:else}{descFor(role, label)}{/if}
+        </div>
+
+        {#if i === lockStep && txLockId}
+          <button class="txlink" on:click={() => openTx(txLockId)} title="View on mempool.space">
+            {shortId(txLockId)} ↗
+          </button>
+        {/if}
+
+        {#if i === lockStep && active}
+          <div class="confirm">
+            <span class="spinner" /> Waiting for on-chain confirmation…
+          </div>
+        {/if}
+      </div>
+    </div>
+  {/each}
 </div>
 
 <style lang="scss">
-  .progress {
+  .vtl {
     display: flex;
     flex-direction: column;
-    gap: 1.1rem;
     width: 100%;
   }
 
-  .status {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.9rem;
-    color: var(--text-color);
+  .step {
+    display: grid;
+    grid-template-columns: 22px 1fr;
+    gap: 0.6rem;
+    min-height: 2.9rem;
+  }
 
-    &.done .status-text {
-      color: var(--primary-color);
-      font-weight: 600;
+  // The vertical rail: a line through the column, a dot per step.
+  .rail {
+    position: relative;
+    display: flex;
+    justify-content: center;
+  }
+  .rail::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--border-color);
+  }
+  // No line above the first dot / below the last.
+  .step:first-child .rail::before {
+    top: 11px;
+  }
+  .step:last-child .rail::before {
+    bottom: calc(100% - 11px);
+  }
+  .step.done .rail::before,
+  .step.active .rail::before {
+    background: var(--primary-color);
+  }
+
+  .dot {
+    position: relative;
+    z-index: 1;
+    margin-top: 3px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    box-sizing: border-box;
+    border: 2px solid var(--border-color);
+    background: var(--backgound-color, var(--input-background, #1b1b1b));
+    flex: none;
+  }
+  .step.done .dot {
+    border-color: var(--primary-color);
+    background: var(--primary-color);
+  }
+  .step.active .dot {
+    border-color: var(--primary-color);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 22%, transparent);
     }
-    &.failed .status-text {
-      color: var(--swap-fail-color, #e5484d);
+    50% {
+      box-shadow: 0 0 0 6px color-mix(in srgb, var(--primary-color) 8%, transparent);
     }
   }
 
+  .body {
+    padding-bottom: 1rem;
+    min-width: 0;
+  }
+  .step:last-child .body {
+    padding-bottom: 0;
+  }
+  .line1 {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.6rem;
+  }
+  .title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-color);
+    opacity: 0.55;
+  }
+  .step.done .title,
+  .step.active .title {
+    opacity: 1;
+  }
+  .step.active .title {
+    color: var(--primary-color);
+  }
+  .ts {
+    font-size: 0.72rem;
+    color: var(--text-color);
+    opacity: 0.5;
+    white-space: nowrap;
+  }
+  .desc {
+    margin-top: 0.15rem;
+    font-size: 0.78rem;
+    line-height: 1.35;
+    color: var(--text-color);
+    opacity: 0.6;
+  }
+  .step.active .desc {
+    opacity: 0.9;
+  }
+
+  .txlink {
+    margin-top: 0.4rem;
+    padding: 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: monospace;
+    font-size: 0.74rem;
+    color: var(--primary-color);
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  .confirm {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.4rem;
+    font-size: 0.76rem;
+    color: var(--text-color);
+    opacity: 0.85;
+  }
   .spinner {
-    width: 13px;
-    height: 13px;
+    width: 11px;
+    height: 11px;
     border-radius: 50%;
     border: 2px solid color-mix(in srgb, var(--primary-color) 30%, transparent);
     border-top-color: var(--primary-color);
@@ -84,89 +243,19 @@
     flex: none;
   }
   @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-
-  .rail {
-    display: flex;
-    align-items: flex-start;
-    width: 100%;
-  }
-
-  .step {
-    flex: 1;
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
-    min-width: 0;
-
-    // connector leading in from the previous step
-    &:not(:first-child)::before {
-      content: "";
-      position: absolute;
-      top: 8px;
-      left: -50%;
-      right: 50%;
-      height: 2px;
-      background: var(--border-color);
-      z-index: 0;
+    to {
+      transform: rotate(360deg);
     }
-    &.reached:not(:first-child)::before {
-      background: var(--primary-color);
-    }
-  }
-
-  .dot {
-    position: relative;
-    z-index: 1;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    box-sizing: border-box;
-    border: 2px solid var(--border-color);
-    background: var(--component-background, var(--input-background, transparent));
-  }
-
-  .step.done .dot {
-    border-color: var(--primary-color);
-    background: var(--primary-color);
-  }
-  .step.active .dot {
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary-color) 20%, transparent);
-    animation: pulse 1.4s ease-in-out infinite;
-  }
-  @keyframes pulse {
-    0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 22%, transparent); }
-    50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--primary-color) 8%, transparent); }
-  }
-
-  .lbl {
-    font-size: 0.66rem;
-    line-height: 1.15;
-    text-align: center;
-    color: var(--text-color);
-    opacity: 0.6;
-  }
-  .step.reached .lbl {
-    opacity: 0.95;
-  }
-  .step.active .lbl {
-    color: var(--primary-color);
-    opacity: 1;
-    font-weight: 600;
   }
 
   .result {
     padding: 0.8rem 0.95rem;
+    margin-bottom: 0.8rem;
     border: 1px solid var(--swap-fail-color, #e5484d);
     border-radius: 10px;
     font-size: 0.85rem;
     color: var(--text-color);
     background: color-mix(in srgb, var(--swap-fail-color, #e5484d) 8%, transparent);
-
     &.punish {
       opacity: 0.95;
     }
