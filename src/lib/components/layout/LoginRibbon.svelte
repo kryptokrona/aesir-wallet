@@ -7,10 +7,20 @@
   // The logos are tinted with the theme's highlight colour (see .logo below),
   // so the same mask works on every theme.
   import { onMount, onDestroy } from 'svelte';
+  import { scale, blur } from 'svelte/transition';
 
   export let angle = 40; // tilt in degrees
   export let logoWidth = 128; // px
   export let gapX = -10; // px of empty space between logos on a line
+  // Pinhole mask: reveal the drifting field only through a soft circle, fading to
+  // nothing at the edges. `pinholeX`/`pinholeY` place the circle centre (CSS
+  // <position>), `pinholeInner`/`pinholeOuter` are the fully-visible and
+  // fully-hidden radii.
+  export let pinhole = true;
+  export let pinholeX = '50%';
+  export let pinholeY = '38%';
+  export let pinholeInner = '18%';
+  export let pinholeOuter = '42%';
 
   const LOGO_RATIO = 54 / 176;
   const rowHeight = Math.round(logoWidth * LOGO_RATIO);
@@ -29,9 +39,15 @@
     rows = Math.ceil(field / pitch) + 1;
   };
 
+  // Svelte/SvelteKit skips intro transitions on the initial (hydrated) render, so
+  // `in:scale` would never fire on the login screen -- it's the first screen on
+  // app start. Gate the ribbon on this flag, flipped after mount, so the element
+  // is inserted client-side and the intro (and outro on teardown) run reliably.
+  let mounted = false;
   onMount(() => {
     sizeToViewport();
     window.addEventListener('resize', sizeToViewport);
+    mounted = true;
   });
   onDestroy(() => {
     if (typeof window !== 'undefined') window.removeEventListener('resize', sizeToViewport);
@@ -44,21 +60,27 @@
     reverse: i % 2 === 1,
     duration: (120 + (i % 5) * 0.4) * (cell / 20), // px/s roughly constant
   }));
+
+  $: mask = pinhole
+    ? `radial-gradient(circle at ${pinholeX} ${pinholeY}, #000 ${pinholeInner}, transparent ${pinholeOuter})`
+    : 'none';
 </script>
 
-<div class="ribbon" aria-hidden="true">
-  <div class="field" style="--angle: {angle}deg; --pitch: {pitch}px; --half: {half}px;">
-    {#each lines as line}
-      <div class="row" style="--h: {rowHeight}px; --op: {line.opacity}; --dur: {line.duration}s;">
-        <div class="track" class:reverse={line.reverse}>
-          {#each Array(cols * 2) as _}
-            <span class="logo" style="width: {logoWidth}px; margin-right: {gapX}px;" />
-          {/each}
+{#if mounted}
+  <div class="ribbon" in:blur out:scale aria-hidden="true" style="--mask: {mask};">
+    <div class="field" style="--angle: {angle}deg; --pitch: {pitch}px; --half: {half}px;">
+      {#each lines as line}
+        <div class="row" style="--h: {rowHeight}px; --op: {line.opacity}; --dur: {line.duration}s;">
+          <div class="track" class:reverse={line.reverse}>
+            {#each Array(cols * 2) as _}
+              <span class="logo" style="width: {logoWidth}px; margin-right: {gapX}px;" />
+            {/each}
+          </div>
         </div>
-      </div>
-    {/each}
+      {/each}
+    </div>
   </div>
-</div>
+{/if}
 
 <style lang="scss">
   .ribbon {
@@ -68,6 +90,10 @@
     overflow: hidden;
     pointer-events: none;
     border-radius: 15px;
+    // Pinhole: only reveal the drifting field through a soft circle (see `mask`
+    // in the script). `none` when pinhole is disabled, so nothing is masked.
+    -webkit-mask: var(--mask, none);
+    mask: var(--mask, none);
   }
 
   // Oversized, centred and rotated so the tilted rows still cover every corner.
