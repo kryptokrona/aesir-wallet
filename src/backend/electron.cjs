@@ -279,8 +279,19 @@ function makerRemainingAtomic() {
   return Math.max(0, order.targetAtomic - makerCommittedAtomic(order));
 }
 
-// Stop advertising once the order can't fund even a minimum-size swap (i.e. it's
-// filled). In-flight swaps keep running on the ASB; we just stop taking new ones.
+// True while any maker swap for the open wallet is still in flight (the ASB's
+// `completed` flag is the authority; refunding swaps count as in-flight too).
+function makerHasInflightSwaps() {
+  const wid = walletKey() || "default";
+  const cache = (swapsStore.get("swaps") || {})[wid] || {};
+  return Object.values(cache).some((s) => s && s.role === "maker" && s.completed === false);
+}
+
+// Tear the maker board down once the limit-sell order is filled -- but ONLY when no
+// swaps are still in flight. The board carries the per-swap HyperSwarm beams, so
+// stopping it mid-swap destroys the beam and strands the swap (the taker never gets
+// the XKR transfer proof / can't return its signature). The order stays set until
+// then, so computeQuote keeps advertising ~0 and no NEW swaps start during wind-down.
 function maybeCompleteMakerOrder() {
   const order = getMakerOrder();
   if (!order || !swapMaker) return;
@@ -291,7 +302,8 @@ function maybeCompleteMakerOrder() {
       ? Math.ceil((Number(order.minSat) / Number(order.priceSats)) * 100000)
       : 1;
   if (remainingAtomic > minAtomic) return;
-  console.log(`[swap-maker] limit-sell order filled (remaining ${remainingAtomic} atomic); stop advertising`);
+  if (makerHasInflightSwaps()) return; // wait for in-flight swaps to settle first
+  console.log(`[swap-maker] limit-sell order filled and all swaps settled; stop advertising`);
   try {
     swapMaker.stop();
   } catch (_) {}
@@ -711,6 +723,10 @@ ipcMain.handle("swap-maker-start", async (e, args = {}) => {
   try {
     const priceSats = String(args.priceSats || process.env.XKR_ASB_PRICE_SATS || "5");
 
+    // An explicit start always clears a prior "order filled" state, so re-starting
+    // to recover a stranded swap doesn't immediately read as filled.
+    swapMakerOrderFilled = false;
+
     // Limit-sell order: "sell up to targetXkr XKR at this price". Keep an existing
     // order (continue filling it) when the target is unchanged; (re)create it when
     // the target changes; leave it unset to sell freely (legacy behaviour).
@@ -727,7 +743,6 @@ ipcMain.handle("swap-maker-start", async (e, args = {}) => {
           startedAt: Date.now(),
         });
       }
-      swapMakerOrderFilled = false;
     }
 
     // Idempotent: if the maker engine is already running (and advertising) with the
