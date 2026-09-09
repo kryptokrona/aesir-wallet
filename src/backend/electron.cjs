@@ -291,6 +291,10 @@ async function startXkrSwapService(node) {
     // stuck at "btc is locked") until manually resumed. Give the daemon a moment
     // to bind, then resume every unfinished swap so restarts are self-healing.
     setTimeout(resumeInFlightSwaps, 6000);
+    // Same idea for the MAKER side: if we were mid-swap when the app closed, bring
+    // the ASB back resume-only so its refunds/redeems finish on their own. Slightly
+    // later so the XKR wallet RPC is bound first -- the ASB needs it.
+    setTimeout(resumeMakerSwapsIfAny, 8000);
   } catch (e) {
     console.error("failed to start xkr-swap RPC service:", e.message);
   }
@@ -382,6 +386,7 @@ let swapMakerError = null; // last maker-board start error, surfaced to the pane
 let swapMakerRpc = null; // asb-rpc client: peer id, XKR inventory, swaps
 let swapMakerAdvertised = null; // the quote actually being advertised (price/min/max)
 let swapMakerPriceSats = null; // price the running ASB was started with (restart only on change)
+let swapMakerResumeOnly = false; // true when the ASB was auto-started on boot ONLY to recover/refund unfinished swaps (not advertising)
 const ASB_LISTEN_PORT = 9839; // must match the ASB config's libp2p `listen` tcp port
 const ASB_RPC_PORT = 9945; // ASB control JSON-RPC (localhost, Bearer-authed)
 
@@ -465,53 +470,118 @@ ipcMain.handle("swap-error", (e, swapId) => swapRpc(() => xkrSwapRpc.swapError(s
 // it on the HyperSwarm board so takers can find and reach it behind NAT (no
 // rendezvous). The ASB locks XKR from this wallet's own keys.
 // args: { configPath?, priceSats?, minSat?, maxSat?, env? }
+// Spawn the ASB child with the maker env + start args. Shared by the interactive
+// "start market-making" handler and the boot-time resume-only recovery so the two
+// can NEVER drift on critical env (e.g. XKR_ASB_REFUND_ADDRESS, whose absence
+// leaves refunds stuck at "xmr is refundable"). Returns { child, password };
+// `password` authenticates the ASB control RPC.
+async function spawnMakerAsb({ priceSats, resumeOnly = false, configPath, extraEnv = {} } = {}) {
+  // The maker's XKR inventory IS this wallet -- the ASB locks XKR from the user's
+  // own keys, so market-making needs no separate funded wallet.
+  const [makerSpend, makerView] = walletBackend.getPrimaryAddressPrivateKeys();
+  const cfgPath = configPath || path.join(app.getPath("userData"), "xkr-asb-config.toml");
+
+  // Enable the ASB control RPC on localhost, Bearer-authed via a verifier file.
+  const { password, verifier } = asbRpc.generateAuth();
+  const authFile = path.join(app.getPath("userData"), "asb-rpc-auth");
+  fs.writeFileSync(authFile, verifier, { mode: 0o600 });
+
+  const startArgs = [
+    "--rpc-bind-host", "127.0.0.1",
+    "--rpc-bind-port", String(ASB_RPC_PORT),
+    "--rpc-auth-file", authFile,
+  ];
+  // Resume-only: resume/refund the swaps already in the ASB's DB but accept NO
+  // new swap requests (and we skip advertising on the board). Used on boot to
+  // finish refunds without silently re-entering the market.
+  if (resumeOnly) startArgs.push("--resume-only");
+
+  const child = await xkrSwapAsb.startAsb({
+    app,
+    configPath: cfgPath,
+    testnet: true,
+    env: {
+      XKR_WALLET_RPC_URL: `http://127.0.0.1:${XKR_SWAP_RPC_PORT}`,
+      XKR_ASB_PRICE_SATS: priceSats,
+      XKR_ASB_SPEND_SECRET: makerSpend,
+      XKR_ASB_VIEW_SECRET: makerView,
+      // Where a FAILED swap's XKR is swept back to when the maker refunds. A
+      // cancelled swap leaves the engine at "xmr is refundable"; the refund step
+      // reconstructs the shared XKR wallet and sweeps to this address. Without it
+      // the engine errors ("XKR_ASB_REFUND_ADDRESS not set") and the swap gets
+      // stuck refundable forever. Refund to our own primary address -- the same
+      // wallet the locked XKR came from.
+      XKR_ASB_REFUND_ADDRESS: walletBackend.getPrimaryAddress(),
+      // Derive the ASB's Bitcoin wallet from the XKR spend key -- the SAME seed
+      // the taker engine uses -- so maker BTC proceeds land in the one shared
+      // BTC wallet (visible/withdrawable in the app), not a separate ASB wallet.
+      XKR_SWAP_SEED_KEY: makerSpend,
+      ...extraEnv,
+    },
+    startArgs,
+  });
+  return { child, password };
+}
+
+// On boot (after the wallet is loaded), bring the maker ASB back in RESUME-ONLY
+// mode if there are unfinished maker swaps -- e.g. one left at "xmr is refundable"
+// after both sides went offline. This resumes them so refunds complete, WITHOUT
+// re-advertising on the board (the user chose resume-only recovery). A later
+// explicit "start market-making" replaces this with a full advertising instance.
+async function resumeMakerSwapsIfAny() {
+  try {
+    if (!walletBackend) return;
+    if (xkrSwapAsb.isRunning()) return; // already up (e.g. user started MM already)
+    const cache = swapsStore.get("swaps") || {};
+    // `completed` is the engine's own authoritative done flag (same signal the
+    // taker resume uses); a refundable-but-not-yet-refunded swap is completed=false.
+    const pending = Object.values(cache).filter((s) => s && s.role === "maker" && s.completed === false);
+    if (!pending.length) return;
+
+    const priceSats = String(swapMakerPriceSats || process.env.XKR_ASB_PRICE_SATS || "5");
+    console.log(
+      `[swap-maker] ${pending.length} unfinished maker swap(s) found; starting ASB resume-only to recover/refund`,
+    );
+    const { child, password } = await spawnMakerAsb({ priceSats, resumeOnly: true });
+    if (!child) {
+      console.warn("[swap-maker] resume-only ASB failed to start (binary missing or port in use)");
+      return;
+    }
+    swapMakerResumeOnly = true;
+    // Keep a control-RPC client so the UI's swap-maker-swaps poll can refresh the
+    // cached state as the refund progresses, but do NOT advertise (no startMakerBoard).
+    swapMakerRpc = asbRpc.client(ASB_RPC_PORT, password);
+  } catch (e) {
+    console.error("[swap-maker] resume-only recovery failed:", e.message);
+  }
+}
+
 ipcMain.handle("swap-maker-start", async (e, args = {}) => {
   try {
     const priceSats = String(args.priceSats || process.env.XKR_ASB_PRICE_SATS || "5");
 
-    // Idempotent: if the maker engine is already running with the same price,
-    // do NOT tear it down. Killing+respawning the ASB (SIGTERM) drops every live
-    // HyperSwarm beam and breaks any swap currently in setup/flight -- the exact
-    // cause of "the swap didn't get off the ground" on the taker. Just make sure
-    // we're still advertising on the board and return the existing identity.
-    if (xkrSwapAsb.isRunning() && swapMakerPriceSats === priceSats && !swapMakerError) {
+    // Idempotent: if the maker engine is already running (and advertising) with the
+    // same price, do NOT tear it down. Killing+respawning the ASB (SIGTERM) drops
+    // every live HyperSwarm beam and breaks any swap currently in setup/flight --
+    // the exact cause of "the swap didn't get off the ground" on the taker. Just
+    // make sure we're still advertising on the board and return the existing
+    // identity. A resume-only recovery instance is NOT reused here: an explicit
+    // start must upgrade it to a full advertising instance (accept new swaps).
+    if (xkrSwapAsb.isRunning() && !swapMakerResumeOnly && swapMakerPriceSats === priceSats && !swapMakerError) {
       if (!swapMaker && swapMakerPeerId) startMakerBoard(args, priceSats);
       return { ok: true, reused: true };
     }
 
+    swapMakerResumeOnly = false;
     swapMakerPeerId = null;
     swapMakerError = null;
     swapMakerRpc = null;
-    // The maker's XKR inventory IS this wallet -- the ASB locks XKR from the
-    // user's own keys, so "click to market-make" needs no separate funded wallet.
-    const [makerSpend, makerView] = walletBackend.getPrimaryAddressPrivateKeys();
-    const configPath = args.configPath || path.join(app.getPath("userData"), "xkr-asb-config.toml");
 
-    // Enable the ASB control RPC on localhost, Bearer-authed via a verifier file.
-    const { password, verifier } = asbRpc.generateAuth();
-    const authFile = path.join(app.getPath("userData"), "asb-rpc-auth");
-    fs.writeFileSync(authFile, verifier, { mode: 0o600 });
-
-    const child = await xkrSwapAsb.startAsb({
-      app,
-      configPath,
-      testnet: true,
-      env: {
-        XKR_WALLET_RPC_URL: `http://127.0.0.1:${XKR_SWAP_RPC_PORT}`,
-        XKR_ASB_PRICE_SATS: priceSats,
-        XKR_ASB_SPEND_SECRET: makerSpend,
-        XKR_ASB_VIEW_SECRET: makerView,
-        // Derive the ASB's Bitcoin wallet from the XKR spend key -- the SAME seed
-        // the taker engine uses -- so maker BTC proceeds land in the one shared
-        // BTC wallet (visible/withdrawable in the app), not a separate ASB wallet.
-        XKR_SWAP_SEED_KEY: makerSpend,
-        ...(args.env || {}),
-      },
-      startArgs: [
-        "--rpc-bind-host", "127.0.0.1",
-        "--rpc-bind-port", String(ASB_RPC_PORT),
-        "--rpc-auth-file", authFile,
-      ],
+    const { child, password } = await spawnMakerAsb({
+      priceSats,
+      resumeOnly: false,
+      configPath: args.configPath,
+      extraEnv: args.env || {},
     });
     if (!child) {
       swapMakerPriceSats = null;
@@ -575,6 +645,7 @@ ipcMain.handle("swap-maker-stop", () => {
     swapMakerError = null;
     swapMakerAdvertised = null;
     swapMakerPriceSats = null;
+    swapMakerResumeOnly = false;
   } catch (_) {}
   return { ok: true };
 });
@@ -596,6 +667,9 @@ ipcMain.handle("swap-maker-status", async () => {
     result: {
       advertising: !!swapMaker,
       asbRunning: xkrSwapAsb.isRunning ? xkrSwapAsb.isRunning() : false,
+      // The ASB is up purely to recover/refund unfinished swaps (booted resume-only),
+      // NOT advertising -- lets the panel show "recovering swaps" instead of "starting".
+      resumeOnly: swapMakerResumeOnly,
       peerId: swapMakerPeerId,
       error: swapMakerError,
       advertised: swapMaker ? swapMakerAdvertised : null,
@@ -795,6 +869,10 @@ ipcMain.on("start-wallet", async (e, walletName, password, node, file) => {
       // Resume any swap interrupted by a previous shutdown now that the engine
       // is respawned with the receive address available.
       setTimeout(resumeInFlightSwaps, 6000);
+      // Same idea for the MAKER side: if we were mid-swap when the app closed, bring
+      // the ASB back resume-only so its refunds/redeems finish on their own. Slightly
+      // later so the XKR wallet RPC is bound first -- the ASB needs it.
+      setTimeout(resumeMakerSwapsIfAny, 8000);
     }
   } catch (e) {
     console.error("failed to seed swap engine from XKR key:", e.message);
