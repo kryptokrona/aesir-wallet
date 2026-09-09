@@ -23,6 +23,7 @@ const keytar = require("keytar");
 const Store = require("electron-store");
 const { autoUpdater } = require("electron-updater");
 const fs = require("fs");
+const nodeCrypto = require("crypto");
 const { error } = require("console");
 
 
@@ -199,6 +200,21 @@ const miscs = new Store();
 // the binaries just to view it. Its own file to keep the (growing) list isolated.
 const swapsStore = new Store({ name: "swaps" });
 
+// A short, stable, filesystem-safe id for the currently-open XKR wallet, used to
+// key ALL swap state per wallet so different wallets never see each other's swaps:
+// it scopes the swap cache below AND the ASB's data dir (XKR_ASB_DATA_DIR). Derived
+// from the primary address (a hash, so it's not the address verbatim in paths).
+// Returns null when no wallet is loaded.
+function walletKey() {
+  try {
+    const addr = walletBackend && walletBackend.getPrimaryAddress ? walletBackend.getPrimaryAddress() : null;
+    if (!addr) return null;
+    return nodeCrypto.createHash("sha256").update(addr).digest("hex").slice(0, 16);
+  } catch (_) {
+    return null;
+  }
+}
+
 // The engine stamps start_date via Rust's `time` OffsetDateTime Display, e.g.
 // "2026-09-07 21:19:26.642276 +00:00:00" -- which JS Date can't parse. Normalize
 // to ISO-8601 so sorts order by real time (unparseable -> 0, i.e. sorts last).
@@ -217,7 +233,10 @@ function swapDateMs(str) {
 // swap engine) or 'maker' (from the ASB); their state field differs, so normalize.
 function cacheSwaps(list, role) {
   if (!Array.isArray(list) || !list.length) return;
-  const cache = swapsStore.get("swaps") || {};
+  // Scope the cache to the open wallet so swaps never bleed between wallets.
+  const wid = walletKey() || "default";
+  const all = swapsStore.get("swaps") || {};
+  const cache = all[wid] || {};
   for (const s of list) {
     if (!s || !s.swap_id) continue;
     cache[s.swap_id] = {
@@ -231,7 +250,8 @@ function cacheSwaps(list, role) {
       updated_at: Date.now(),
     };
   }
-  swapsStore.set("swaps", cache);
+  all[wid] = cache;
+  swapsStore.set("swaps", all);
 }
 
 // Start (or restart) the XKR swap RPC service pointed at the given node, so a
@@ -432,7 +452,8 @@ ipcMain.handle("swap-infos", async () => {
 // Merged, persistent swap history (taker + maker) read straight from the local
 // cache -- available instantly and even when the engine/ASB are down.
 ipcMain.handle("swap-history-cache", () => {
-  const cache = swapsStore.get("swaps") || {};
+  const wid = walletKey() || "default";
+  const cache = (swapsStore.get("swaps") || {})[wid] || {};
   const list = Object.values(cache).sort((a, b) => swapDateMs(b.start_date) - swapDateMs(a.start_date));
   return { ok: true, result: list };
 });
@@ -540,6 +561,10 @@ async function spawnMakerAsb({ priceSats, resumeOnly = false, configPath, extraE
       XKR_SWAP_SEED_KEY: makerSpend,
       // Redeem completed-swap BTC into the app's spendable wallet (see above).
       ...(redeemBtcAddress ? { XKR_ASB_REDEEM_ADDRESS: redeemBtcAddress } : {}),
+      // Per-wallet ASB data dir: isolates the swap DB, identity and wallet so
+      // different opened XKR wallets never see each other's maker swaps. Keyed by
+      // the open wallet; falls back to a shared "default" dir if no wallet id.
+      XKR_ASB_DATA_DIR: path.join(app.getPath("userData"), "asb-data", walletKey() || "default"),
       ...extraEnv,
     },
     startArgs,
@@ -556,7 +581,9 @@ async function resumeMakerSwapsIfAny() {
   try {
     if (!walletBackend) return;
     if (xkrSwapAsb.isRunning()) return; // already up (e.g. user started MM already)
-    const cache = swapsStore.get("swaps") || {};
+    // Only the OPEN wallet's maker swaps -- don't resume another wallet's swaps.
+    const wid = walletKey() || "default";
+    const cache = (swapsStore.get("swaps") || {})[wid] || {};
     // `completed` is the engine's own authoritative done flag (same signal the
     // taker resume uses); a refundable-but-not-yet-refunded swap is completed=false.
     const pending = Object.values(cache).filter((s) => s && s.role === "maker" && s.completed === false);
