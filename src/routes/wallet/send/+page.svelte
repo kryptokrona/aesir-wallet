@@ -63,7 +63,7 @@
 
       &.active {
         background: var(--primary-color);
-        color: #fff;
+        color: var(--backgound-color);
       }
     }
   }

@@ -14,9 +14,12 @@
   export let stateName = "";
   export let role = "taker"; // "taker" (buy) or "maker" (sell)
   export let txLockId = null; // BTC lock txid, links to the explorer on the lock step
+  export let xkrLockTxid = null; // XKR lock tx hash (both roles), shown on the "Lock XKR" step
+  export let xkrRedeemTxid = null; // XKR redeem sweep hash (taker only), shown on "Receive XKR"
   export let startDate = null; // swap start timestamp (shown on the first step)
   // testnet for now; the wallet's BTC side runs on testnet.
   export let btcExplorer = "https://mempool.space/testnet/tx/";
+  export let xkrExplorer = "https://xkr.network/transaction?hash=";
 
   $: steps = stepsFor(role);
   $: outcome = swapOutcome(stateName, role);
@@ -25,6 +28,9 @@
   $: failed = ["refunded", "refunding", "punished", "aborted"].includes(outcome);
   // The step that represents the BTC lock (gets the tx link + confirmation note).
   $: lockStep = steps.indexOf("BTC locked");
+  // XKR on-chain steps (present on both roles for the lock; redeem is taker-only).
+  $: lockXkrStep = steps.indexOf("Lock XKR");
+  $: receiveXkrStep = steps.indexOf("Receive XKR"); // -1 for the maker
 
   // The engine stamps timestamps via Rust's `time` crate (space-separated, micros,
   // "+00:00:00" offset) which JS Date can't parse; normalize before formatting.
@@ -48,6 +54,7 @@
 
   const shortId = (id) => (id ? id.slice(0, 10) + "…" + id.slice(-8) : "");
   const openTx = (id) => window.api?.openLink?.(btcExplorer + id);
+  const openXkr = (id) => window.api?.openLink?.(xkrExplorer + id);
 </script>
 
 <div class="vtl" class:failed>
@@ -84,6 +91,18 @@
         {#if i === lockStep && txLockId}
           <button class="txlink" on:click={() => openTx(txLockId)} title="View on mempool.space">
             {shortId(txLockId)} ↗
+          </button>
+        {/if}
+
+        {#if i === lockXkrStep && xkrLockTxid}
+          <button class="txlink" on:click={() => openXkr(xkrLockTxid)} title="View on xkr.network">
+            {shortId(xkrLockTxid)} ↗
+          </button>
+        {/if}
+
+        {#if i === receiveXkrStep && xkrRedeemTxid}
+          <button class="txlink" on:click={() => openXkr(xkrRedeemTxid)} title="View on xkr.network">
+            {shortId(xkrRedeemTxid)} ↗
           </button>
         {/if}
 

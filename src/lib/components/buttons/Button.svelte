@@ -56,11 +56,14 @@
   .highlight {
     background-color: var(--primary-color);
     border-color: var(--primary-color);
-    color: #fff;
+    // Font in the theme's BACKGROUND colour, not a fixed white: on themes whose
+    // highlight is light (e.g. the dark theme's neon green), white-on-highlight has
+    // almost no contrast. The background colour is the highlight's natural opposite.
+    color: var(--backgound-color);
 
     &:hover {
       background: var(--primary-color);
-      color: #fff;
+      color: var(--backgound-color);
       opacity: 0.9;
     }
   }
@@ -76,7 +79,7 @@
 
     &.highlight:hover {
       background-color: var(--primary-color);
-      color: #fff;
+      color: var(--backgound-color);
     }
   }
 </style>
