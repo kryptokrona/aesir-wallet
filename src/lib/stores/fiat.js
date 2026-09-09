@@ -120,8 +120,17 @@ export const fiat = writable({
     currencies: currencies,
 })
 
-export async function getCoinPriceFromAPI() {
+// How often the shared poller refreshes prices while the app is open, and the
+// minimum gap enforced between fetches so navigating between pages (each of
+// which asks for a price on mount) can't hammer CoinGecko's rate limit.
+const POLL_INTERVAL_MS = 60_000;
+const MIN_FETCH_GAP_MS = 30_000;
 
+let lastFetch = 0;
+let inFlight = null; // the in-flight fetch promise, so concurrent callers share one request
+let pollTimer = null; // the single app-wide polling interval
+
+async function fetchCoinPrice() {
     let ticker
     const local = localStorage.getItem('fiat')
 
@@ -142,14 +151,39 @@ export async function getCoinPriceFromAPI() {
         fiat.set({balance, btcPrice, ticker, currencies: currencies})
 
         localStorage.setItem('fiat', ticker);
+        lastFetch = Date.now();
         console.log('Updated coin prices from API (XKR + BTC)');
 
     } catch (error) {
         console.log('Failed to get price from API: ' + error.toString());
         return undefined;
     }
-  }
+}
 
-getCoinPriceFromAPI();
+// Fetch the latest XKR + BTC prices into the shared `fiat` store. Deduped and
+// throttled: concurrent callers share a single request, and calls within
+// MIN_FETCH_GAP_MS of the last fetch are skipped -- so any number of pages can
+// call this on mount without triggering extra network requests. Pass
+// { force: true } (e.g. when the user changes currency) to bypass the throttle.
+export async function getCoinPriceFromAPI({ force = false } = {}) {
+    if (!force) {
+        if (inFlight) return inFlight;
+        if (Date.now() - lastFetch < MIN_FETCH_GAP_MS) return;
+    }
+    const p = fetchCoinPrice();
+    inFlight = p;
+    p.finally(() => { if (inFlight === p) inFlight = null; });
+    return p;
+}
+
+// Start the single, app-wide price poller. Idempotent: extra calls won't create
+// additional intervals, so every consumer of the store shares one poll loop.
+export function startFiatPolling(intervalMs = POLL_INTERVAL_MS) {
+    getCoinPriceFromAPI({ force: true });
+    if (pollTimer || typeof setInterval === 'undefined') return;
+    pollTimer = setInterval(() => getCoinPriceFromAPI(), intervalMs);
+}
+
+startFiatPolling();
 
 

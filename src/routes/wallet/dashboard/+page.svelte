@@ -310,6 +310,7 @@
       <div class="transactions">
         {#each feed as tx (tx.kind + tx.id)}
           {#if tx.kind === 'xkr'}
+            {@const fiatAmt = fiatStr(tx.amount, 'xkr', $fiat)}
             <div
               class="row"
               class:unconfirmed={!tx.confirmed}
@@ -317,14 +318,15 @@
               on:click={() => goto(`/wallet/transaction/${tx.id}`)}
             >
               <p style="opacity: 80%;">{shortId(tx.id)}</p>
-              <div class="amt">
-                <p class="tx" style="background: none" class:sent={tx.amount > 0}>
+              <div class="amt" class:has-fiat={fiatAmt}>
+                <p class="tx amount-crypto" style="background: none" class:sent={tx.amount > 0}>
                   {tx.amount.toFixed(5)} XKR
                 </p>
-                {#if fiatStr(tx.amount, 'xkr', $fiat)}<span class="fiat">{fiatStr(tx.amount, 'xkr', $fiat)}</span>{/if}
+                {#if fiatAmt}<p class="tx amount-fiat" style="background: none" class:sent={tx.amount > 0}>{fiatAmt}</p>{/if}
               </div>
             </div>
           {:else}
+            {@const fiatAmt = fiatStr(tx.amount, 'btc', $fiat)}
             <div
               class="row"
               class:unconfirmed={!tx.confirmed}
@@ -332,11 +334,11 @@
               on:click={() => goto(`/wallet/transaction/${tx.id}?kind=btc`)}
             >
               <p style="opacity: 80%;">{shortId(tx.id)}</p>
-              <div class="amt">
-                <p class="tx" style="background: none" class:sent={tx.amount > 0}>
+              <div class="amt" class:has-fiat={fiatAmt}>
+                <p class="tx amount-crypto" style="background: none" class:sent={tx.amount > 0}>
                   {tx.amount.toFixed(8)} BTC
                 </p>
-                {#if fiatStr(tx.amount, 'btc', $fiat)}<span class="fiat">{fiatStr(tx.amount, 'btc', $fiat)}</span>{/if}
+                {#if fiatAmt}<p class="tx amount-fiat" style="background: none" class:sent={tx.amount > 0}>{fiatAmt}</p>{/if}
               </div>
             </div>
           {/if}
@@ -373,6 +375,7 @@
     display: flex;
     box-sizing: border-box;
     justify-content: space-between;
+    align-items: center;
     width: 100%;
     height: 50px;
     padding: 0 2rem;
@@ -408,10 +411,16 @@
   .amt .tx {
     margin: 0;
   }
-  .fiat {
-    font-size: 0.72rem;
-    opacity: 0.5;
-    color: var(--text-color);
+  // Fiat value is hidden by default and swapped in for the crypto amount only
+  // while the row is hovered (and only when a price is available).
+  .amount-fiat {
+    display: none;
+  }
+  .row:hover .amt.has-fiat .amount-crypto {
+    display: none;
+  }
+  .row:hover .amt.has-fiat .amount-fiat {
+    display: block;
   }
   .notx {
     padding: 30px;

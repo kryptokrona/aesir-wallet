@@ -10,6 +10,7 @@
   import { fade, fly } from 'svelte/transition';
   import toast from 'svelte-french-toast';
   import { fiat } from '$lib/stores/fiat.js';
+  import { fiatStr } from '$lib/utils/fiat.js';
   import { btc, refreshBtc } from '$lib/stores/btc.js';
   import { wallet } from '$lib/stores/wallet.js';
   import SwapTimeline from '$lib/components/SwapTimeline.svelte';
@@ -80,6 +81,11 @@
   // XKR amount a swap will/did receive, from swap_infos (xmr_amount is piconero;
   // 1 XKR = 1e12 piconero in the engine's units). Used when we have no local snapshot.
   const xkrFromInfo = (info) => (info?.xmr_amount || 0) / 1e12;
+  // Fiat value of a swap, for the history rows/details. Prefer pricing the XKR
+  // leg (what the user cares about); fall back to the BTC leg if we have no XKR
+  // price. `f` is passed in so the template re-renders when prices arrive.
+  const swapFiatStr = (info, f) =>
+    fiatStr(xkrFromInfo(info), 'xkr', f) || fiatStr((info?.btc_amount || 0) / 1e8, 'btc', f);
 
   $: btcFiatStr = fmtFiat($fiat.btcPrice * amountNum);
   $: xkrFiatStr = fmtFiat($fiat.balance * xkrReceive);
@@ -482,13 +488,16 @@
         {/if}
       </div>
       {#each sortedInfos.slice(0, 3) as info (info.swap_id)}
+        {@const swapFiat = swapFiatStr(info, $fiat)}
         <button class="swap-row" on:click={() => openMonitor(info.swap_id)}>
           <div>
             <div class="swap-id">
               <span class="role" class:sell={info.role === 'maker'}>{info.role === 'maker' ? 'Sell' : 'Buy'}</span>
               {short(info.swap_id)}
             </div>
-            <div class="swap-amt">{(info.btc_amount / 1e8).toFixed(8)} BTC</div>
+            <div class="swap-amt">
+              {#if info.role === 'maker'}{fmtXkr(xkrFromInfo(info))} XKR → {(info.btc_amount / 1e8).toFixed(8)} BTC{:else}{(info.btc_amount / 1e8).toFixed(8)} BTC → {fmtXkr(xkrFromInfo(info))} XKR{/if}{#if swapFiat}<span class="swap-fiat"> ({swapFiat})</span>{/if}
+            </div>
           </div>
           <div class="state" class:done={info.state_name === 'xmr is redeemed' || info.state_name === 'btc is redeemed'}>
             {friendlyState(info.state_name, info.role)}
@@ -502,13 +511,16 @@
 {#if view === 'history'}
   <div class="recent" in:fly={{ y: 16, delay: 40 }}>
     {#each pagedHistory as info (info.swap_id)}
+      {@const swapFiat = swapFiatStr(info, $fiat)}
       <button class="swap-row" on:click={() => openMonitor(info.swap_id)}>
         <div>
           <div class="swap-id">
             <span class="role" class:sell={info.role === 'maker'}>{info.role === 'maker' ? 'Sell' : 'Buy'}</span>
             {short(info.swap_id)}
           </div>
-          <div class="swap-amt">{(info.btc_amount / 1e8).toFixed(8)} BTC</div>
+          <div class="swap-amt">
+            {#if info.role === 'maker'}{fmtXkr(xkrFromInfo(info))} XKR → {(info.btc_amount / 1e8).toFixed(8)} BTC{:else}{(info.btc_amount / 1e8).toFixed(8)} BTC → {fmtXkr(xkrFromInfo(info))} XKR{/if}{#if swapFiat}<span class="swap-fiat"> ({swapFiat})</span>{/if}
+          </div>
         </div>
         <div class="state" class:done={info.state_name === 'xmr is redeemed' || info.state_name === 'btc is redeemed'}>
           {friendlyState(info.state_name, info.role)}
@@ -523,28 +535,36 @@
     {#if activeInfo}
       <div class="recap">
         {#if activeInfo.role === 'maker'}
+          {@const sendXkr = xkrFromInfo(activeInfo)}
+          {@const recvBtc = activeInfo.btc_amount / 1e8}
           <div>
             <span class="k">You send</span>
-            <span class="v">≈ {fmtXkr(xkrFromInfo(activeInfo))} XKR</span>
+            <span class="v">≈ {fmtXkr(sendXkr)} XKR</span>
+            {#if fiatStr(sendXkr, 'xkr', $fiat)}<span class="vfiat">≈ {fiatStr(sendXkr, 'xkr', $fiat)}</span>{/if}
           </div>
           <div class="to">
             <span style="display: inline-flex; transform: rotate(180deg)"><ArrowLeft /></span>
           </div>
           <div class="rt">
             <span class="k">You receive</span>
-            <span class="v">{(activeInfo.btc_amount / 1e8).toFixed(8)} BTC</span>
+            <span class="v">{recvBtc.toFixed(8)} BTC</span>
+            {#if fiatStr(recvBtc, 'btc', $fiat)}<span class="vfiat">≈ {fiatStr(recvBtc, 'btc', $fiat)}</span>{/if}
           </div>
         {:else}
+          {@const sendBtc = snapshot?.btc ?? activeInfo.btc_amount / 1e8}
+          {@const recvXkr = snapshot?.xkr ?? xkrFromInfo(activeInfo)}
           <div>
             <span class="k">You send</span>
-            <span class="v">{(snapshot?.btc ?? activeInfo.btc_amount / 1e8).toFixed(8)} BTC</span>
+            <span class="v">{sendBtc.toFixed(8)} BTC</span>
+            {#if fiatStr(sendBtc, 'btc', $fiat)}<span class="vfiat">≈ {fiatStr(sendBtc, 'btc', $fiat)}</span>{/if}
           </div>
           <div class="to">
             <span style="display: inline-flex; transform: rotate(180deg)"><ArrowLeft /></span>
           </div>
           <div class="rt">
             <span class="k">You receive</span>
-            <span class="v">≈ {fmtXkr(snapshot?.xkr ?? xkrFromInfo(activeInfo))} XKR</span>
+            <span class="v">≈ {fmtXkr(recvXkr)} XKR</span>
+            {#if fiatStr(recvXkr, 'xkr', $fiat)}<span class="vfiat">≈ {fiatStr(recvXkr, 'xkr', $fiat)}</span>{/if}
           </div>
         {/if}
       </div>
@@ -966,6 +986,9 @@
         opacity: 0.6;
         font-size: 0.8rem;
       }
+      .swap-fiat {
+        opacity: 0.75;
+      }
       .state {
         opacity: 0.8;
         text-align: right;
@@ -996,6 +1019,12 @@
       .v {
         color: var(--text-color);
         font-weight: 600;
+      }
+      .vfiat {
+        display: block;
+        font-size: 0.72rem;
+        opacity: 0.5;
+        color: var(--text-color);
       }
       .rt {
         text-align: right;
