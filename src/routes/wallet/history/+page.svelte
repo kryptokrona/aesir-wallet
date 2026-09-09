@@ -77,14 +77,17 @@
   {#if pageTx.length}
     <div class="transactions">
       {#each pageTx as tx (tx.kind + tx.id)}
+        {@const fiatAmt = fiatStr(tx.amount, tx.kind, $fiat)}
         <div class="row" class:unconfirmed={!tx.confirmed} on:click={() => open(tx)}>
           <p style="opacity: 80%;">{shortId(tx.id)}</p>
-          <div class="amt">
-            <p class="tx" style="background: none" class:sent={tx.amount > 0}>
+          <!-- On hover, swap the crypto amount out for its fiat value (only when
+               we actually have a price -- otherwise keep showing the crypto). -->
+          <div class="amt" class:has-fiat={fiatAmt}>
+            <p class="tx amount-crypto" style="background: none" class:sent={tx.amount > 0}>
               {tx.kind === 'btc' ? tx.amount.toFixed(8) + ' BTC' : tx.amount.toFixed(5) + ' XKR'}
             </p>
-            {#if fiatStr(tx.amount, tx.kind, $fiat)}
-              <span class="fiat">{fiatStr(tx.amount, tx.kind, $fiat)}</span>
+            {#if fiatAmt}
+              <p class="tx amount-fiat" style="background: none" class:sent={tx.amount > 0}>{fiatAmt}</p>
             {/if}
           </div>
         </div>
@@ -164,10 +167,16 @@
   .amt .tx {
     margin: 0;
   }
-  .fiat {
-    font-size: 0.72rem;
-    opacity: 0.5;
-    color: var(--text-color);
+  // Fiat value is hidden by default and swapped in for the crypto amount only
+  // while the row is hovered (and only when a price is available).
+  .amount-fiat {
+    display: none;
+  }
+  .row:hover .amt.has-fiat .amount-crypto {
+    display: none;
+  }
+  .row:hover .amt.has-fiat .amount-fiat {
+    display: block;
   }
 
   .notx {

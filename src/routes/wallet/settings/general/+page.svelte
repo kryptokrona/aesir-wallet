@@ -6,7 +6,9 @@
   function pick(it) {
     $fiat.ticker = it;
     localStorage.setItem('fiat', it);
-    getCoinPriceFromAPI();
+    // Force past the throttle -- the user just switched currency and expects
+    // prices to update right away.
+    getCoinPriceFromAPI({ force: true });
   }
 </script>
 
