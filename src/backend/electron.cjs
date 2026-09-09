@@ -496,6 +496,28 @@ async function spawnMakerAsb({ priceSats, resumeOnly = false, configPath, extraE
   // finish refunds without silently re-entering the market.
   if (resumeOnly) startArgs.push("--resume-only");
 
+  // Redeem maker BTC proceeds INTO the app's own spendable wallet. The ASB and the
+  // taker engine share a seed/descriptor but keep separate wallet DBs, so BTC the
+  // ASB redeems into its own wallet is invisible to the app (which shows the taker
+  // wallet) until a restart's full rescan. Fetching a receive address from the
+  // taker daemon reveals it in THAT wallet, so redeeming there makes proceeds show
+  // up live. Best-effort: if the engine isn't reachable, fall back to the ASB's
+  // internal wallet (the old behaviour).
+  //
+  // KNOWN, ACCEPTED privacy trade-off (deliberate -- do NOT "fix" without a design
+  // decision): this address is fetched once per MM session, so every swap in that
+  // session redeems to the SAME address (reuse), and proceeds commingle with the
+  // user's other BTC in the one app wallet. The privacy-preserving alternative is a
+  // dedicated swap-proceeds derivation path with a fresh address per swap; chosen
+  // against for now in favour of live visibility + zero extra on-chain fees.
+  let redeemBtcAddress = null;
+  try {
+    const r = await xkrSwapRpc.bitcoinAddress();
+    redeemBtcAddress = (r && r.address) || null;
+  } catch (e) {
+    console.warn("[swap-maker] couldn't get a taker BTC address for maker redeem; ASB will redeem internally:", e.message);
+  }
+
   const child = await xkrSwapAsb.startAsb({
     app,
     configPath: cfgPath,
@@ -516,6 +538,8 @@ async function spawnMakerAsb({ priceSats, resumeOnly = false, configPath, extraE
       // the taker engine uses -- so maker BTC proceeds land in the one shared
       // BTC wallet (visible/withdrawable in the app), not a separate ASB wallet.
       XKR_SWAP_SEED_KEY: makerSpend,
+      // Redeem completed-swap BTC into the app's spendable wallet (see above).
+      ...(redeemBtcAddress ? { XKR_ASB_REDEEM_ADDRESS: redeemBtcAddress } : {}),
       ...extraEnv,
     },
     startArgs,

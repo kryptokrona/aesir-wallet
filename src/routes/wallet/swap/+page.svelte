@@ -479,7 +479,9 @@
     </p>
   {/if}
 
-  {#if infos.length}
+  <!-- Gate on the merged history (sortedInfos), NOT live taker `infos`: a pure
+       maker has no taker infos, so gating on `infos` hid its swap history entirely. -->
+  {#if sortedInfos.length}
     <div class="recent" in:fly={{ y: 16, delay: 120 }}>
       <div class="list-header">
         <h3>Recent swaps</h3>
