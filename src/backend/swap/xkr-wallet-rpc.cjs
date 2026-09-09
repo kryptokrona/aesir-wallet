@@ -228,6 +228,14 @@ const methods = {
                 if (unlocked < amount + useFee) {
                     throw new Error(`insufficient spendable XKR for lock: have ${unlocked}, need ${amount + useFee}`);
                 }
+                // HARD limit-sell backstop: inside the write lock (which serializes
+                // concurrent locks), reject any lock that would push us past the
+                // order's remaining XKR. `noteMakerLock` then reserves this amount so
+                // a second concurrent lock sees it before the swap DB catches up.
+                const remaining = ctx.makerRemaining && ctx.makerRemaining();
+                if (typeof remaining === "number" && amount > remaining) {
+                    throw new Error(`lock exceeds remaining sell order: want ${amount}, remaining ${remaining}`);
+                }
                 const result = await mainWallet.sendTransactionAdvanced(
                     [[destAddress, amount]],
                     swapMixin(),
@@ -239,6 +247,7 @@ const methods = {
                     false, // sendAll
                 );
                 if (!result.success) throw new Error(result.error.toString());
+                if (ctx.noteMakerLock) ctx.noteMakerLock(amount);
                 return { txHash: result.transactionHash, amount, fee: useFee };
             });
         }
@@ -279,7 +288,12 @@ const methods = {
         // guessing, and it can't diverge from the balance the maker will lock.
         const mainWallet = mainWalletIfMatches(ctx, spendSecret);
         if (mainWallet) {
-            const [unlocked, locked] = await mainWallet.getBalance();
+            let [unlocked, locked] = await mainWallet.getBalance();
+            // Limit-sell: cap the balance the ASB sees to the order's remaining XKR,
+            // so its swap-setup gate won't fund a swap beyond what we've committed to
+            // sell -- rejecting it BEFORE the taker locks any BTC.
+            const remaining = ctx.makerRemaining && ctx.makerRemaining();
+            if (typeof remaining === "number") unlocked = Math.min(unlocked, remaining);
             return { unlocked, locked };
         }
 
@@ -301,8 +315,8 @@ const methods = {
 
 // ---- JSON-RPC HTTP server --------------------------------------------------
 
-function start({ port, daemonHost, daemonPort, ssl, getMainWallet }) {
-    const ctx = { daemonHost, daemonPort, ssl: !!ssl, getMainWallet };
+function start({ port, daemonHost, daemonPort, ssl, getMainWallet, makerRemaining, noteMakerLock }) {
+    const ctx = { daemonHost, daemonPort, ssl: !!ssl, getMainWallet, makerRemaining, noteMakerLock };
     const server = http.createServer((req, res) => {
         if (req.method !== 'POST') {
             res.writeHead(405).end();

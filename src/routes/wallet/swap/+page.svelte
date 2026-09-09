@@ -17,6 +17,8 @@
   import Button from '$lib/components/buttons/Button.svelte';
   import { isTerminal, swapStatusLabel } from '$lib/utils/swapProgress.js';
   import ArrowLeft from '$lib/components/icons/ArrowLeft.svelte';
+  import { createChart } from 'lightweight-charts';
+  import { dev } from '$app/environment';
 
   let engineUp = false;
   let sellers = [];
@@ -55,12 +57,44 @@
   // Best price for a buyer = the lowest sat-per-XKR quote on offer.
   $: quotedSellers = sellers.filter((s) => s.quote && s.quote.price > 0);
   $: bestSeller = quotedSellers.length ? quotedSellers.reduce((a, b) => (b.quote.price < a.quote.price ? b : a)) : null;
-  $: rate = bestSeller?.quote.price ?? null; // sats per XKR
-  $: minBtc = bestSeller ? bestSeller.quote.min_quantity / 1e8 : null;
-  $: maxBtc = bestSeller ? bestSeller.quote.max_quantity / 1e8 : null;
+  // A specific maker the user picked from the sell book (a cheap maker can offer a
+  // tiny amount, blocking bigger trades -- so you can pick a pricier maker with the
+  // size you want). Tracked by XKR address and re-resolved each poll so it survives
+  // quote refreshes; if that maker disappears, we fall back to the best price.
+  let selectedAddr = null;
+  $: selectedSeller = selectedAddr ? quotedSellers.find((s) => s.xkrAddress === selectedAddr) : null;
+  $: activeSeller = selectedSeller || bestSeller;
+  $: rate = activeSeller?.quote.price ?? null; // sats per XKR (of the active maker)
+  $: minBtc = activeSeller ? activeSeller.quote.min_quantity / 1e8 : null;
+  $: maxBtc = activeSeller ? activeSeller.quote.max_quantity / 1e8 : null;
+
+  // Sell book (asks): each maker's advertised offer, cheapest first. `xkr` is how
+  // much XKR they'll sell (max BTC sats / price), `cum` the running total.
+  $: asks = quotedSellers
+    .map((s) => ({
+      price: s.quote.price,
+      xkr: s.quote.price > 0 ? s.quote.max_quantity / s.quote.price : 0,
+      btcSat: s.quote.max_quantity,
+      peer: s.peer_id,
+      address: s.xkrAddress, // used to pick this maker for a swap
+    }))
+    .sort((a, b) => a.price - b.price);
+  $: cumAsks = (() => {
+    let c = 0;
+    return asks.map((a, i) => ({ ...a, cum: (c += a.xkr), i }));
+  })();
+  $: bookTotalXkr = cumAsks.length ? cumAsks[cumAsks.length - 1].cum : 0;
+
+  // Sell-book pagination (5 offers per page). The chart still shows the full depth.
+  const BOOK_PER_PAGE = 5;
+  let bookPageNum = 0;
+  $: bookPages = Math.max(1, Math.ceil(cumAsks.length / BOOK_PER_PAGE));
+  $: if (bookPageNum > bookPages - 1) bookPageNum = bookPages - 1;
+  $: bookPage = bookPageNum + 1;
+  $: pagedAsks = cumAsks.slice(bookPageNum * BOOK_PER_PAGE, bookPageNum * BOOK_PER_PAGE + BOOK_PER_PAGE);
   $: xkrReceive = parseFloat(amountXkr) || 0;
   $: withinRange =
-    bestSeller && amountSat >= bestSeller.quote.min_quantity && amountSat <= bestSeller.quote.max_quantity;
+    activeSeller && amountSat >= activeSeller.quote.min_quantity && amountSat <= activeSeller.quote.max_quantity;
   // The taker must also pay the on-chain Bitcoin lock-tx fee on top of the swap
   // amount. On testnet this floors to the 1000-sat min-relay fee; reserve a
   // safe headroom so "swap almost my whole balance" can't fail mid-setup with
@@ -78,6 +112,15 @@
     return c.symbolLocation === 'prefix' ? `${c.symbol}${n}` : `${n} ${c.symbol}`;
   }
   const fmtXkr = (v) => (v || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+  // Fiat with more precision, for the tiny per-XKR fiat price.
+  const fmtFiatSmall = (v) => {
+    const c = ($fiat.currencies || []).find((x) => x.ticker === $fiat.ticker) || {
+      symbol: '$',
+      symbolLocation: 'prefix',
+    };
+    const n = (v || 0).toLocaleString(undefined, { maximumSignificantDigits: 3 });
+    return c.symbolLocation === 'prefix' ? `${c.symbol}${n}` : `${n} ${c.symbol}`;
+  };
   // XKR amount a swap will/did receive, from swap_infos (xmr_amount is piconero;
   // 1 XKR = 1e12 piconero in the engine's units). Used when we have no local snapshot.
   const xkrFromInfo = (info) => (info?.xmr_amount || 0) / 1e12;
@@ -127,7 +170,35 @@
       engineUp = false;
     }
   }
+  // TEMP (dev only): preview the sell book with ~50 fake makers. Never runs in a
+  // production build (gated on `dev`). Flip to true to re-enable; delete MOCK_BOOK +
+  // generateMockSellers to remove entirely.
+  const MOCK_BOOK = false;
+  function generateMockSellers() {
+    const base = marketSats > 0 ? marketSats * 1.01 : 4.8; // best ask ~1% above market
+    const out = [];
+    for (let i = 0; i < 50; i++) {
+      const t = i / 49;
+      // Price rises from the best ask up to ~2.4x, denser near the best.
+      const price = +(base * (1 + Math.pow(t, 1.6) * 1.4)).toPrecision(4);
+      // Deterministic pseudo-random size, in BTC sats (~0.001 .. 0.15 BTC).
+      const r = Math.abs((Math.sin(i * 12.9898) * 43758.5453) % 1);
+      const btcSat = Math.round((0.001 + r * 0.14) * 1e8);
+      out.push({
+        peer_id: '12D3KooMockMaker' + String(i).padStart(2, '0'),
+        xkrAddress: 'SEKReXAMPLEmock' + i,
+        multiaddr: null,
+        quote: { price, min_quantity: 10000, max_quantity: btcSat },
+      });
+    }
+    return out;
+  }
+
   async function refreshSellers() {
+    if (dev && MOCK_BOOK) {
+      sellers = generateMockSellers();
+      return;
+    }
     const res = await window.api.invoke('swap-list-sellers');
     if (res && res.ok && Array.isArray(res.result)) sellers = res.result;
   }
@@ -204,7 +275,7 @@
     // Reserve headroom for the on-chain lock fee so the swap can actually afford
     // amount + fee (see BTC_LOCK_FEE_BUFFER_SAT).
     let sat = $btc.balanceSat - BTC_LOCK_FEE_BUFFER_SAT;
-    if (maxBtc != null) sat = Math.min(sat, bestSeller.quote.max_quantity);
+    if (maxBtc != null) sat = Math.min(sat, activeSeller.quote.max_quantity);
     amountBtc = sat > 0 ? String(+(sat / 1e8).toFixed(8)) : '0';
     lastEdited = 'btc';
     amountXkr = computeXkr(amountBtc);
@@ -212,7 +283,7 @@
 
   function openPrepare() {
     if (!engineUp) return err("Swap engine isn't running yet");
-    if (!bestSeller) return err('No makers available yet');
+    if (!activeSeller) return err('No makers available yet');
     if (!primaryAddress) return err('No XKR receive address');
     if (!amountNum || amountNum <= 0) return err('Enter a BTC amount');
     if (!withinRange) return err(`Amount must be between ${minBtc} and ${maxBtc} BTC`);
@@ -271,15 +342,15 @@
 
   async function confirmSwap() {
     if (starting) return;
-    if (!bestSeller) {
+    if (!activeSeller) {
       showPrepare = false;
       return err('Maker is no longer available — try again');
     }
     starting = true;
-    const snap = { btc: amountNum, xkr: xkrReceive, rate, maker: short(bestSeller.peer_id) };
+    const snap = { btc: amountNum, xkr: xkrReceive, rate, maker: short(activeSeller.peer_id) };
     try {
       const res = await window.api.invoke('swap-start', {
-        xkrAddress: bestSeller.xkrAddress,
+        xkrAddress: activeSeller.xkrAddress,
         amountSat,
         xkrReceiveAddress: primaryAddress,
       });
@@ -314,20 +385,53 @@
 
   // ---- market maker (sell XKR for BTC) -------------------------------------
   let makerStatus = { advertising: false, asbRunning: false, peerId: null, error: null, advertised: null, btcBalanceSat: null };
-  let makerPrice = '5'; // sats per XKR
-  let makerMinBtc = '0.0001';
-  let makerMaxBtc = '0.05';
+  // Per-swap bounds are background defaults now — the UI is two sliders (price +
+  // amount), not free-text fields.
+  const makerMinBtc = 0.0001;
+  const makerMaxBtc = 0.05;
+  // Two-slider controls: ask price (sats/XKR) centered on the live market price,
+  // and the total XKR to sell (0..inventory). Captured once when the form opens so
+  // live price ticks don't shift the sliders under the user.
+  let priceCenterSats = 5; // market price captured at open (for the "% vs market" readout)
+  let priceSatsValue = 5; // the chosen ask (sats/XKR) -- typed, or nudged with +/-
+  const PRICE_NUDGE = 0.05; // +/- buttons move the ask 5% per click (scale-invariant)
+  let maxSellXkr = 0; // total XKR to sell (the limit-order size)
+  let makerCtrlInit = false;
   let makerBusy = false;
   let makerStarting = false; // clicked start, engine booting
 
   $: inventoryXkr = ($wallet?.balance?.[0] ?? 0) / 100000; // atomic -> XKR (5 dp)
   $: makerState = makerStatus.error
     ? 'error'
-    : makerStatus.advertising
-      ? 'live'
-      : makerStarting || makerStatus.asbRunning
-        ? 'starting'
-        : 'off';
+    : makerStatus.orderFilled
+      ? 'filled'
+      : makerStatus.advertising
+        ? 'live'
+        : makerStarting || makerStatus.asbRunning
+          ? 'starting'
+          : 'off';
+  // Live market price in sats/XKR = XKR fiat price / BTC fiat price, expressed in sats.
+  $: marketSats = $fiat.balance > 0 && $fiat.btcPrice > 0 ? ($fiat.balance / $fiat.btcPrice) * 1e8 : 0;
+  // Initialize the sliders once the form is open AND the balance has loaded (so the
+  // sell slider isn't locked at 0). Price centers on the live market, or 5 sat/XKR
+  // if prices aren't in yet.
+  $: if (!makerCtrlInit && view === 'maker' && makerState === 'off' && inventoryXkr > 0) {
+    priceCenterSats = marketSats > 0 ? marketSats : 5;
+    priceSatsValue = +priceCenterSats.toPrecision(4); // start at market
+    maxSellXkr = inventoryXkr;
+    makerCtrlInit = true;
+  }
+  $: priceFiatPerXkr = ((parseFloat(priceSatsValue) || 0) * ($fiat.btcPrice || 0)) / 1e8;
+  $: pricePct = ((parseFloat(priceSatsValue) || 0) / (priceCenterSats || 1) - 1) * 100;
+  $: sellPct = inventoryXkr > 0 ? (maxSellXkr / inventoryXkr) * 100 : 0;
+  // Fiat proceeds at YOUR chosen ask price (not the current market price).
+  $: sellFiat = maxSellXkr * priceFiatPerXkr;
+
+  // Limit-sell progress (atomic XKR -> XKR), when an order is active.
+  $: makerOrder = makerStatus.order || null;
+  $: orderSoldXkr = makerOrder ? makerOrder.committedAtomic / 100000 : 0;
+  $: orderTargetXkr = makerOrder ? makerOrder.targetAtomic / 100000 : 0;
+  $: orderPct = makerOrder && orderTargetXkr > 0 ? Math.min(100, (orderSoldXkr / orderTargetXkr) * 100) : 0;
 
   async function refreshMakerStatus() {
     try {
@@ -340,7 +444,23 @@
   }
   function openMaker() {
     view = 'maker';
+    makerCtrlInit = false; // recapture the market-centered controls from fresh data
     refreshMakerStatus();
+  }
+  // Pick a specific maker from the sell book as the swap counterparty (or clear
+  // back to auto/best). Selection is by XKR address (see selectedAddr above).
+  function selectSeller(a) {
+    selectedAddr = a.address;
+    view = 'form';
+  }
+  function clearSeller() {
+    selectedAddr = null;
+  }
+  // +/- step the ask multiplicatively so it works at any price scale (incl. sub-sat).
+  function nudgePrice(dir) {
+    const base = parseFloat(priceSatsValue) || priceCenterSats || 1;
+    const next = dir > 0 ? base * (1 + PRICE_NUDGE) : base / (1 + PRICE_NUDGE);
+    priceSatsValue = +next.toPrecision(4);
   }
   async function startMaker() {
     if (makerBusy || makerStarting) return;
@@ -348,9 +468,10 @@
     makerStarting = true;
     try {
       const res = await window.api.invoke('swap-maker-start', {
-        priceSats: String(makerPrice),
-        minSat: Math.round((parseFloat(makerMinBtc) || 0) * 1e8),
-        maxSat: Math.round((parseFloat(makerMaxBtc) || 0) * 1e8),
+        priceSats: String(priceSatsValue),
+        minSat: Math.round(makerMinBtc * 1e8), // per-swap bounds: background defaults
+        maxSat: Math.round(makerMaxBtc * 1e8),
+        targetXkr: maxSellXkr || 0, // total to sell (0 = sell freely)
       });
       if (!(res && res.ok)) {
         makerStarting = false;
@@ -366,6 +487,7 @@
     if (makerBusy) return;
     makerBusy = true;
     makerStarting = false;
+    makerCtrlInit = false; // re-center the sliders next time the form opens
     try {
       await window.api.invoke('swap-maker-stop');
       await refreshMakerStatus();
@@ -403,18 +525,134 @@
       if (view === 'maker') await refreshMakerStatus();
     }, 4000);
   });
-  onDestroy(() => poll && clearInterval(poll));
+  // ---- sell-book depth chart (reuses lightweight-charts, like the dashboard) -----
+  let bookChartEl;
+  let bookChart = null;
+  let bookSeries = null;
+  let bookTooltip = null;
+  const BOOK_PRICE_SCALE = 1e6; // map the sats/XKR price onto lightweight-charts "time"
+
+  function renderBook() {
+    if (!bookChartEl || !cumAsks.length) return;
+    const cs = getComputedStyle(document.documentElement);
+    const primary = cs.getPropertyValue('--primary-color').trim();
+    const textColor = cs.getPropertyValue('--text-color').trim();
+    if (!bookChart) {
+      bookChart = createChart(bookChartEl, {
+        autoSize: true,
+        layout: { background: { color: '#00000000' }, textColor },
+        grid: { vertLines: { color: '#00000000' }, horzLines: { color: '#00000000' } },
+        // Hide the y-axis (it ate horizontal space) -- the value shows in the tooltip.
+        rightPriceScale: { visible: false, scaleMargins: { top: 0.15, bottom: 0.1 } },
+        // The x-axis is PRICE, not time: format the synthetic timestamp back to the
+        // fiat price per XKR (sats -> BTC fiat price).
+        timeScale: {
+          borderVisible: false,
+          tickMarkFormatter: (t) => fmtFiatSmall(((t / BOOK_PRICE_SCALE) * ($fiat.btcPrice || 0)) / 1e8),
+        },
+        localization: {
+          timeFormatter: (t) => fmtFiatSmall(((t / BOOK_PRICE_SCALE) * ($fiat.btcPrice || 0)) / 1e8) + '/XKR',
+        },
+        handleScroll: false,
+        handleScale: false,
+      });
+      bookSeries = bookChart.addAreaSeries({
+        topColor: primary,
+        bottomColor: primary + '28',
+        lineColor: primary,
+        lineWidth: 2,
+        lineType: 1, // steps -> reads like an order-book depth
+        priceLineVisible: false,
+      });
+
+      // Floating tooltip (same pattern as the dashboard): show the cumulative XKR
+      // available at the hovered price, since the y-axis is hidden.
+      bookTooltip = document.createElement('div');
+      bookTooltip.style = `position: absolute; display: none; padding: 6px 8px; box-sizing: border-box; font-size: 12px; z-index: 1000; top: 12px; left: 12px; pointer-events: none; border: 1px solid; border-radius: 6px; white-space: nowrap;`;
+      bookTooltip.style.background = cs.getPropertyValue('--backgound-color');
+      bookTooltip.style.borderColor = cs.getPropertyValue('--border-color');
+      bookTooltip.style.color = primary;
+      bookChartEl.appendChild(bookTooltip);
+
+      bookChart.subscribeCrosshairMove((param) => {
+        const el = bookChartEl;
+        if (
+          !param.point ||
+          !param.time ||
+          param.point.x < 0 ||
+          param.point.x > el.clientWidth ||
+          param.point.y < 0 ||
+          param.point.y > el.clientHeight
+        ) {
+          bookTooltip.style.display = 'none';
+          return;
+        }
+        const d = param.seriesData.get(bookSeries);
+        if (!d) {
+          bookTooltip.style.display = 'none';
+          return;
+        }
+        const priceFiat = ((param.time / BOOK_PRICE_SCALE) * ($fiat.btcPrice || 0)) / 1e8;
+        bookTooltip.style.display = 'block';
+        bookTooltip.innerHTML =
+          `<div style="font-family: 'Roboto Mono', monospace; font-size: 17px;">${fmtXkr(d.value)} XKR</div>` +
+          `<div style="font-size: 11px; opacity: 0.7; color: ${textColor}">up to ${fmtFiatSmall(priceFiat)}/XKR</div>`;
+        let x = param.point.x + 14;
+        if (x > el.clientWidth - 130) x = param.point.x - 130;
+        bookTooltip.style.left = Math.max(0, x) + 'px';
+        bookTooltip.style.top = Math.max(0, param.point.y - 10) + 'px';
+      });
+    }
+    // Unique, ascending "time" per price level (dedupe equal prices, keep max cum).
+    const byTime = new Map();
+    for (const a of cumAsks) byTime.set(Math.round(a.price * BOOK_PRICE_SCALE), a.cum);
+    const data = [...byTime.entries()].sort((x, y) => x[0] - y[0]).map(([time, value]) => ({ time, value }));
+    bookSeries.setData(data);
+    bookChart.timeScale().fitContent();
+  }
+  function destroyBook() {
+    if (bookChart) {
+      try {
+        bookChart.remove();
+      } catch (_) {}
+      bookChart = null;
+      bookSeries = null;
+    }
+    if (bookTooltip) {
+      try {
+        bookTooltip.remove();
+      } catch (_) {}
+      bookTooltip = null;
+    }
+  }
+  // Render when the book view is open and the container is mounted; refresh on new
+  // quotes; tear the chart down when we leave the view.
+  $: if (view === 'book' && bookChartEl && cumAsks) renderBook();
+  $: if (view !== 'book' && bookChart) destroyBook();
+
+  onDestroy(() => {
+    if (poll) clearInterval(poll);
+    destroyBook();
+  });
 </script>
 
 <div class="header" in:fade>
-  <h3>{view === 'maker' ? 'Market Maker' : view === 'history' ? 'Swap history' : 'Swap BTC → XKR'}</h3>
+  <h3>
+    {view === 'maker'
+      ? 'Market Maker'
+      : view === 'history'
+        ? 'Swap history'
+        : view === 'book'
+          ? 'Sell book'
+          : 'Swap BTC → XKR'}
+  </h3>
   {#if view === 'form'}
     <div class="head-actions">
       <Button text="Market Maker" on:click={openMaker} />
       <Button
         text="Swap"
         highlight
-        disabled={!engineUp || !bestSeller || !amountNum || !withinRange || overBalance}
+        disabled={!engineUp || !activeSeller || !amountNum || !withinRange || overBalance}
         on:click={openPrepare}
       />
     </div>
@@ -427,8 +665,20 @@
         <ArrowLeft />
       </button>
     </div>
+  {:else if view === 'book'}
+    <div class="pager">
+      <p>{bookPage}/{bookPages}</p>
+      {#if bookPageNum > 0}<Button text="-" on:click={() => bookPageNum--} />{/if}
+      {#if bookPage < bookPages}<Button text="+" on:click={() => bookPageNum++} />{/if}
+      <button class="backbutton" on:click={() => (view = 'form')}>
+        <ArrowLeft />
+      </button>
+    </div>
   {:else}
-    <button class="backbutton" on:click={() => (view === 'maker' ? (view = 'form') : newSwap())}>
+    <button
+      class="backbutton"
+      on:click={() => (view === 'maker' ? (view = 'form') : newSwap())}
+    >
       <ArrowLeft />
     </button>
   {/if}
@@ -459,9 +709,11 @@
     <div class="fieldlabel">
       <span>You receive (XKR)</span>
       <span class="rate">
-        {#if bestSeller}Best rate: {rate} sat/XKR · {quotedSellers.length} maker{quotedSellers.length === 1
-            ? ''
-            : 's'}{:else}Searching for makers…{/if}
+        {#if selectedSeller}<button class="rate-link" on:click={clearSeller} title="Reset to best price"
+            >Maker: {rate} sat/XKR ✕</button
+          >{:else if bestSeller}<button class="rate-link" on:click={() => (view = 'book')}
+            >{rate} sat/XKR · {quotedSellers.length} maker{quotedSellers.length === 1 ? '' : 's'} ›</button
+          >{:else}Searching for makers…{/if}
       </span>
     </div>
     <div class="field">
@@ -471,7 +723,7 @@
     </div>
   </div>
 
-  {#if bestSeller && amountNum > 0 && !withinRange}
+  {#if activeSeller && amountNum > 0 && !withinRange}
     <p class="hint warn">Amount must be between {minBtc} and {maxBtc} BTC.</p>
   {:else if overBalance}
     <p class="hint warn">
@@ -521,6 +773,39 @@
         </div>
       </button>
     {/each}
+  </div>
+{/if}
+
+{#if view === 'book'}
+  <div class="card monitor" in:fly={{ y: 16, delay: 40 }}>
+    {#if cumAsks.length}
+      <div class="book-chart" bind:this={bookChartEl}></div>
+      <div class="book-table">
+        <div class="book-row book-head">
+          <span>Price / XKR</span>
+          <span>XKR</span>
+          <span>Total XKR</span>
+        </div>
+        {#each pagedAsks as a (a.peer + '-' + a.price)}
+          <button
+            class="book-row book-pick"
+            class:best={a.i === 0}
+            class:selected={selectedAddr && a.address === selectedAddr}
+            on:click={() => selectSeller(a)}
+            title="Swap with this maker"
+          >
+            <span class="bk-price">{fmtFiatSmall((a.price * ($fiat.btcPrice || 0)) / 1e8)}</span>
+            <span>{fmtXkr(a.xkr)}</span>
+            <span class="bk-cum">{fmtXkr(a.cum)}</span>
+          </button>
+        {/each}
+      </div>
+      <div class="meta book-meta">
+        <span>{cumAsks.length} maker{cumAsks.length === 1 ? '' : 's'} · {fmtXkr(bookTotalXkr)} XKR offered</span>
+      </div>
+    {:else}
+      <p class="maker-blurb">No makers are advertising right now — check back in a moment.</p>
+    {/if}
   </div>
 {/if}
 
@@ -642,7 +927,7 @@
         </div>
         <div class="rt">
           <span class="k">Price</span>
-          <span class="v">{makerStatus.advertised ? makerStatus.advertised.price : makerPrice} sat/XKR</span>
+          <span class="v">{makerStatus.advertised ? makerStatus.advertised.price : priceSatsValue} sat/XKR</span>
         </div>
       </div>
       <div class="recap">
@@ -653,34 +938,83 @@
           </span>
         </div>
       </div>
+      {#if makerOrder}
+        <div class="order-progress">
+          <div class="op-head">
+            <span class="k">Sell order</span>
+            <span class="v">{fmtXkr(orderSoldXkr)} / {fmtXkr(orderTargetXkr)} XKR</span>
+          </div>
+          <div class="op-bar"><div class="op-fill" style="width: {orderPct}%"></div></div>
+        </div>
+      {/if}
       {#if makerStatus.peerId}<div class="meta"><span>Peer {short(makerStatus.peerId)}</span></div>{/if}
       <button class="primary inline" on:click={stopMaker} disabled={makerBusy}>
         {makerBusy ? 'Stopping…' : 'Stop market making'}
       </button>
+    {:else if makerState === 'filled'}
+      <p class="maker-blurb">
+        Your sell order filled — the XKR you offered has all been sold. Any in-flight swaps will finish on their
+        own. Click Done to shut the maker engine down.
+      </p>
+      <button class="primary inline" on:click={stopMaker} disabled={makerBusy}>
+        {makerBusy ? 'Stopping…' : 'Done'}
+      </button>
     {:else}
       <p class="maker-blurb">
-        Sell your XKR for BTC. Set a price and turn it on — your wallet is the inventory, and buyers reach you
-        peer-to-peer.
+        Sell your XKR for BTC like a limit order: pick your price and how much to sell, then turn it on. Your
+        wallet is the inventory, and buyers reach you peer-to-peer.
       </p>
-      <div class="fieldlabel"><span>Price (sats per XKR)</span></div>
-      <div class="field">
-        <input type="number" step="any" min="0" style="width: 100%" bind:value={makerPrice} placeholder="0.5" />
-      </div>
 
-      <div class="fieldlabel" style="margin-top: 0.8rem"><span>Min (BTC)</span><span>Max (BTC)</span></div>
-      <div class="mm-row">
-        <div class="field"><input type="number" style="width: 100%" bind:value={makerMinBtc} placeholder="0.0001" /></div>
-        <div class="field"><input type="number" style="width: 100%" bind:value={makerMaxBtc} placeholder="0.05" /></div>
-      </div>
-
-      <div class="recap" style="margin-top: 1rem">
-        <div>
-          <span class="k">Inventory</span>
-          <span class="v">{fmtXkr(inventoryXkr)} XKR</span>
+      <!-- Price: text entry with +/- steppers (reuses the shared Button component). -->
+      <div class="slider-block">
+        <div class="slider-head">
+          <span class="sl-label">Price (sat/XKR)</span>
+          <span class="sl-value sl-sub" style="font-weight: 400">
+            ≈ {fmtFiatSmall(priceFiatPerXkr)}/XKR
+            <span class="sl-mid" class:off={Math.abs(pricePct) >= 0.5}>
+              · {Math.abs(pricePct) < 0.5 ? 'market' : (pricePct > 0 ? '+' : '') + pricePct.toFixed(0) + '% vs market'}
+            </span>
+          </span>
+        </div>
+        <div class="stepper">
+          <Button text="−" width="42" on:click={() => nudgePrice(-1)} />
+          <div class="field stepper-input">
+            <input type="number" step="any" min="0" bind:value={priceSatsValue} />
+          </div>
+          <Button text="+" width="42" on:click={() => nudgePrice(1)} />
         </div>
       </div>
-      <button class="primary inline" on:click={startMaker} disabled={makerBusy || !engineUp}>
-        {makerBusy ? 'Starting…' : 'Start market making'}
+
+      <!-- Amount slider: total XKR to sell (0..inventory). Per-swap min/max are hidden. -->
+      <div class="slider-block">
+        <div class="slider-head">
+          <span class="sl-label">Sell</span>
+          <span class="sl-value">
+            {fmtXkr(maxSellXkr)} XKR
+            <span class="sl-sub">≈ {fmtFiat(sellFiat)}</span>
+          </span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max={inventoryXkr}
+          step={Math.max(inventoryXkr / 200, 0.00001)}
+          bind:value={maxSellXkr}
+          disabled={inventoryXkr <= 0}
+        />
+        <div class="slider-foot">
+          <span>0</span>
+          <span class="sl-mid">{sellPct.toFixed(0)}% of balance</span>
+          <span>{fmtXkr(inventoryXkr)} XKR</span>
+        </div>
+      </div>
+
+      <button
+        class="primary inline"
+        on:click={startMaker}
+        disabled={makerBusy || !engineUp || maxSellXkr <= 0 || priceSatsValue <= 0}
+      >
+        {makerBusy ? 'Starting…' : 'Start selling'}
       </button>
     {/if}
   </div>
@@ -711,7 +1045,7 @@
         </div>
         <div class="prow sub">
           <span>Maker</span>
-          <span>{bestSeller ? short(bestSeller.peer_id) : '—'}</span>
+          <span>{activeSeller ? short(activeSeller.peer_id) : '—'}</span>
         </div>
         <div class="prow sub">
           <span>Receive at</span>
@@ -817,6 +1151,79 @@
       opacity: 0.85;
       text-align: right;
     }
+    .rate-link {
+      background: none;
+      border: none;
+      padding: 0;
+      cursor: pointer;
+      color: var(--primary-color);
+      font: inherit;
+      &:hover {
+        text-decoration: underline;
+      }
+    }
+  }
+
+  .book-meta {
+    justify-content: center;
+    text-align: center;
+  }
+  .book-chart {
+    position: relative; // anchor the floating tooltip
+    width: 100%;
+    height: 200px;
+    margin: 0.4rem 0 1rem;
+  }
+  .book-table {
+    display: flex;
+    flex-direction: column;
+  }
+  .book-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0.5rem;
+    padding: 0.45rem 0;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 0.82rem;
+    color: var(--text-color);
+
+    span:nth-child(2),
+    span:nth-child(3) {
+      text-align: right;
+    }
+    &.best .bk-price {
+      color: var(--primary-color);
+      font-weight: 700;
+    }
+  }
+  // Rows are buttons (pick this maker as the swap counterparty).
+  .book-pick {
+    background: none;
+    border: none;
+    border-bottom: 1px solid var(--border-color);
+    color: inherit;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+    width: 100%;
+    transition: background 120ms ease-in-out;
+
+    &:hover {
+      background: var(--border-color);
+    }
+    &.selected {
+      background: color-mix(in srgb, var(--primary-color) 16%, transparent);
+    }
+  }
+  .book-head {
+    opacity: 0.5;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    border-bottom: 1px solid var(--border-color);
+  }
+  .bk-cum {
+    opacity: 0.7;
   }
 
   .field {
@@ -1109,6 +1516,111 @@
     .field {
       flex: 1;
     }
+  }
+  .maker-hint {
+    margin: 0.4rem 0 0;
+    font-size: 0.72rem;
+    line-height: 1.4;
+    color: var(--text-color);
+    opacity: 0.5;
+  }
+  .slider-block {
+    margin: 0 0 1.3rem;
+  }
+  .slider-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 0.5rem;
+  }
+  .sl-label {
+    font-size: 0.78rem;
+    opacity: 0.6;
+    color: var(--text-color);
+  }
+  .sl-value {
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+  .sl-sub {
+    font-size: 0.74rem;
+    font-weight: 400;
+    opacity: 0.55;
+    margin-left: 0.35rem;
+  }
+  .slider-foot {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 0.35rem;
+    font-size: 0.68rem;
+    opacity: 0.45;
+    color: var(--text-color);
+  }
+  .sl-mid {
+    opacity: 0.85;
+    &.off {
+      color: var(--primary-color);
+      opacity: 1;
+    }
+  }
+  input[type='range'] {
+    width: 100%;
+    margin: 0;
+    accent-color: var(--primary-color);
+    cursor: pointer;
+    &:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+  }
+  .stepper {
+    display: flex;
+    align-items: stretch;
+    gap: 0.5rem;
+
+    .stepper-input {
+      flex: 1;
+      height: 30px; // match the shared Button height
+      box-sizing: border-box;
+
+      input {
+        text-align: center;
+        background: transparent;
+        color: var(--text-color);
+      }
+    }
+  }
+  .order-progress {
+    margin-top: 0.9rem;
+  }
+  .op-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 0.35rem;
+    .k {
+      font-size: 0.72rem;
+      opacity: 0.55;
+      color: var(--text-color);
+    }
+    .v {
+      font-size: 0.8rem;
+      color: var(--text-color);
+      font-weight: 600;
+    }
+  }
+  .op-bar {
+    height: 6px;
+    border-radius: 999px;
+    background: var(--border-color);
+    overflow: hidden;
+  }
+  .op-fill {
+    height: 100%;
+    background: var(--primary-color);
+    border-radius: 999px;
+    transition: width 300ms ease-in-out;
   }
 
   .overlay {

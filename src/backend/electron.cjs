@@ -199,6 +199,10 @@ const miscs = new Store();
 // the history survives the engine/ASB being down and needn't be re-fetched from
 // the binaries just to view it. Its own file to keep the (growing) list isolated.
 const swapsStore = new Store({ name: "swaps" });
+// Persistent maker LIMIT-SELL orders, per wallet: "sell up to targetAtomic XKR at
+// priceSats", filled across swaps over time (not the whole balance). See the
+// maker-order helpers below.
+const makerOrders = new Store({ name: "maker-orders" });
 
 // A short, stable, filesystem-safe id for the currently-open XKR wallet, used to
 // key ALL swap state per wallet so different wallets never see each other's swaps:
@@ -213,6 +217,88 @@ function walletKey() {
   } catch (_) {
     return null;
   }
+}
+
+// ---- maker limit-sell order (cap total XKR sold, not just per-swap) ---------
+// XKR unit note: the wallet uses 1e5 atomic units per XKR; the swap engine reports
+// xmr_amount in piconero (1e12 per XKR). Order math is done in wallet-atomic (1e5).
+
+// Maker states where the locked XKR has been RETURNED to the wallet, so it no
+// longer counts against the sell target. Conservative -- only definitive refunds
+// /aborts (everything else, in-flight or sold, still counts as committed).
+const MAKER_XKR_RETURNED = new Set(["xmr is refunded", "safely aborted"]);
+
+// In-memory reservations for XKR just locked but not yet reflected in the swap DB,
+// so concurrent locks can't collectively exceed the target. Pruned by age (the
+// swap appears in the DB within a minute); double-counting a settled lock only
+// makes us briefly conservative -- it never lets us over-commit.
+let pendingLockAtomic = []; // [{ amount, at }]
+const PENDING_LOCK_TTL_MS = 120000;
+function noteMakerLock(amountAtomic) {
+  pendingLockAtomic.push({ amount: Number(amountAtomic) || 0, at: Date.now() });
+}
+
+function getMakerOrder() {
+  const wid = walletKey();
+  if (!wid) return null;
+  const o = (makerOrders.get("orders") || {})[wid];
+  return o && o.targetAtomic > 0 ? o : null;
+}
+function setMakerOrder(order) {
+  const wid = walletKey() || "default";
+  const all = makerOrders.get("orders") || {};
+  if (order) all[wid] = order;
+  else delete all[wid];
+  makerOrders.set("orders", all);
+}
+
+// XKR (wallet-atomic) committed toward the order = non-returned maker swaps since
+// the order started, plus fresh in-flight lock reservations.
+function makerCommittedAtomic(order) {
+  const wid = walletKey() || "default";
+  const cache = (swapsStore.get("swaps") || {})[wid] || {};
+  let pico = 0;
+  for (const s of Object.values(cache)) {
+    if (!s || s.role !== "maker") continue;
+    if (swapDateMs(s.start_date) < (order.startedAt || 0)) continue;
+    if (MAKER_XKR_RETURNED.has(s.state_name)) continue;
+    pico += Number(s.xmr_amount) || 0;
+  }
+  const now = Date.now();
+  pendingLockAtomic = pendingLockAtomic.filter((p) => now - p.at < PENDING_LOCK_TTL_MS);
+  const pending = pendingLockAtomic.reduce((a, p) => a + p.amount, 0);
+  return Math.floor(pico / 1e7) + pending; // piconero->atomic (1e12/1e5=1e7) + reservations
+}
+
+// Remaining sellable XKR (wallet-atomic) for the active order, or null when there
+// is no order (unlimited / legacy behaviour). This is THE hard-enforcement value:
+// the XKR wallet-RPC caps balance + rejects locks against it.
+function makerRemainingAtomic() {
+  const order = getMakerOrder();
+  if (!order) return null;
+  return Math.max(0, order.targetAtomic - makerCommittedAtomic(order));
+}
+
+// Stop advertising once the order can't fund even a minimum-size swap (i.e. it's
+// filled). In-flight swaps keep running on the ASB; we just stop taking new ones.
+function maybeCompleteMakerOrder() {
+  const order = getMakerOrder();
+  if (!order || !swapMaker) return;
+  const remainingAtomic = makerRemainingAtomic();
+  // Smallest sellable XKR at this price = the min quote size (BTC sats) / price.
+  const minAtomic =
+    order.priceSats && order.minSat
+      ? Math.ceil((Number(order.minSat) / Number(order.priceSats)) * 100000)
+      : 1;
+  if (remainingAtomic > minAtomic) return;
+  console.log(`[swap-maker] limit-sell order filled (remaining ${remainingAtomic} atomic); stop advertising`);
+  try {
+    swapMaker.stop();
+  } catch (_) {}
+  swapMaker = null;
+  swapMakerAdvertised = null;
+  swapMakerOrderFilled = true;
+  setMakerOrder(null);
 }
 
 // The engine stamps start_date via Rust's `time` OffsetDateTime Display, e.g.
@@ -296,6 +382,11 @@ async function startXkrSwapService(node) {
       // wallet instead of a separate re-imported instance, so the ASB and the UI
       // can never disagree about the balance. Only maker-key operations match.
       getMainWallet: () => walletBackend,
+      // Hard limit-sell enforcement: the maker's balance report is capped to the
+      // order's remaining XKR, and a lock exceeding it is rejected. Returns null
+      // when there's no active order (sell freely, as before).
+      makerRemaining: () => makerRemainingAtomic(),
+      noteMakerLock: (amountAtomic) => noteMakerLock(amountAtomic),
     });
     xkrSwapServer.on("error", (err) => {
       console.error("xkr-swap RPC service error:", err.message);
@@ -415,6 +506,7 @@ let swapMakerRpc = null; // asb-rpc client: peer id, XKR inventory, swaps
 let swapMakerAdvertised = null; // the quote actually being advertised (price/min/max)
 let swapMakerPriceSats = null; // price the running ASB was started with (restart only on change)
 let swapMakerResumeOnly = false; // true when the ASB was auto-started on boot ONLY to recover/refund unfinished swaps (not advertising)
+let swapMakerOrderFilled = false; // true once a limit-sell order has fully filled (stopped advertising)
 const ASB_LISTEN_PORT = 9839; // must match the ASB config's libp2p `listen` tcp port
 const ASB_RPC_PORT = 9945; // ASB control JSON-RPC (localhost, Bearer-authed)
 
@@ -619,6 +711,25 @@ ipcMain.handle("swap-maker-start", async (e, args = {}) => {
   try {
     const priceSats = String(args.priceSats || process.env.XKR_ASB_PRICE_SATS || "5");
 
+    // Limit-sell order: "sell up to targetXkr XKR at this price". Keep an existing
+    // order (continue filling it) when the target is unchanged; (re)create it when
+    // the target changes; leave it unset to sell freely (legacy behaviour).
+    const targetXkr = parseFloat(args.targetXkr);
+    if (targetXkr > 0) {
+      const targetAtomic = Math.round(targetXkr * 100000);
+      const existing = getMakerOrder();
+      if (!existing || existing.targetAtomic !== targetAtomic || existing.priceSats !== priceSats) {
+        setMakerOrder({
+          targetAtomic,
+          priceSats,
+          minSat: Number(args.minSat) || 0,
+          maxSat: Number(args.maxSat) || 0,
+          startedAt: Date.now(),
+        });
+      }
+      swapMakerOrderFilled = false;
+    }
+
     // Idempotent: if the maker engine is already running (and advertising) with the
     // same price, do NOT tear it down. Killing+respawning the ASB (SIGTERM) drops
     // every live HyperSwarm beam and breaks any swap currently in setup/flight --
@@ -705,6 +816,9 @@ ipcMain.handle("swap-maker-stop", () => {
     swapMakerAdvertised = null;
     swapMakerPriceSats = null;
     swapMakerResumeOnly = false;
+    // Stopping cancels the limit-sell order (an explicit user action).
+    setMakerOrder(null);
+    swapMakerOrderFilled = false;
   } catch (_) {}
   return { ok: true };
 });
@@ -721,6 +835,19 @@ ipcMain.handle("swap-maker-status", async () => {
       if (r && typeof r.balance === "number") btcBalanceSat = r.balance;
     } catch (_) {}
   }
+  // Limit-sell progress for the panel (atomic XKR): target, committed (sold +
+  // in-flight), remaining. Null when selling freely (no order).
+  const order = getMakerOrder();
+  let orderInfo = null;
+  if (order) {
+    const committed = makerCommittedAtomic(order);
+    orderInfo = {
+      targetAtomic: order.targetAtomic,
+      committedAtomic: committed,
+      remainingAtomic: Math.max(0, order.targetAtomic - committed),
+      priceSats: Number(order.priceSats),
+    };
+  }
   return {
     ok: true,
     result: {
@@ -733,6 +860,8 @@ ipcMain.handle("swap-maker-status", async () => {
       error: swapMakerError,
       advertised: swapMaker ? swapMakerAdvertised : null,
       btcBalanceSat,
+      order: orderInfo,
+      orderFilled: swapMakerOrderFilled,
     },
   };
 });
@@ -745,6 +874,9 @@ ipcMain.handle("swap-maker-swaps", async () => {
   try {
     const swaps = await swapMakerRpc.getSwaps();
     if (Array.isArray(swaps)) cacheSwaps(swaps, "maker");
+    // Once the cache reflects the latest fills, stop advertising if the limit-sell
+    // order is now filled (this poll runs every few seconds while the panel is open).
+    maybeCompleteMakerOrder();
     return { ok: true, result: Array.isArray(swaps) ? swaps : [] };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -772,6 +904,14 @@ function startMakerBoard(args, priceSats) {
         const unlockedXkr = Number(unlockedAtomic) / 100000; // XKR has 5 decimals
         const balanceCapSat = Math.floor(unlockedXkr * Number(priceSats) * 0.98);
         maxSat = Math.max(0, Math.min(configuredMaxSat, balanceCapSat));
+        // Limit-sell: also cap the advertised max by the order's REMAINING XKR, so
+        // honest takers never request more than we're still selling. (The XKR
+        // wallet-RPC is the hard backstop for anyone who ignores the advert.)
+        const remainingAtomic = makerRemainingAtomic();
+        if (remainingAtomic != null) {
+          const remainingSat = Math.floor((remainingAtomic / 100000) * Number(priceSats));
+          maxSat = Math.min(maxSat, remainingSat);
+        }
       } catch (_) {
         // On a balance-read failure, fall back to the configured max; the ASB gate
         // still protects against overcommitting.
