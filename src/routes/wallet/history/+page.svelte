@@ -1,18 +1,24 @@
 <script>
   import Button from '$lib/components/buttons/Button.svelte';
   import { fade } from 'svelte/transition';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { transactions } from '$lib/stores/wallet.js';
   import { btc, refreshBtc } from '$lib/stores/btc.js';
+  import { fiat, getCoinPriceFromAPI } from '$lib/stores/fiat.js';
+  import { fiatStr } from '$lib/utils/fiat.js';
   import { goto } from '$app/navigation';
 
   const PER_PAGE = 10;
   let pageNum = 0;
   let xkrTxs = [];
 
+  let btcPoll;
   onMount(async () => {
-    await Promise.all([loadXkr(), refreshBtc()]);
+    await Promise.all([loadXkr(), refreshBtc(), getCoinPriceFromAPI()]);
+    // Poll BTC so newly sent/received (unconfirmed) txs appear without a reload.
+    btcPoll = setInterval(refreshBtc, 8000);
   });
+  onDestroy(() => btcPoll && clearInterval(btcPoll));
 
   async function loadXkr() {
     // all=true returns every XKR tx, already stripped of 0-amount optimize txs.
@@ -40,7 +46,9 @@
       time: t.timestamp || 0,
       confirmed: !!t.confirmed,
     }))),
-  ].sort((a, b) => (b.time || 0) - (a.time || 0));
+    // Pending (unconfirmed) txs just happened -- float them to the top even
+    // though they have no timestamp yet, then order each group newest-first.
+  ].sort((a, b) => (a.confirmed === b.confirmed ? (b.time || 0) - (a.time || 0) : a.confirmed ? 1 : -1));
 
   // Fixed rows per page (the last page may be shorter). Clamp the current page if
   // the underlying list shrank between refreshes.
@@ -71,9 +79,14 @@
       {#each pageTx as tx (tx.kind + tx.id)}
         <div class="row" class:unconfirmed={!tx.confirmed} on:click={() => open(tx)}>
           <p style="opacity: 80%;">{shortId(tx.id)}</p>
-          <p class="tx" style="background: none" class:sent={tx.amount > 0}>
-            {tx.kind === 'btc' ? tx.amount.toFixed(8) + ' BTC' : tx.amount.toFixed(5) + ' XKR'}
-          </p>
+          <div class="amt">
+            <p class="tx" style="background: none" class:sent={tx.amount > 0}>
+              {tx.kind === 'btc' ? tx.amount.toFixed(8) + ' BTC' : tx.amount.toFixed(5) + ' XKR'}
+            </p>
+            {#if fiatStr(tx.amount, tx.kind, $fiat)}
+              <span class="fiat">{fiatStr(tx.amount, tx.kind, $fiat)}</span>
+            {/if}
+          </div>
         </div>
       {/each}
     </div>
@@ -140,6 +153,21 @@
   }
   .unconfirmed {
     opacity: 0.55;
+  }
+
+  .amt {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 1px;
+  }
+  .amt .tx {
+    margin: 0;
+  }
+  .fiat {
+    font-size: 0.72rem;
+    opacity: 0.5;
+    color: var(--text-color);
   }
 
   .notx {

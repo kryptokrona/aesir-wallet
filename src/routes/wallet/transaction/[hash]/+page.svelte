@@ -5,6 +5,8 @@
   import ArrowLeft from '$lib/components/icons/ArrowLeft.svelte';
   import { transactions } from '$lib/stores/wallet.js';
   import { btc, refreshBtc } from '$lib/stores/btc.js';
+  import { fiat, getCoinPriceFromAPI } from '$lib/stores/fiat.js';
+  import { fiatStr } from '$lib/utils/fiat.js';
   import { goto } from '$app/navigation';
   let transaction;
   export let previousPage = '/wallet/dashboard';
@@ -14,6 +16,7 @@
     if (prevParam) previousPage = '/wallet/' + prevParam;
     const kind = $page.url.searchParams.get('kind') || 'xkr';
     if (kind === 'btc') await refreshBtc();
+    getCoinPriceFromAPI();
     load($page.params['hash'], kind);
   });
 
@@ -67,6 +70,9 @@
         {#if transaction.incoming}+{/if}{transaction.amount}
         {transaction.kind === 'btc' ? 'BTC' : 'XKR'}
       </p>
+      {#if fiatStr(transaction.amount, transaction.kind, $fiat)}
+        <p class="fiat">≈ {fiatStr(transaction.amount, transaction.kind, $fiat)}</p>
+      {/if}
     </div>
     <div style="margin-top: .8em">
       <h4>{transaction.kind === 'btc' ? 'Transaction ID' : 'Hash'}</h4>
@@ -135,6 +141,12 @@
     font-size: 22px;
     color: var(--warn-color);
     font-family: 'Roboto Mono';
+  }
+  .fiat {
+    margin-top: 2px;
+    font-size: 0.8rem;
+    opacity: 0.55;
+    color: var(--text-color);
   }
 
   .incoming {

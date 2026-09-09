@@ -82,10 +82,31 @@ const REFUNDING = new Set([
   "btc partial refund is published",
 ]);
 
+// Short per-step descriptions for the vertical timeline (taker/Bob side).
+const STEP_DESC = {
+  "Send BTC": "Locking your Bitcoin into the swap contract",
+  "BTC locked": "Your Bitcoin is locked on-chain",
+  "Lock XKR": "The maker locks the XKR you're buying",
+  "Finalize": "Exchanging signatures to settle the swap",
+  "Receive XKR": "Sweeping the XKR to your wallet",
+  "Done": "Swap complete",
+};
+
 // ---- Maker (Alice) side ----------------------------------------------------
 // The maker receives BTC and sends XKR, so its milestones and wording differ.
 // Strings must match swap-machine/src/alice/mod.rs.
 export const MAKER_STEPS = ["BTC locked", "Lock XKR", "Finalize", "BTC received"];
+
+const MAKER_STEP_DESC = {
+  "BTC locked": "Waiting for the taker to lock Bitcoin",
+  "Lock XKR": "Locking your XKR into the swap contract",
+  "Finalize": "Exchanging signatures to settle the swap",
+  "BTC received": "Sweeping the Bitcoin to your wallet",
+};
+
+// A short description for a step label, given the role.
+export const descFor = (role, label) =>
+  (role === "maker" ? MAKER_STEP_DESC : STEP_DESC)[label] || "";
 
 const MAKER_STATE_STEP = {
   started: 0,

@@ -1,6 +1,6 @@
 <script>
   import { fade } from 'svelte/transition';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import Transaction from '$lib/components/layout/Transaction.svelte';
   import { goto } from '$app/navigation';
   import { createChart } from 'lightweight-charts';
@@ -8,6 +8,8 @@
   import { node } from '$lib/stores/node';
   import { walletMode } from '$lib/stores/walletMode.js';
   import { btc, refreshBtc } from '$lib/stores/btc.js';
+  import { fiat, getCoinPriceFromAPI } from '$lib/stores/fiat.js';
+  import { fiatStr } from '$lib/utils/fiat.js';
 
   const MAX_PAGES = 2;
   let transactionsList = [];
@@ -32,21 +34,31 @@
       confirmed: !!t.confirmed,
       time: t.timestamp || 0,
     }));
+    // Pending (unconfirmed) txs just happened -- float them to the top even
+    // without a timestamp yet, then order each group newest-first.
+    const byRecency = (a, b) =>
+      a.confirmed === b.confirmed ? (b.time || 0) - (a.time || 0) : a.confirmed ? 1 : -1;
     let list;
-    if ($walletMode === 'btc') list = bt;
-    else if ($walletMode === 'fiat') list = [...xkr, ...bt].sort((a, b) => (b.time || 0) - (a.time || 0));
-    else list = xkr;
+    if ($walletMode === 'btc') list = [...bt].sort(byRecency);
+    else if ($walletMode === 'fiat') list = [...xkr, ...bt].sort(byRecency);
+    else list = [...xkr].sort(byRecency);
     return list.slice(0, 8);
   })();
   let txChart;
   let chart;
   let area;
 
+  let btcPoll;
   onMount(async () => {
     $node.loading = false;
     await formatAndRender(false);
     refreshBtc();
+    getCoinPriceFromAPI();
+    // Poll the BTC wallet so incoming/outgoing txs (incl. unconfirmed) appear in
+    // the feed live, without needing to navigate away and back.
+    btcPoll = setInterval(refreshBtc, 8000);
   });
+  onDestroy(() => btcPoll && clearInterval(btcPoll));
 
   window.api.receive('incoming-tx', async () => {
     await formatAndRender(true);
@@ -305,9 +317,12 @@
               on:click={() => goto(`/wallet/transaction/${tx.id}`)}
             >
               <p style="opacity: 80%;">{shortId(tx.id)}</p>
-              <p class="tx" style="background: none" class:sent={tx.amount > 0}>
-                {tx.amount.toFixed(5)} XKR
-              </p>
+              <div class="amt">
+                <p class="tx" style="background: none" class:sent={tx.amount > 0}>
+                  {tx.amount.toFixed(5)} XKR
+                </p>
+                {#if fiatStr(tx.amount, 'xkr', $fiat)}<span class="fiat">{fiatStr(tx.amount, 'xkr', $fiat)}</span>{/if}
+              </div>
             </div>
           {:else}
             <div
@@ -317,9 +332,12 @@
               on:click={() => goto(`/wallet/transaction/${tx.id}?kind=btc`)}
             >
               <p style="opacity: 80%;">{shortId(tx.id)}</p>
-              <p class="tx" style="background: none" class:sent={tx.amount > 0}>
-                {tx.amount.toFixed(8)} BTC
-              </p>
+              <div class="amt">
+                <p class="tx" style="background: none" class:sent={tx.amount > 0}>
+                  {tx.amount.toFixed(8)} BTC
+                </p>
+                {#if fiatStr(tx.amount, 'btc', $fiat)}<span class="fiat">{fiatStr(tx.amount, 'btc', $fiat)}</span>{/if}
+              </div>
             </div>
           {/if}
         {/each}
@@ -380,6 +398,20 @@
 
   .unconfirmed {
     color: var(--alert-color);
+  }
+  .amt {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 1px;
+  }
+  .amt .tx {
+    margin: 0;
+  }
+  .fiat {
+    font-size: 0.72rem;
+    opacity: 0.5;
+    color: var(--text-color);
   }
   .notx {
     padding: 30px;
