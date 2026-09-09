@@ -15,7 +15,7 @@
   import { wallet } from '$lib/stores/wallet.js';
   import SwapTimeline from '$lib/components/SwapTimeline.svelte';
   import Button from '$lib/components/buttons/Button.svelte';
-  import { friendlyState, isTerminal } from '$lib/utils/swapProgress.js';
+  import { isTerminal, swapStatusLabel } from '$lib/utils/swapProgress.js';
   import ArrowLeft from '$lib/components/icons/ArrowLeft.svelte';
 
   let engineUp = false;
@@ -491,18 +491,14 @@
       </div>
       {#each sortedInfos.slice(0, 3) as info (info.swap_id)}
         {@const swapFiat = swapFiatStr(info, $fiat)}
+        {@const swapStatus = swapStatusLabel(info.state_name, info.role)}
         <button class="swap-row" on:click={() => openMonitor(info.swap_id)}>
-          <div>
-            <div class="swap-id">
-              <span class="role" class:sell={info.role === 'maker'}>{info.role === 'maker' ? 'Sell' : 'Buy'}</span>
-              {short(info.swap_id)}
-            </div>
-            <div class="swap-amt">
-              {#if info.role === 'maker'}{fmtXkr(xkrFromInfo(info))} XKR → {(info.btc_amount / 1e8).toFixed(8)} BTC{:else}{(info.btc_amount / 1e8).toFixed(8)} BTC → {fmtXkr(xkrFromInfo(info))} XKR{/if}{#if swapFiat}<span class="swap-fiat"> ({swapFiat})</span>{/if}
-            </div>
+          <div class="swap-id">
+            <span class="role" class:sell={info.role === 'maker'}>{info.role === 'maker' ? 'Sell' : 'Buy'}</span>
+            {fmtXkr(xkrFromInfo(info))} XKR{#if swapFiat}<span class="swap-fiat"> ({swapFiat})</span>{/if}
           </div>
-          <div class="state" class:done={info.state_name === 'xmr is redeemed' || info.state_name === 'btc is redeemed'}>
-            {friendlyState(info.state_name, info.role)}
+          <div class="state" class:done={swapStatus === 'Finished'} class:failed={swapStatus === 'Failed'}>
+            {swapStatus}
           </div>
         </button>
       {/each}
@@ -514,18 +510,14 @@
   <div class="recent" in:fly={{ y: 16, delay: 40 }}>
     {#each pagedHistory as info (info.swap_id)}
       {@const swapFiat = swapFiatStr(info, $fiat)}
+      {@const swapStatus = swapStatusLabel(info.state_name, info.role)}
       <button class="swap-row" on:click={() => openMonitor(info.swap_id)}>
-        <div>
-          <div class="swap-id">
-            <span class="role" class:sell={info.role === 'maker'}>{info.role === 'maker' ? 'Sell' : 'Buy'}</span>
-            {short(info.swap_id)}
-          </div>
-          <div class="swap-amt">
-            {#if info.role === 'maker'}{fmtXkr(xkrFromInfo(info))} XKR → {(info.btc_amount / 1e8).toFixed(8)} BTC{:else}{(info.btc_amount / 1e8).toFixed(8)} BTC → {fmtXkr(xkrFromInfo(info))} XKR{/if}{#if swapFiat}<span class="swap-fiat"> ({swapFiat})</span>{/if}
-          </div>
+        <div class="swap-id">
+          <span class="role" class:sell={info.role === 'maker'}>{info.role === 'maker' ? 'Sell' : 'Buy'}</span>
+          {fmtXkr(xkrFromInfo(info))} XKR{#if swapFiat}<span class="swap-fiat"> ({swapFiat})</span>{/if}
         </div>
-        <div class="state" class:done={info.state_name === 'xmr is redeemed' || info.state_name === 'btc is redeemed'}>
-          {friendlyState(info.state_name, info.role)}
+        <div class="state" class:done={swapStatus === 'Finished'} class:failed={swapStatus === 'Failed'}>
+          {swapStatus}
         </div>
       </button>
     {/each}
@@ -574,7 +566,9 @@
       <SwapTimeline
         stateName={activeInfo.state_name}
         role={activeInfo.role}
-        txLockId={activeInfo.tx_lock_id}
+        txLockId={activeInfo.tx_lock_id || activeInfo.btc_lock_txid}
+        xkrLockTxid={activeInfo.xmr_lock_txid}
+        xkrRedeemTxid={activeInfo.xmr_redeem_txid}
         startDate={activeInfo.start_date}
       />
 
@@ -894,7 +888,9 @@
     width: calc(100% - 3.2rem);
     margin: 0.6rem 1.6rem;
     background: var(--primary-color);
-    color: #fff;
+    // Font in the background colour so it contrasts on light-highlight themes
+    // (e.g. the dark theme's neon-green highlight).
+    color: var(--backgound-color);
     border: none;
     border-radius: 8px;
     padding: 0.8rem;
@@ -975,7 +971,7 @@
         text-transform: uppercase;
         padding: 0.1rem 0.4rem;
         border-radius: 4px;
-        color: #fff;
+        color: var(--backgound-color);
         background: var(--primary-color);
         opacity: 0.9;
 
@@ -998,6 +994,10 @@
 
         &.done {
           color: var(--primary-color);
+          opacity: 1;
+        }
+        &.failed {
+          color: var(--warn-color);
           opacity: 1;
         }
       }

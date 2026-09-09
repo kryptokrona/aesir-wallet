@@ -246,6 +246,14 @@ function cacheSwaps(list, role) {
       state_name: role === "maker" ? s.state : s.state_name,
       start_date: s.start_date,
       completed: !!s.completed,
+      // BTC lock txid (step 1), normalized: the taker calls it tx_lock_id, the ASB
+      // btc_lock_txid. Cached so the monitor can link it even for maker swaps (which
+      // only reach the UI via this cache) and for taker swaps viewed after a restart.
+      btc_lock_txid: role === "maker" ? s.btc_lock_txid : s.tx_lock_id,
+      // XKR lock/redeem tx hashes (same field names on both taker + maker responses;
+      // maker has no redeem txid). Cached so the monitor timeline can link them.
+      xmr_lock_txid: s.xmr_lock_txid || null,
+      xmr_redeem_txid: s.xmr_redeem_txid || null,
       role,
       updated_at: Date.now(),
     };

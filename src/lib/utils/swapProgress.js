@@ -189,3 +189,12 @@ export const stateToStep = (stateName, role = "taker") =>
 
 export const friendlyState = (stateName, role = "taker") =>
   (role === "maker" ? MAKER_FRIENDLY : FRIENDLY)[stateName] || stateName || "Starting…";
+
+// Coarse status for the history lists, so rows stay uncluttered: just Ongoing /
+// Finished / Failed (the detailed per-stage wording lives in the monitor view).
+export function swapStatusLabel(stateName, role = "taker") {
+  const o = swapOutcome(stateName, role);
+  if (o === "done") return "Finished";
+  if (o === "active") return "Ongoing";
+  return "Failed"; // refunding / refunded / aborted / punished
+}
