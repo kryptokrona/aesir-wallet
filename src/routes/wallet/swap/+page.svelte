@@ -7,7 +7,7 @@
   // send and receive, confirms in a prepared-swap popup, then watches a live
   // progress timeline. Talks to the Rust taker daemon via the electron.cjs swap-* IPC.
   import { onMount, onDestroy } from 'svelte';
-  import { fade, fly } from 'svelte/transition';
+  import { fade, fly, scale } from 'svelte/transition';
   import toast from 'svelte-french-toast';
   import { fiat } from '$lib/stores/fiat.js';
   import { fiatStr } from '$lib/utils/fiat.js';
@@ -705,11 +705,19 @@
         <ArrowLeft />
       </button>
     </div>
+  {:else if view === 'monitor'}
+    <div class="head-actions">
+      {#if activeInfo && !activeTerminal}
+        <button class="backbutton warn" title="Cancel swap" on:click={() => (confirmCancel = true)}>
+          Cancel
+        </button>
+      {/if}
+      <button class="backbutton" on:click={newSwap}>
+        <ArrowLeft />
+      </button>
+    </div>
   {:else}
-    <button
-      class="backbutton"
-      on:click={() => (view === 'maker' ? (view = 'form') : newSwap())}
-    >
+    <button class="backbutton" on:click={() => (view === 'maker' ? (view = 'form') : newSwap())}>
       <ArrowLeft />
     </button>
   {/if}
@@ -892,27 +900,6 @@
         <span>Swap {short(activeInfo.swap_id)}</span>
         {#if snapshot?.maker}<span>Maker {snapshot.maker}</span>{/if}
       </div>
-
-      {#if !activeTerminal}
-        {#if confirmCancel}
-          <div class="cancel-box">
-            <p class="hint warn">
-              Abandon this swap? Any Bitcoin already locked is refunded once the on-chain cancel
-              timelock expires, but the network fees spent locking it are lost.
-            </p>
-            <div class="cancel-actions">
-              <button class="ghost" on:click={() => (confirmCancel = false)} disabled={cancelling}>
-                Keep swap
-              </button>
-              <button class="danger" on:click={cancelSwap} disabled={cancelling}>
-                {cancelling ? 'Cancelling…' : 'Cancel & refund'}
-              </button>
-            </div>
-          </div>
-        {:else}
-          <button class="cancel-link" on:click={() => (confirmCancel = true)}>Cancel swap</button>
-        {/if}
-      {/if}
     {:else if monitorLoadFailed}
       {#if monitorErrorMsg}
         <p class="hint warn">{monitorErrorMsg}</p>
@@ -1123,6 +1110,28 @@
         <button class="ghost" on:click={() => (showPrepare = false)} disabled={starting}>Cancel</button>
         <button class="primary" on:click={confirmSwap} disabled={starting}>
           {starting ? 'Starting…' : 'Confirm swap'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if confirmCancel}
+  <div
+    class="overlay"
+    on:click|self={() => !cancelling && (confirmCancel = false)}
+    transition:fade={{ duration: 120 }}
+  >
+    <div class="modal" in:scale={{ duration: 190 }} out:scale={{ duration: 150 }}>
+      <h4>Cancel swap?</h4>
+      <p class="disclaimer">
+        Any Bitcoin already locked is refunded once the on-chain cancel timelock expires — but the
+        network fees spent locking it are lost. This can't be undone.
+      </p>
+      <div class="actions">
+        <button class="ghost" on:click={() => (confirmCancel = false)} disabled={cancelling}>Keep swap</button>
+        <button class="danger" on:click={cancelSwap} disabled={cancelling}>
+          {cancelling ? 'Cancelling…' : 'Cancel & refund'}
         </button>
       </div>
     </div>
@@ -1377,57 +1386,21 @@
     }
   }
 
-  // Cancel / abandon an ongoing swap (destructive, so danger-coloured + confirmed).
-  .cancel-link {
-    display: block;
-    margin: 0.9rem auto 0;
-    background: none;
-    border: none;
-    padding: 0.3rem;
-    font-size: 0.82rem;
-    color: var(--swap-fail-color, #e5484d);
-    opacity: 0.75;
-    cursor: pointer;
+  // Header "Cancel" action: a header button (like .backbutton) tinted with the
+  // warning colour. Falls back to --swap-fail-color when --warning isn't defined.
+  button.backbutton.warn {
+    width: auto;
+    padding: 0 0.85rem;
+    font-size: 0.85rem;
+    color: var(--warning, var(--swap-fail-color, #e5484d));
+    border-color: color-mix(
+      in srgb,
+      var(--warning, var(--swap-fail-color, #e5484d)) 40%,
+      var(--button-b-color)
+    );
     &:hover {
-      opacity: 1;
-      text-decoration: underline;
+      background: color-mix(in srgb, var(--warning, var(--swap-fail-color, #e5484d)) 14%, transparent);
     }
-  }
-  .cancel-box {
-    margin-top: 0.9rem;
-    padding: 0.85rem 0.95rem;
-    border: 1px solid var(--swap-fail-color, #e5484d);
-    border-radius: 10px;
-    background: color-mix(in srgb, var(--swap-fail-color, #e5484d) 8%, transparent);
-    .hint {
-      margin: 0 0 0.7rem;
-    }
-  }
-  .cancel-actions {
-    display: flex;
-    gap: 0.6rem;
-  }
-  button.danger,
-  button.ghost {
-    flex: 1;
-    border-radius: 8px;
-    padding: 0.7rem;
-    font-size: 0.9rem;
-    cursor: pointer;
-    &:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-  }
-  button.danger {
-    background: var(--swap-fail-color, #e5484d);
-    color: #fff;
-    border: none;
-  }
-  button.ghost {
-    background: none;
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
   }
 
   // Full-width swap list, styled exactly like the transaction list on /history:
@@ -1815,6 +1788,18 @@
         background: transparent;
         border: 1px solid var(--border-color);
         color: var(--text-color);
+        border-radius: 8px;
+        padding: 0.8rem;
+        cursor: pointer;
+
+        &:disabled {
+          opacity: 0.5;
+        }
+      }
+      .danger {
+        background: var(--warning, var(--swap-fail-color, #e5484d));
+        border: none;
+        color: #fff;
         border-radius: 8px;
         padding: 0.8rem;
         cursor: pointer;
