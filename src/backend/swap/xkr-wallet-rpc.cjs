@@ -136,14 +136,19 @@ const methods = {
         return withWallet(
             () => WB.WalletBackend.importViewWallet(makeDaemon(ctx.daemonHost, ctx.daemonPort, ctx.ssl), scanHeight || floorScanHeight(), viewSecret, address),
             async (wallet) => {
-                const [unlocked, locked] = await poll('deposit', timeoutMs || 180000, 2000, async () => {
+                // Poll until BOTH the balance reflects the deposit AND the incoming
+                // tx is listed. The wallet-backend can update the balance a beat
+                // before the tx appears in getTransactions(), which used to make us
+                // return { detected: true, txHash: null } and force the engine to
+                // retry the whole "waiting for XKR lock" step. Keep polling instead.
+                const { unlocked, locked, txHash } = await poll('deposit', timeoutMs || 180000, 2000, async () => {
                     const [u, l] = await wallet.getBalance();
-                    return u + l >= amount ? [u, l] : null;
+                    if (u + l < amount) return null;
+                    const incoming = (await wallet.getTransactions()).find((t) => t.totalAmount() > 0);
+                    if (!incoming) return null; // balance in, tx not listed yet -- wait
+                    return { unlocked: u, locked: l, txHash: incoming.hash };
                 });
-                // Surface the hash of the incoming lock deposit so the engine can
-                // record it (the tx that credits this view-only wallet).
-                const incoming = (await wallet.getTransactions()).find((t) => t.totalAmount() > 0);
-                return { detected: true, unlocked, locked, txHash: incoming ? incoming.hash : null };
+                return { detected: true, unlocked, locked, txHash };
             },
         );
     },

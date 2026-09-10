@@ -403,13 +403,17 @@
   $: inventoryXkr = ($wallet?.balance?.[0] ?? 0) / 100000; // atomic -> XKR (5 dp)
   $: makerState = makerStatus.error
     ? 'error'
-    : makerStatus.orderFilled
-      ? 'filled'
-      : makerStatus.advertising
-        ? 'live'
-        : makerStarting || makerStatus.asbRunning
-          ? 'starting'
-          : 'off';
+    : makerStatus.advertising
+      ? 'live'
+      : makerStatus.orderFilled
+        ? 'filled'
+        : // Booted resume-only to finish an in-flight swap -- it never advertises, so
+          // don't show it as an endless "starting…".
+          makerStatus.resumeOnly && makerStatus.asbRunning && !makerStarting
+          ? 'recovering'
+          : makerStarting || makerStatus.asbRunning
+            ? 'starting'
+            : 'off';
   // Live market price in sats/XKR = XKR fiat price / BTC fiat price, expressed in sats.
   $: marketSats = $fiat.balance > 0 && $fiat.btcPrice > 0 ? ($fiat.balance / $fiat.btcPrice) * 1e8 : 0;
   // Initialize the sliders once the form is open AND the balance has loaded (so the
@@ -887,23 +891,34 @@
       <span
         class="status-dot"
         class:on={makerState === 'live'}
-        class:pending={makerState === 'starting'}
+        class:pending={makerState === 'starting' || makerState === 'recovering'}
         class:warn={makerState === 'error'}
       />
       <span class="status-text">
         {makerState === 'live'
           ? 'Market making — live'
-          : makerState === 'starting'
-            ? 'Market making — starting…'
-            : makerState === 'error'
-              ? 'Market making — problem'
-              : 'Market making — off'}
+          : makerState === 'recovering'
+            ? 'Finishing an in-flight swap…'
+            : makerState === 'starting'
+              ? 'Market making — starting…'
+              : makerState === 'error'
+                ? 'Market making — problem'
+                : 'Market making — off'}
       </span>
     </div>
 
     {#if makerState === 'error'}
       <p class="maker-error">{makerStatus.error}</p>
       <button class="primary inline" on:click={retryMaker}>Try again</button>
+    {:else if makerState === 'recovering'}
+      <p class="maker-blurb">
+        A market-making swap from a previous session is still in flight — the engine restarted just to finish it,
+        and isn't advertising for new swaps. It'll wrap up on its own; once it's done you can start market-making
+        again.
+      </p>
+      <button class="primary inline" on:click={stopMaker} disabled={makerBusy}>
+        {makerBusy ? 'Stopping…' : 'Stop recovery'}
+      </button>
     {:else if makerState === 'starting'}
       <p class="maker-blurb">
         Starting the market-making engine and announcing you on the swap network — this takes a few seconds.

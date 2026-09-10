@@ -229,13 +229,15 @@ function walletKey() {
 const MAKER_XKR_RETURNED = new Set(["xmr is refunded", "safely aborted"]);
 
 // In-memory reservations for XKR just locked but not yet reflected in the swap DB,
-// so concurrent locks can't collectively exceed the target. Pruned by age (the
-// swap appears in the DB within a minute); double-counting a settled lock only
-// makes us briefly conservative -- it never lets us over-commit.
-let pendingLockAtomic = []; // [{ amount, at }]
+// so concurrent locks can't collectively exceed the target. Each records `dbAtAdd`
+// (everything committed before this lock) so makerCommittedAtomic can drop it the
+// moment the DB catches up -- and TTL is just a backstop.
+let pendingLockAtomic = []; // [{ amount, at, dbAtAdd }]
 const PENDING_LOCK_TTL_MS = 120000;
 function noteMakerLock(amountAtomic) {
-  pendingLockAtomic.push({ amount: Number(amountAtomic) || 0, at: Date.now() });
+  const order = getMakerOrder();
+  const dbAtAdd = order ? makerCommittedAtomic(order) : 0; // committed before this lock
+  pendingLockAtomic.push({ amount: Number(amountAtomic) || 0, at: Date.now(), dbAtAdd });
 }
 
 function getMakerOrder() {
@@ -252,9 +254,9 @@ function setMakerOrder(order) {
   makerOrders.set("orders", all);
 }
 
-// XKR (wallet-atomic) committed toward the order = non-returned maker swaps since
-// the order started, plus fresh in-flight lock reservations.
-function makerCommittedAtomic(order) {
+// XKR (wallet-atomic) committed toward the order, from the swap DB alone: sum the
+// non-returned maker swaps since the order started. piconero (1e12/XKR) -> atomic (1e5/XKR).
+function makerDbCommittedAtomic(order) {
   const wid = walletKey() || "default";
   const cache = (swapsStore.get("swaps") || {})[wid] || {};
   let pico = 0;
@@ -264,10 +266,21 @@ function makerCommittedAtomic(order) {
     if (MAKER_XKR_RETURNED.has(s.state_name)) continue;
     pico += Number(s.xmr_amount) || 0;
   }
+  return Math.floor(pico / 1e7);
+}
+
+// Total committed = DB-derived + in-flight lock reservations NOT yet in the DB. A
+// reservation is dropped as soon as the swap DB grows to include it (its baseline +
+// ~its amount). Otherwise a lock was counted twice -- reservation AND DB entry --
+// which briefly DOUBLED the "sold" meter mid-swap until the reservation's TTL.
+function makerCommittedAtomic(order) {
+  const dbCommitted = makerDbCommittedAtomic(order);
   const now = Date.now();
-  pendingLockAtomic = pendingLockAtomic.filter((p) => now - p.at < PENDING_LOCK_TTL_MS);
+  pendingLockAtomic = pendingLockAtomic.filter(
+    (p) => now - p.at < PENDING_LOCK_TTL_MS && dbCommitted < p.dbAtAdd + p.amount * 0.5,
+  );
   const pending = pendingLockAtomic.reduce((a, p) => a + p.amount, 0);
-  return Math.floor(pico / 1e7) + pending; // piconero->atomic (1e12/1e5=1e7) + reservations
+  return dbCommitted + pending;
 }
 
 // Remaining sellable XKR (wallet-atomic) for the active order, or null when there
@@ -285,6 +298,20 @@ function makerHasInflightSwaps() {
   const wid = walletKey() || "default";
   const cache = (swapsStore.get("swaps") || {})[wid] || {};
   return Object.values(cache).some((s) => s && s.role === "maker" && s.completed === false);
+}
+
+// The boot-time resume-only ASB exists ONLY to finish stranded swaps and never
+// advertises, so it won't stop on its own. Once its swaps have settled, shut it
+// down and return to "off" -- otherwise the panel would show "recovering" forever.
+function maybeEndResumeOnly() {
+  if (!swapMakerResumeOnly) return;
+  if (makerHasInflightSwaps()) return;
+  console.log("[swap-maker] resume-only recovery complete; stopping the ASB");
+  try {
+    xkrSwapAsb.stopAsb();
+  } catch (_) {}
+  swapMakerRpc = null;
+  swapMakerResumeOnly = false;
 }
 
 // Tear the maker board down once the limit-sell order is filled -- but ONLY when no
@@ -889,9 +916,10 @@ ipcMain.handle("swap-maker-swaps", async () => {
   try {
     const swaps = await swapMakerRpc.getSwaps();
     if (Array.isArray(swaps)) cacheSwaps(swaps, "maker");
-    // Once the cache reflects the latest fills, stop advertising if the limit-sell
-    // order is now filled (this poll runs every few seconds while the panel is open).
+    // Once the cache reflects the latest fills: stop advertising if the limit-sell
+    // order is filled, or shut down a resume-only recovery once its swaps have settled.
     maybeCompleteMakerOrder();
+    maybeEndResumeOnly();
     return { ok: true, result: Array.isArray(swaps) ? swaps : [] };
   } catch (e) {
     return { ok: false, error: e.message };
