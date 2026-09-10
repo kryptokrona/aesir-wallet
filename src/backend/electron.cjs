@@ -143,6 +143,10 @@ app.on("window-all-closed", () => {
 app.on("before-quit", () => {
   xkrSwapEngine.stopEngine();
   xkrSwapAsb.stopAsb();
+  if (swapRescueTimer) {
+    clearInterval(swapRescueTimer);
+    swapRescueTimer = null;
+  }
   if (xkrSwapServer) {
     xkrSwapServer.close();
     xkrSwapServer = undefined;
@@ -341,12 +345,18 @@ function cacheSwaps(list, role) {
   const cache = all[wid] || {};
   for (const s of list) {
     if (!s || !s.swap_id) continue;
+    const prev = cache[s.swap_id];
     cache[s.swap_id] = {
       swap_id: s.swap_id,
       btc_amount: s.btc_amount,
       xmr_amount: s.xmr_amount, // piconero -- drives the "XKR" amount in the monitor
       state_name: role === "maker" ? s.state : s.state_name,
       start_date: s.start_date,
+      // Local timestamp of when we FIRST saw this swap. The engine's start_date can
+      // be unparseable/inconsistent, so the history list orders by this stable value.
+      // Seed it from start_date the first time (so already-cached swaps keep their
+      // order), falling back to now for a brand-new swap.
+      firstSeen: (prev && prev.firstSeen) || swapDateMs(s.start_date) || Date.now(),
       completed: !!s.completed,
       // BTC lock txid (step 1), normalized: the taker calls it tx_lock_id, the ASB
       // btc_lock_txid. Cached so the monitor can link it even for maker swaps (which
@@ -429,6 +439,9 @@ async function startXkrSwapService(node) {
     // the ASB back resume-only so its refunds/redeems finish on their own. Slightly
     // later so the XKR wallet RPC is bound first -- the ASB needs it.
     setTimeout(resumeMakerSwapsIfAny, 8000);
+    // Watchdog: rescue any taker swap that stalls pre-BTC-lock (a first beam that
+    // never connected), so it self-heals in ~90s instead of needing an app restart.
+    if (!swapRescueTimer) swapRescueTimer = setInterval(rescueStalledSwaps, 20000);
   } catch (e) {
     console.error("failed to start xkr-swap RPC service:", e.message);
   }
@@ -449,42 +462,101 @@ async function waitForMakerOnBoard(discovery, peerId, timeoutMs = 45000) {
   }
 }
 
-// Resume every unfinished swap after an engine (re)start. Crucially, the engine's
-// stored maker address is a dead HyperSwarm bridge port from the previous process,
-// so we re-open a fresh bridge to the maker and hand resume() its new address --
-// otherwise the resumed swap keeps dialing the dead port ("request channel
-// closed") and can never finish, even though its XKR/BTC are on-chain.
+// Re-open a fresh HyperSwarm bridge to a swap's maker and resume it. The engine's
+// stored maker address is a dead bridge port from a previous process (or a beam
+// that never connected on the first attempt), so we wait for the maker to (re)appear
+// on the board, open a NEW bridge, and hand resume() its new address -- otherwise
+// the swap keeps dialing a dead/never-connected port ("request channel closed") and
+// can never finish. `resume` is idempotent (a no-op on a finished swap; the daemon
+// serialises work per swap), so this is safe to call on any unfinished swap.
+async function reBridgeAndResume(info, reason = "resume") {
+  const peerId = info.seller && info.seller.peer_id;
+  let multiaddr;
+  try {
+    const discovery = ensureDiscovery();
+    const maker = peerId ? await waitForMakerOnBoard(discovery, peerId) : null;
+    if (maker) {
+      const bridge = await discovery.openSwapBridge(maker.xkrAddress);
+      multiaddr = bridge.multiaddr;
+      console.log(`${reason}: re-bridged swap ${info.swap_id} -> ${multiaddr}`);
+    } else {
+      console.warn(
+        `${reason}: maker ${peerId} for swap ${info.swap_id} not on board; resuming without a fresh bridge (will refund on timelock if it can't reconnect)`,
+      );
+    }
+  } catch (e) {
+    console.error(`${reason}: bridge setup failed for`, info.swap_id, e.message);
+  }
+  return xkrSwapRpc
+    .resume(info.swap_id, multiaddr)
+    .then(() => console.log(`${reason}: resumed swap`, info.swap_id))
+    .catch((err) => console.error(`${reason}: resume failed for`, info.swap_id, err.message));
+}
+
+// Resume every unfinished swap after an engine (re)start.
 async function resumeInFlightSwaps() {
   try {
     const infos = await xkrSwapRpc.swapInfos();
     if (!Array.isArray(infos)) return;
     const inflight = infos.filter((i) => i && i.completed === false && i.swap_id);
     if (!inflight.length) return;
-    const discovery = ensureDiscovery();
-    for (const info of inflight) {
-      const peerId = info.seller && info.seller.peer_id;
-      let multiaddr;
-      try {
-        const maker = peerId ? await waitForMakerOnBoard(discovery, peerId) : null;
-        if (maker) {
-          const bridge = await discovery.openSwapBridge(maker.xkrAddress);
-          multiaddr = bridge.multiaddr;
-          console.log(`resume: re-bridged swap ${info.swap_id} -> ${multiaddr}`);
-        } else {
-          console.warn(
-            `resume: maker ${peerId} for swap ${info.swap_id} not on board; resuming without a fresh bridge (will refund on timelock if it can't reconnect)`,
-          );
-        }
-      } catch (e) {
-        console.error("resume: bridge setup failed for", info.swap_id, e.message);
-      }
-      xkrSwapRpc
-        .resume(info.swap_id, multiaddr)
-        .then(() => console.log("resumed in-flight swap", info.swap_id))
-        .catch((err) => console.error("resume failed for", info.swap_id, err.message));
-    }
+    for (const info of inflight) reBridgeAndResume(info, "resume");
   } catch (e) {
     console.error("failed to enumerate swaps for resume:", e.message);
+  }
+}
+
+// A taker swap can occasionally fail to "get off the ground": the first private
+// beam to the maker doesn't connect within BEAM_CONNECT_TIMEOUT_MS, so the initial
+// buy_xmr_direct handshake never reaches the maker and the swap sits in its earliest
+// (pre-BTC-lock) state -- the maker never even sees it. NOTHING has moved on-chain
+// yet, so it is safe to simply re-bridge to the maker and resume, which re-drives the
+// negotiation. This is exactly what an app RESTART does (resumeInFlightSwaps runs on
+// launch); the watchdog below does it in-process so the user never has to restart.
+const SWAP_PRELOCK_STATES = new Set([
+  "quote has been requested",
+  "execution setup done",
+  "btc lock ready to publish",
+]);
+const SWAP_STALL_RESCUE_MS = 90000; // grace before a pre-lock swap counts as stalled (> the 60s beam timeout)
+const SWAP_RESCUE_COOLDOWN_MS = 120000; // don't re-rescue the same swap more often than this
+const swapPrelockSince = new Map(); // swap_id -> ts we first saw it still pre-lock
+const swapLastRescue = new Map(); // swap_id -> ts of last rescue attempt
+let rescuingStalledSwaps = false;
+let swapRescueTimer = null;
+
+async function rescueStalledSwaps() {
+  if (rescuingStalledSwaps) return; // never overlap (each pass can wait ~45s for the board)
+  rescuingStalledSwaps = true;
+  try {
+    const infos = await xkrSwapRpc.swapInfos();
+    if (!Array.isArray(infos)) return;
+    const now = Date.now();
+    const livePrelock = new Set();
+    for (const info of infos) {
+      if (!info || !info.swap_id) continue;
+      // Pre-lock == unfinished AND still before BTC is locked (unknown/empty state
+      // means "just created", which is also pre-lock).
+      const preLock =
+        info.completed === false && (!info.state_name || SWAP_PRELOCK_STATES.has(info.state_name));
+      if (!preLock) {
+        swapPrelockSince.delete(info.swap_id);
+        continue;
+      }
+      livePrelock.add(info.swap_id);
+      if (!swapPrelockSince.has(info.swap_id)) swapPrelockSince.set(info.swap_id, now);
+      if (now - swapPrelockSince.get(info.swap_id) < SWAP_STALL_RESCUE_MS) continue;
+      if (now - (swapLastRescue.get(info.swap_id) || 0) < SWAP_RESCUE_COOLDOWN_MS) continue;
+      swapLastRescue.set(info.swap_id, now);
+      console.log(`rescue: swap ${info.swap_id} stalled pre-lock (${info.state_name || "created"}); re-bridging`);
+      await reBridgeAndResume(info, "rescue");
+    }
+    // Forget swaps that have advanced past pre-lock or completed.
+    for (const id of [...swapPrelockSince.keys()]) if (!livePrelock.has(id)) swapPrelockSince.delete(id);
+  } catch (e) {
+    console.error("rescueStalledSwaps: failed to enumerate swaps:", e.message);
+  } finally {
+    rescuingStalledSwaps = false;
   }
 }
 
@@ -1032,13 +1104,22 @@ ipcMain.on("start-wallet", async (e, walletName, password, node, file) => {
     daemon = new WB.Daemon(node.url, node.port);
   }
 
-  // Point the XKR swap RPC service at the same node the wallet uses.
-  startXkrSwapService(node);
-
+  // Point the XKR swap RPC service at the same node the wallet uses -- but ONLY
+  // on a fresh login. On a re-login (unlocking after the renderer's idle
+  // auto-lock, where the backend never logged out: `loggedIn` stayed true and the
+  // engine kept running), startXkrSwapService would kill the good taker engine and
+  // respawn one WITHOUT the XKR seed key -- its startEngine() call passes no
+  // seedKey, so the engine falls back to seed.pem and loads a DIFFERENT, empty
+  // Bitcoin wallet, making the real BTC balance + history disappear. The seed-key
+  // restart that fixes this only runs on the fresh-login path below (line ~1081),
+  // which the re-login early-return never reaches. So skip the restart entirely
+  // when already logged in: the service is already up and correct.
   if (loggedIn) {
     await verifyPassword(password);
     return;
   }
+
+  startXkrSwapService(node);
   
   let knownWallets = await getMyWallets()
   //Save opened wallet file path if we did not create a new one on first start and name it if it's not known
