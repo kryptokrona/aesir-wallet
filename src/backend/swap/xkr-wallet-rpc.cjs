@@ -233,14 +233,10 @@ const methods = {
                 if (unlocked < amount + useFee) {
                     throw new Error(`insufficient spendable XKR for lock: have ${unlocked}, need ${amount + useFee}`);
                 }
-                // HARD limit-sell backstop: inside the write lock (which serializes
-                // concurrent locks), reject any lock that would push us past the
-                // order's remaining XKR. `noteMakerLock` then reserves this amount so
-                // a second concurrent lock sees it before the swap DB catches up.
-                const remaining = ctx.makerRemaining && ctx.makerRemaining();
-                if (typeof remaining === "number" && amount > remaining) {
-                    throw new Error(`lock exceeds remaining sell order: want ${amount}, remaining ${remaining}`);
-                }
+                // NB: the limit-sell target is enforced at swap SETUP (the `balance`
+                // method below is capped to the order's remaining), not here -- by the
+                // time we lock, the swap is already accepted and counted, so a check
+                // against `remaining` here would reject the very swap that fills the order.
                 const result = await mainWallet.sendTransactionAdvanced(
                     [[destAddress, amount]],
                     swapMixin(),
@@ -252,7 +248,6 @@ const methods = {
                     false, // sendAll
                 );
                 if (!result.success) throw new Error(result.error.toString());
-                if (ctx.noteMakerLock) ctx.noteMakerLock(amount);
                 return { txHash: result.transactionHash, amount, fee: useFee };
             });
         }
@@ -320,8 +315,8 @@ const methods = {
 
 // ---- JSON-RPC HTTP server --------------------------------------------------
 
-function start({ port, daemonHost, daemonPort, ssl, getMainWallet, makerRemaining, noteMakerLock }) {
-    const ctx = { daemonHost, daemonPort, ssl: !!ssl, getMainWallet, makerRemaining, noteMakerLock };
+function start({ port, daemonHost, daemonPort, ssl, getMainWallet, makerRemaining }) {
+    const ctx = { daemonHost, daemonPort, ssl: !!ssl, getMainWallet, makerRemaining };
     const server = http.createServer((req, res) => {
         if (req.method !== 'POST') {
             res.writeHead(405).end();

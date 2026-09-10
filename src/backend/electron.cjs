@@ -228,18 +228,6 @@ function walletKey() {
 // /aborts (everything else, in-flight or sold, still counts as committed).
 const MAKER_XKR_RETURNED = new Set(["xmr is refunded", "safely aborted"]);
 
-// In-memory reservations for XKR just locked but not yet reflected in the swap DB,
-// so concurrent locks can't collectively exceed the target. Each records `dbAtAdd`
-// (everything committed before this lock) so makerCommittedAtomic can drop it the
-// moment the DB catches up -- and TTL is just a backstop.
-let pendingLockAtomic = []; // [{ amount, at, dbAtAdd }]
-const PENDING_LOCK_TTL_MS = 120000;
-function noteMakerLock(amountAtomic) {
-  const order = getMakerOrder();
-  const dbAtAdd = order ? makerCommittedAtomic(order) : 0; // committed before this lock
-  pendingLockAtomic.push({ amount: Number(amountAtomic) || 0, at: Date.now(), dbAtAdd });
-}
-
 function getMakerOrder() {
   const wid = walletKey();
   if (!wid) return null;
@@ -254,9 +242,12 @@ function setMakerOrder(order) {
   makerOrders.set("orders", all);
 }
 
-// XKR (wallet-atomic) committed toward the order, from the swap DB alone: sum the
-// non-returned maker swaps since the order started. piconero (1e12/XKR) -> atomic (1e5/XKR).
-function makerDbCommittedAtomic(order) {
+// XKR (wallet-atomic) committed toward the order = sum the non-returned maker swaps
+// since the order started. The ASB records a swap (with its xmr_amount) at "btc is
+// locked" -- BEFORE it locks the XKR -- so the DB already accounts for every in-flight
+// swap; no extra in-memory reservation is needed (adding one double-counted the lock
+// mid-swap). piconero (1e12/XKR) -> wallet-atomic (1e5/XKR).
+function makerCommittedAtomic(order) {
   const wid = walletKey() || "default";
   const cache = (swapsStore.get("swaps") || {})[wid] || {};
   let pico = 0;
@@ -267,20 +258,6 @@ function makerDbCommittedAtomic(order) {
     pico += Number(s.xmr_amount) || 0;
   }
   return Math.floor(pico / 1e7);
-}
-
-// Total committed = DB-derived + in-flight lock reservations NOT yet in the DB. A
-// reservation is dropped as soon as the swap DB grows to include it (its baseline +
-// ~its amount). Otherwise a lock was counted twice -- reservation AND DB entry --
-// which briefly DOUBLED the "sold" meter mid-swap until the reservation's TTL.
-function makerCommittedAtomic(order) {
-  const dbCommitted = makerDbCommittedAtomic(order);
-  const now = Date.now();
-  pendingLockAtomic = pendingLockAtomic.filter(
-    (p) => now - p.at < PENDING_LOCK_TTL_MS && dbCommitted < p.dbAtAdd + p.amount * 0.5,
-  );
-  const pending = pendingLockAtomic.reduce((a, p) => a + p.amount, 0);
-  return dbCommitted + pending;
 }
 
 // Remaining sellable XKR (wallet-atomic) for the active order, or null when there
@@ -421,11 +398,10 @@ async function startXkrSwapService(node) {
       // wallet instead of a separate re-imported instance, so the ASB and the UI
       // can never disagree about the balance. Only maker-key operations match.
       getMainWallet: () => walletBackend,
-      // Hard limit-sell enforcement: the maker's balance report is capped to the
-      // order's remaining XKR, and a lock exceeding it is rejected. Returns null
-      // when there's no active order (sell freely, as before).
+      // Limit-sell enforcement: the maker's balance report is capped to the order's
+      // remaining XKR, so the ASB won't set up a swap beyond it. Returns null when
+      // there's no active order (sell freely, as before).
       makerRemaining: () => makerRemainingAtomic(),
-      noteMakerLock: (amountAtomic) => noteMakerLock(amountAtomic),
     });
     xkrSwapServer.on("error", (err) => {
       console.error("xkr-swap RPC service error:", err.message);
