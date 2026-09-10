@@ -70,6 +70,13 @@ const resume = (swapId, sellerMultiaddr) =>
 // The last recorded failure reason for a swap (async setup failures don't appear
 // in swap_infos). Returns { swap_id, error: string | null }.
 const swapError = (swapId) => call("swap_error", { swap_id: swapId });
+// Suspend whatever swap currently holds the engine's global swap lock, freeing it
+// so new swaps (and a subsequent cancel_and_refund) can run. Returns the suspended
+// swap id, or null if nothing was running.
+const suspendCurrentSwap = () => call("suspend_current_swap");
+// Cancel + refund a swap by id (recovers the locked BTC once the cancel timelock
+// allows). Requires the swap lock, so suspend the swap first if it's running.
+const cancelAndRefund = (swapId) => call("cancel_and_refund", { swap_id: swapId });
 // Start a swap against an explicit maker. amountSat is the BTC amount to lock.
 const buyXmrDirect = ({ sellerMultiaddr, sellerPeerId, amountSat, xkrReceiveAddress, changeAddress }) =>
   call("buy_xmr_direct", {
@@ -93,5 +100,7 @@ module.exports = {
   withdrawBtc,
   resume,
   swapError,
+  suspendCurrentSwap,
+  cancelAndRefund,
   buyXmrDirect,
 };

@@ -376,6 +376,7 @@
   function openMonitor(id) {
     activeSwapId = id;
     snapshot = null;
+    confirmCancel = false;
     view = 'monitor';
     watchMonitorLoad();
   }
@@ -383,6 +384,30 @@
     view = 'form';
     activeSwapId = null;
     snapshot = null;
+    confirmCancel = false;
+  }
+
+  // ---- cancel / abandon an ongoing swap ------------------------------------
+  // Two-stage (inline confirm) because it can cost the on-chain lock fee. The
+  // backend suspends the swap (freeing the engine's global lock so new swaps can
+  // run) and starts the timelock-gated BTC refund. Fees already spent on the lock
+  // are lost; the locked BTC itself comes back once the cancel timelock expires.
+  let confirmCancel = false;
+  let cancelling = false;
+  async function cancelSwap() {
+    if (!activeInfo || !activeInfo.swap_id) return;
+    cancelling = true;
+    try {
+      await window.api.invoke('swap-cancel', activeInfo.swap_id);
+    } catch (_) {
+      // best-effort: the suspend half still frees the lock; refund is retryable
+    }
+    confirmCancel = false;
+    cancelling = false;
+    // Refresh so the row reflects the new (refunding/abandoned) state, then leave
+    // the monitor -- the swap now lives in history and no longer blocks new swaps.
+    await refreshInfos().catch(() => {});
+    newSwap();
   }
 
   // ---- market maker (sell XKR for BTC) -------------------------------------
@@ -867,6 +892,27 @@
         <span>Swap {short(activeInfo.swap_id)}</span>
         {#if snapshot?.maker}<span>Maker {snapshot.maker}</span>{/if}
       </div>
+
+      {#if !activeTerminal}
+        {#if confirmCancel}
+          <div class="cancel-box">
+            <p class="hint warn">
+              Abandon this swap? Any Bitcoin already locked is refunded once the on-chain cancel
+              timelock expires, but the network fees spent locking it are lost.
+            </p>
+            <div class="cancel-actions">
+              <button class="ghost" on:click={() => (confirmCancel = false)} disabled={cancelling}>
+                Keep swap
+              </button>
+              <button class="danger" on:click={cancelSwap} disabled={cancelling}>
+                {cancelling ? 'Cancelling…' : 'Cancel & refund'}
+              </button>
+            </div>
+          </div>
+        {:else}
+          <button class="cancel-link" on:click={() => (confirmCancel = true)}>Cancel swap</button>
+        {/if}
+      {/if}
     {:else if monitorLoadFailed}
       {#if monitorErrorMsg}
         <p class="hint warn">{monitorErrorMsg}</p>
@@ -1329,6 +1375,59 @@
       opacity: 0.5;
       cursor: not-allowed;
     }
+  }
+
+  // Cancel / abandon an ongoing swap (destructive, so danger-coloured + confirmed).
+  .cancel-link {
+    display: block;
+    margin: 0.9rem auto 0;
+    background: none;
+    border: none;
+    padding: 0.3rem;
+    font-size: 0.82rem;
+    color: var(--swap-fail-color, #e5484d);
+    opacity: 0.75;
+    cursor: pointer;
+    &:hover {
+      opacity: 1;
+      text-decoration: underline;
+    }
+  }
+  .cancel-box {
+    margin-top: 0.9rem;
+    padding: 0.85rem 0.95rem;
+    border: 1px solid var(--swap-fail-color, #e5484d);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--swap-fail-color, #e5484d) 8%, transparent);
+    .hint {
+      margin: 0 0 0.7rem;
+    }
+  }
+  .cancel-actions {
+    display: flex;
+    gap: 0.6rem;
+  }
+  button.danger,
+  button.ghost {
+    flex: 1;
+    border-radius: 8px;
+    padding: 0.7rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+  button.danger {
+    background: var(--swap-fail-color, #e5484d);
+    color: #fff;
+    border: none;
+  }
+  button.ghost {
+    background: none;
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
   }
 
   // Full-width swap list, styled exactly like the transaction list on /history:

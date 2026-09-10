@@ -140,7 +140,41 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-app.on("before-quit", () => {
+// Set once the user has confirmed quitting past the in-progress-swap guard, so
+// the second before-quit pass (from our own app.quit()) runs cleanup and exits.
+let forceQuit = false;
+
+app.on("before-quit", (e) => {
+  // Guard: don't let the app close mid-swap. Killing the engine/ASB while a swap
+  // is being set up or settled can strand funds -- worst case, the maker hasn't
+  // yet persisted its per-swap secrets (they're random and unrecoverable), so a
+  // taker that already broadcast its BTC lock is orphaned and loses the lock fee.
+  // Warn and require explicit confirmation; funds are safest once swaps finish.
+  if (!forceQuit && swapUnsafeToQuit()) {
+    e.preventDefault();
+    const opts = {
+      type: "warning",
+      buttons: ["Keep running", "Close anyway"],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+      title: "Swap in progress",
+      message: "A swap is still in progress.",
+      detail:
+        "Closing now can interrupt a swap while it's being set up or settled. In the " +
+        "worst case the other side never records it and your Bitcoin lock fee is lost. " +
+        "It's safest to wait until swaps finish.\n\nClose anyway?",
+    };
+    const choice = mainWindow
+      ? dialog.showMessageBoxSync(mainWindow, opts)
+      : dialog.showMessageBoxSync(opts);
+    if (choice === 1) {
+      forceQuit = true;
+      app.quit();
+    }
+    return;
+  }
+
   xkrSwapEngine.stopEngine();
   xkrSwapAsb.stopAsb();
   if (swapRescueTimer) {
@@ -279,6 +313,22 @@ function makerHasInflightSwaps() {
   const wid = walletKey() || "default";
   const cache = (swapsStore.get("swaps") || {})[wid] || {};
   return Object.values(cache).some((s) => s && s.role === "maker" && s.completed === false);
+}
+
+// Synchronous "is it dangerous to quit right now?" for the before-quit guard.
+// Unsafe when any swap (either role) is still in flight, OR the maker board is
+// live -- a taker could be mid swap-setup with us this instant, and killing the
+// ASB before it persists its per-swap secrets orphans that swap. Reads only the
+// cache + the maker flag so it can run inside the synchronous before-quit hook.
+function swapUnsafeToQuit() {
+  try {
+    const wid = walletKey() || "default";
+    const cache = (swapsStore.get("swaps") || {})[wid] || {};
+    const inflight = Object.values(cache).some((s) => s && s.completed === false);
+    return inflight || !!swapMaker;
+  } catch (_) {
+    return false;
+  }
 }
 
 // The boot-time resume-only ASB exists ONLY to finish stranded swaps and never
@@ -493,12 +543,19 @@ async function reBridgeAndResume(info, reason = "resume") {
     .catch((err) => console.error(`${reason}: resume failed for`, info.swap_id, err.message));
 }
 
+// Swaps the user has explicitly asked to cancel/abandon. The resume + rescue
+// paths skip these so they aren't re-driven (and don't re-grab the global swap
+// lock) while they're being torn down / refunded.
+const cancelRequested = new Set();
+
 // Resume every unfinished swap after an engine (re)start.
 async function resumeInFlightSwaps() {
   try {
     const infos = await xkrSwapRpc.swapInfos();
     if (!Array.isArray(infos)) return;
-    const inflight = infos.filter((i) => i && i.completed === false && i.swap_id);
+    const inflight = infos.filter(
+      (i) => i && i.completed === false && i.swap_id && !cancelRequested.has(i.swap_id),
+    );
     if (!inflight.length) return;
     for (const info of inflight) reBridgeAndResume(info, "resume");
   } catch (e) {
@@ -537,6 +594,10 @@ async function rescueStalledSwaps() {
       if (!info || !info.swap_id) continue;
       // Pre-lock == unfinished AND still before BTC is locked (unknown/empty state
       // means "just created", which is also pre-lock).
+      if (cancelRequested.has(info.swap_id)) {
+        swapPrelockSince.delete(info.swap_id);
+        continue; // user is cancelling this one; don't fight it
+      }
       const preLock =
         info.completed === false && (!info.state_name || SWAP_PRELOCK_STATES.has(info.state_name));
       if (!preLock) {
@@ -672,6 +733,31 @@ ipcMain.handle("swap-resume", (e, swapId) => swapRpc(() => xkrSwapRpc.resume(swa
 // The engine's recorded failure reason for a swap (async setup failures never
 // reach swap-infos), so the monitor can show WHY a swap didn't get off the ground.
 ipcMain.handle("swap-error", (e, swapId) => swapRpc(() => xkrSwapRpc.swapError(swapId)));
+
+// Cancel (abandon + refund) a swap the user no longer wants -- e.g. one wedged
+// because the maker never recorded it. Two steps, because the engine serialises
+// swaps behind a single global lock:
+//   1. suspend_current_swap -- releases that lock so the wedged swap stops holding
+//      it and new swaps can run again (this is the immediate unblock).
+//   2. cancel_and_refund -- returns the locked BTC. It's gated by the on-chain
+//      cancel timelock (it publishes the cancel tx, which the network only accepts
+//      once the timelock has expired), so before then it errors and the refund
+//      must be retried later; nothing is lost, the BTC stays safely locked.
+// The swap is flagged so the resume/rescue paths don't immediately re-drive it and
+// re-block the engine while the user is tearing it down.
+ipcMain.handle("swap-cancel", async (e, swapId) => {
+  if (swapId) cancelRequested.add(swapId);
+  // Free the global swap lock first (unblocks new swaps right away).
+  await swapRpc(() => xkrSwapRpc.suspendCurrentSwap());
+  await sleep(750); // let the suspended swap release the lock before we re-acquire it
+  // Kick the cancel+refund. It can run long (waits for the cancel tx to confirm)
+  // and is time-gated, so don't block the UI on it -- report that teardown began
+  // and let swap-infos polling surface the refund/failed state.
+  swapRpc(() => xkrSwapRpc.cancelAndRefund(swapId))
+    .then((r) => console.log("swap-cancel: cancel_and_refund", swapId, JSON.stringify(r)))
+    .catch((err) => console.warn("swap-cancel: cancel_and_refund", swapId, err.message));
+  return { ok: true };
+});
 
 // Start market-making: launch the local ASB with its control JSON-RPC enabled,
 // ask it (over RPC, not by scraping logs) for its libp2p peer id, then advertise
