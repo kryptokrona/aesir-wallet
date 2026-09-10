@@ -90,7 +90,14 @@ function withMainWalletWriteLock(fn) {
 }
 
 // Import a wallet, sync it, run `fn(wallet)`, and always stop it afterwards.
-async function withWallet(makeWallet, fn) {
+// opts.scanPool: also scan mempool (pool) transactions. The maker's XKR lock
+// sits UNCONFIRMED in the pool right after it's broadcast; with pool scanning
+// off, neither getBalance() nor getTransactions() sees it until a block confirms
+// it (irregular/slow on testnet), so watchForLock would stall for minutes with
+// "timed out waiting for: deposit" / "detected the deposit but returned no
+// txHash". Scanning the pool lets us grab the lock the moment it hits the
+// mempool. Matches the main wallet, which runs scanPoolTransactions(true).
+async function withWallet(makeWallet, fn, opts = {}) {
     const [wallet, err] = await makeWallet();
     if (err) throw new Error(err.toString());
     try {
@@ -99,6 +106,7 @@ async function withWallet(makeWallet, fn) {
         // report a 0 balance. Off on mainnet (normal transfers) where it's a
         // large, needless sync cost. See scanCoinbase().
         if (scanCoinbase()) wallet.scanCoinbaseTransactions(true);
+        if (opts.scanPool) wallet.scanPoolTransactions(true);
         await wallet.start();
         return await fn(wallet);
     } finally {
@@ -150,6 +158,7 @@ const methods = {
                 });
                 return { detected: true, unlocked, locked, txHash };
             },
+            { scanPool: true }, // see the maker's lock while it's still unconfirmed in the pool
         );
     },
 

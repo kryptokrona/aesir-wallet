@@ -12,6 +12,27 @@
   let pageNum = 0;
   let xkrTxs = [];
 
+  // Locally-recorded "first seen" time (unix seconds) per tx, so testnet block
+  // timestamps that are 0 or bogusly in the FUTURE don't scramble the order. We
+  // trust an on-chain time only when it's sane (present and not in the future);
+  // otherwise we fall back to when this wallet first saw the tx. Persisted so the
+  // order is stable across reloads.
+  const TX_SEEN_KEY = 'txFirstSeen';
+  let txSeen = {};
+  try {
+    txSeen = JSON.parse(localStorage.getItem(TX_SEEN_KEY) || '{}');
+  } catch (_) {}
+  function effTime(key, reported) {
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (!txSeen[key]) {
+      txSeen[key] = nowSec;
+      try {
+        localStorage.setItem(TX_SEEN_KEY, JSON.stringify(txSeen));
+      } catch (_) {}
+    }
+    return reported > 0 && reported <= nowSec ? reported : txSeen[key];
+  }
+
   let btcPoll;
   onMount(async () => {
     await Promise.all([loadXkr(), refreshBtc(), getCoinPriceFromAPI()]);
@@ -36,19 +57,19 @@
       kind: 'xkr',
       id: t.hash,
       amount: parseFloat(t.amount) / 100000,
-      time: t.time || 0,
+      time: effTime('xkr:' + t.hash, t.time || 0),
       confirmed: t.confirmed !== false,
     })),
     ...(($btc.txs || []).map((t) => ({
       kind: 'btc',
       id: t.txid,
       amount: (t.amount_sat || 0) / 1e8,
-      time: t.timestamp || 0,
+      time: effTime('btc:' + t.txid, t.timestamp || 0),
       confirmed: !!t.confirmed,
     }))),
     // Pending (unconfirmed) txs just happened -- float them to the top even
     // though they have no timestamp yet, then order each group newest-first.
-  ].sort((a, b) => (a.confirmed === b.confirmed ? (b.time || 0) - (a.time || 0) : a.confirmed ? 1 : -1));
+  ].sort((a, b) => (a.confirmed === b.confirmed ? b.time - a.time : a.confirmed ? 1 : -1));
 
   // Fixed rows per page (the last page may be shorter). Clamp the current page if
   // the underlying list shrank between refreshes.

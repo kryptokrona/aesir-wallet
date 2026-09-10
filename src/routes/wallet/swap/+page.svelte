@@ -243,9 +243,11 @@
     return Date.parse(iso);
   }
 
-  // Sort key: a missing/unparseable start_date means the swap just kicked off
-  // and hasn't been dated yet, so treat it as "now" and pin it to the top.
+  // Sort key: prefer the locally-recorded `firstSeen` (stable, monotonic -- set when
+  // we first cached the swap), since the engine's start_date can be unparseable or
+  // inconsistent. Fall back to start_date, then to "now" (a brand-new swap pins top).
   const swapTime = (s) => {
+    if (s && Number.isFinite(s.firstSeen)) return s.firstSeen;
     const t = parseSwapDate(s?.start_date);
     return Number.isFinite(t) ? t : Date.now();
   };
