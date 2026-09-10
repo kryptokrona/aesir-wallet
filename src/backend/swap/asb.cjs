@@ -45,6 +45,25 @@ function disableTor(configPath) {
   }
 }
 
+// Zero the maker ask_spread. The config defaults it to 0.02 (2%), which the ASB
+// applies ON TOP of the price the user set with the slider -- so the maker locks
+// price/(1+spread) XKR and the taker (quoting at the raw price) sees a ~2% shortfall
+// (e.g. buys "100000" but the maker records 98039). Our slider price IS the final
+// ask, so make the spread 0. Idempotent; re-applied on every start.
+function zeroAskSpread(configPath) {
+  try {
+    if (!configPath || !fs.existsSync(configPath)) return;
+    let toml = fs.readFileSync(configPath, "utf8");
+    const patched = toml.replace(/^(\s*ask_spread\s*=\s*)"?[0-9.]+"?\s*$/m, "$1" + "0.0");
+    if (patched !== toml) {
+      fs.writeFileSync(configPath, patched);
+      console.log("[xkr-swap-asb] set maker ask_spread = 0 (slider price is the final ask)");
+    }
+  } catch (e) {
+    console.warn(`[xkr-swap-asb] could not patch ask_spread: ${e.message}`);
+  }
+}
+
 // Resolve the ASB binary (the swap-asb crate builds a bin named `asb`):
 //   1. XKR_SWAP_ASB_BIN env var (dev / explicit override)
 //   2. packaged app: <resources>/bin/asb[.exe]
@@ -141,8 +160,10 @@ async function startAsb({ app, configPath, testnet = true, autoGenerateConfig = 
     }
   }
 
-  // Ensure Tor (onion service + wormhole) is off before every start.
+  // Ensure Tor (onion service + wormhole) is off, and that the maker sells at the
+  // exact slider price (no hidden 2% spread), before every start.
   disableTor(configPath);
+  zeroAskSpread(configPath);
 
   const args = [];
   if (testnet) args.push("--testnet");
