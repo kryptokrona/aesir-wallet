@@ -1311,10 +1311,15 @@ ipcMain.on("start-wallet", async (e, walletName, password, node, file) => {
   mainWindow.webContents.send("wallet-started");
 
   while (true) {
+    // Stop the sync loop once the window is gone (app closing/closed), otherwise
+    // every `mainWindow.webContents.send` below throws "reading 'webContents' of
+    // null" on shutdown.
+    if (!mainWindow || mainWindow.isDestroyed()) break;
 
     try {
       //Start syncing
       await sleep(5 * 1000);
+      if (!mainWindow || mainWindow.isDestroyed()) break;
       const [walletBlockCount, localDaemonBlockCount, networkBlockCount] = walletBackend.getSyncStatus();
       const balance = await walletBackend.getBalance();
       console.log('Balance: ', balance);

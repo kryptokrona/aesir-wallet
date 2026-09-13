@@ -351,11 +351,19 @@
     starting = true;
     const snap = { btc: amountNum, xkr: xkrReceive, rate, maker: short(activeSeller.peer_id) };
     try {
-      const res = await window.api.invoke('swap-start', {
+      const startArgs = {
         xkrAddress: activeSeller.xkrAddress,
         amountSat,
         xkrReceiveAddress: primaryAddress,
-      });
+      };
+      let res = await window.api.invoke('swap-start', startArgs);
+      // A previous swap that never got off the ground can still hold the swap
+      // lock; free it and retry once so the user isn't dead-ended.
+      if (res && !res.ok && /active swap lock/i.test(res.error || '')) {
+        await window.api.invoke('swap-cancel', activeSwapId || null).catch(() => {});
+        await new Promise((r) => setTimeout(r, 900));
+        res = await window.api.invoke('swap-start', startArgs);
+      }
       if (res && res.ok && res.result?.swap_id) {
         activeSwapId = res.result.swap_id;
         snapshot = snap;
@@ -395,10 +403,14 @@
   let confirmCancel = false;
   let cancelling = false;
   async function cancelSwap() {
-    if (!activeInfo || !activeInfo.swap_id) return;
+    // Use activeSwapId (set at start) as the fallback: a swap stuck getting off
+    // the ground never reaches swap_infos, so activeInfo is null -- but we still
+    // need to cancel it to release the swap lock and retry.
+    const id = activeInfo?.swap_id || activeSwapId;
+    if (!id) return;
     cancelling = true;
     try {
-      await window.api.invoke('swap-cancel', activeInfo.swap_id);
+      await window.api.invoke('swap-cancel', id);
     } catch (_) {
       // best-effort: the suspend half still frees the lock; refund is retryable
     }
@@ -910,12 +922,21 @@
           or became unreachable during setup. No BTC was sent. Check the app logs for details.
         </p>
       {/if}
-      <button class="primary inline" on:click={newSwap}>Back</button>
+      <!-- A stuck swap still holds the swap lock; cancel (not just navigate) so a
+           retry isn't blocked by "an active swap lock". No-op if already released. -->
+      <button class="primary inline" on:click={cancelSwap} disabled={cancelling}>
+        {cancelling ? 'Cancelling…' : 'Back'}
+      </button>
     {:else if monitorStatusMsg}
       <p class="hint">{monitorStatusMsg}</p>
-      <button class="primary inline" on:click={newSwap}>Back</button>
+      <button class="primary inline" on:click={cancelSwap} disabled={cancelling}>
+        {cancelling ? 'Cancelling…' : 'Cancel & go back'}
+      </button>
     {:else}
       <p class="hint">Loading swap…</p>
+      <button class="ghost inline" on:click={cancelSwap} disabled={cancelling}>
+        {cancelling ? 'Cancelling…' : 'Cancel'}
+      </button>
     {/if}
   </div>
 {/if}
