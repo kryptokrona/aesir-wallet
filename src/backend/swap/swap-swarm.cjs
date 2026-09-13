@@ -124,32 +124,62 @@ function startMaker(opts) {
   const conns = new Set();
   const beams = new Set();
 
+  // Persistent per-maker beam: a single stable topic the maker joins ONCE at
+  // startup and keeps warm (announced on the DHT) for the whole session, exactly
+  // like the board. Takers reuse it for every swap. A warm topic hole-punches
+  // reliably; a fresh random topic per swap (the old model) had to punch cold
+  // each time and frequently "never connected". The key is advertised so takers
+  // know which topic to join. Each incoming beam connection is bridged to its own
+  // fresh ASB socket, so multiple takers still fan out cleanly.
+  const makerBeamKey = randomKey();
+
   async function makeAnnounce() {
     const quote = getQuote ? await getQuote().catch(() => null) : null;
-    const payload = { xkrAddress, peerId: libp2pPeerId, quote, ts: Date.now() };
+    const payload = { xkrAddress, peerId: libp2pPeerId, beamKey: makerBeamKey, quote, ts: Date.now() };
     const sig = await signXkr(JSON.stringify(payload), xkrPrivateSpendKey);
     return { type: "announce", payload, sig };
   }
 
-  function openMakerBeam(beamKey) {
-    const beam = joinTopic(beamKey, { maxPeers: 4, log });
+  // opts.persistent: keep the beam joined for the whole session (the stable
+  // per-maker beam). Otherwise it's an old-style per-swap beam (compat for takers
+  // that still send `swap-init`) and is reclaimed after the swap window.
+  function openMakerBeam(beamKey, { persistent = false } = {}) {
+    const beam = joinTopic(beamKey, { maxPeers: 32, log });
     beams.add(beam);
-    log(`maker: joined private beam ${beamKey.slice(0, 8)}…, waiting for taker`);
+    log(`maker: joined ${persistent ? "persistent" : "private"} beam ${beamKey.slice(0, 8)}…, waiting for taker`);
     beam.swarm.on("connection", (conn) => {
-      log("maker: taker connected on private beam, dialing ASB");
       conn.on("error", (e) => log(`maker: beam conn error: ${e.message}`));
-      const sock = net.connect(asbPort, asbHost, () => {
-        log(`maker: ASB ${asbHost}:${asbPort} connected, bridging`);
+      // Dial the ASB LAZILY — only once the taker actually sends swap bytes.
+      // A persistent beam parks idle connections between swaps; dialing eagerly
+      // would hold an idle ASB socket that libp2p drops after its handshake
+      // timeout, churning reconnects. Pause the beam until the ASB is ready and
+      // replay the first chunk so nothing is lost.
+      conn.once("data", (first) => {
+        log("maker: swap bytes on beam, dialing ASB");
+        conn.pause();
+        const sock = net.connect(asbPort, asbHost, () => {
+          log(`maker: ASB ${asbHost}:${asbPort} connected, bridging`);
+          try { sock.write(first); } catch (_) {}
+          bridge(conn, sock, { log, label: "maker-beam↔asb" });
+          conn.resume();
+        });
+        sock.on("error", (e) => {
+          log(`maker: ASB socket error (${asbHost}:${asbPort}): ${e.message}`);
+          try { conn.destroy(); } catch (_) {}
+        });
       });
-      sock.on("error", (e) => log(`maker: ASB socket error (${asbHost}:${asbPort}): ${e.message}`));
-      bridge(conn, sock, { log, label: "maker-beam↔asb" });
     });
-    // reclaim the beam once the swap has had time to finish
-    setTimeout(() => {
-      beams.delete(beam);
-      try { beam.swarm.destroy(); } catch (_) {}
-    }, BEAM_MAX_LIFETIME_MS);
+    if (!persistent) {
+      // reclaim the compat beam once the swap has had time to finish
+      setTimeout(() => {
+        beams.delete(beam);
+        try { beam.swarm.destroy(); } catch (_) {}
+      }, BEAM_MAX_LIFETIME_MS);
+    }
   }
+
+  // Stand up the persistent beam immediately so it's warm before any swap.
+  openMakerBeam(makerBeamKey, { persistent: true });
 
   board.swarm.on("connection", (conn) => {
     conns.add(conn);
@@ -234,18 +264,60 @@ function startDiscovery(opts = {}) {
       }
       makers.set(msg.payload.xkrAddress, { ...msg.payload, conn, seen: Date.now() });
       log(`discovery: maker ${msg.payload.xkrAddress.slice(0, 12)}… (peer ${String(msg.payload.peerId).slice(0, 12)}…)`);
+      // Warm the maker's persistent beam as soon as we discover it, so even the
+      // FIRST swap connects over an already-hole-punched topic (idempotent).
+      if (typeof msg.payload.beamKey === "string" && msg.payload.beamKey) {
+        try { ensureBeam(msg.payload.xkrAddress, msg.payload.beamKey); } catch (_) {}
+      }
       onUpdate(list());
     });
   });
 
-  // Open a private beam to `xkrAddress` and bridge it to a fresh local socket the
-  // Rust taker dials. Resolves { multiaddr, peerId, close } for buy_xmr_direct.
+  // Persistent per-maker beam cache. We join each maker's advertised beam topic
+  // ONCE and keep it warm; because the topic stays announced on the DHT, its
+  // connections hole-punch reliably (like the board). A tiny broker hands the
+  // warm connection to whichever engine socket needs it (the swap lock means only
+  // one is active at a time), and parks a spare so the next swap connects instantly.
+  const beamCache = new Map(); // xkrAddress -> { key, swarm, idle:[conn], waiters:[{resolve,timer}] }
+
+  function ensureBeam(xkrAddress, beamKey) {
+    let bs = beamCache.get(xkrAddress);
+    if (bs && bs.key === beamKey) return bs;
+    if (bs) { try { bs.swarm.destroy(); } catch (_) {} beamCache.delete(xkrAddress); } // maker restarted -> new key
+    const { swarm } = joinTopic(beamKey, { maxPeers: 32, log });
+    bs = { key: beamKey, swarm, idle: [], waiters: [] };
+    swarm.on("connection", (conn) => {
+      conn.on("error", () => {});
+      conn.on("close", () => {
+        const i = bs.idle.indexOf(conn);
+        if (i >= 0) bs.idle.splice(i, 1);
+      });
+      const w = bs.waiters.shift();
+      if (w) { clearTimeout(w.timer); w.resolve(conn); }
+      else bs.idle.push(conn);
+    });
+    beamCache.set(xkrAddress, bs);
+    log(`taker: joined persistent beam ${beamKey.slice(0, 8)}… for maker ${String(xkrAddress).slice(0, 12)}…`);
+    return bs;
+  }
+
+  function getBeamConn(bs, timeoutMs) {
+    return new Promise((resolve, reject) => {
+      const conn = bs.idle.shift();
+      if (conn) return resolve(conn);
+      const timer = setTimeout(() => {
+        const idx = bs.waiters.findIndex((x) => x.timer === timer);
+        if (idx >= 0) bs.waiters.splice(idx, 1);
+        reject(new Error("persistent beam connect timeout"));
+      }, timeoutMs);
+      bs.waiters.push({ resolve, timer });
+    });
+  }
+
   // Open a durable local bridge to `xkrAddress`. The local TCP server stays up for
-  // the whole swap: EACH connection the Rust engine makes to it (the initial dial
-  // AND every `redial` reconnect the libp2p stack does when a connection drops)
-  // gets its OWN fresh private beam to the maker. A single-shot bridge broke here
-  // — once the first beam closed, redial hit a refused port and the swap wedged.
-  // The maker opens a new ASB-bridged beam per swap-init, so this fans out cleanly.
+  // the whole swap; EACH connection the Rust engine makes to it is bridged to the
+  // maker over the persistent beam (a warm, reused topic). Falls back to the old
+  // per-swap random beam for makers that don't advertise a beamKey (older wallets).
   function openSwapBridge(xkrAddress) {
     return new Promise((resolve, reject) => {
       log(`taker: swap requested for maker ${String(xkrAddress).slice(0, 12)}…; ${makers.size} maker(s) known`);
@@ -255,39 +327,49 @@ function startDiscovery(opts = {}) {
         return reject(new Error("maker not found / offline (board connection stale)"));
       }
 
-      const liveBeams = new Set();
+      const usePersistent = typeof maker.beamKey === "string" && maker.beamKey.length > 0;
+      const bs = usePersistent ? ensureBeam(xkrAddress, maker.beamKey) : null;
+      const liveBeams = new Set(); // only used by the compat (random-beam) path
 
-      // For one engine socket: spin up a private beam, bridge them, tear both down
-      // together. Independent of every other engine socket.
-      const bridgeOneConnection = (sock) => {
+      const bridgeOneConnection = async (sock) => {
+        if (usePersistent) {
+          try {
+            const conn = await getBeamConn(bs, BEAM_CONNECT_TIMEOUT_MS);
+            log("taker: engine dialed bridge — bridging over persistent beam");
+            conn.on("error", (e) => log(`taker: beam conn error: ${e.message}`));
+            // bridge() destroys the beam conn when the engine socket closes; that
+            // cleanly ends the maker's ASB socket, and the warm topic reconnects a
+            // fresh conn (parked as idle) for the next swap.
+            bridge(conn, sock, { log, label: "taker-engine↔beam" });
+          } catch (e) {
+            log(`taker: persistent beam never connected (${e.message}) — closing socket`);
+            try { sock.destroy(); } catch (_) {}
+          }
+          return;
+        }
+
+        // ---- compat: maker without a persistent beam -> old per-swap beam ----
         const beamKey = randomKey();
         log(`taker: engine dialed bridge — opening private beam ${beamKey.slice(0, 8)}…`);
         if (!maker.conn) {
-          log("taker: maker board connection gone, cannot open beam for this dial");
           try { sock.destroy(); } catch (_) {}
           return;
         }
         sendJson(maker.conn, { type: "swap-init", beamKey });
         const beam = joinTopic(beamKey, { maxPeers: 4, log });
         liveBeams.add(beam);
-
         let bridged = false;
-        const teardown = () => {
-          liveBeams.delete(beam);
-          try { beam.swarm.destroy(); } catch (_) {}
-        };
+        const teardown = () => { liveBeams.delete(beam); try { beam.swarm.destroy(); } catch (_) {} };
         const timeout = setTimeout(() => {
           if (bridged) return;
           log("taker: private beam for this dial never connected — closing socket");
           try { sock.destroy(); } catch (_) {}
           teardown();
         }, BEAM_CONNECT_TIMEOUT_MS);
-
         beam.swarm.on("connection", (conn) => {
           if (bridged) { try { conn.destroy(); } catch (_) {} return; }
           bridged = true;
           clearTimeout(timeout);
-          log("taker: connected to maker on private beam, piping to engine");
           conn.on("error", (e) => log(`taker: beam conn error: ${e.message}`));
           conn.on("close", teardown);
           bridge(conn, sock, { log, label: "taker-engine↔beam" });
@@ -303,6 +385,8 @@ function startDiscovery(opts = {}) {
         resolve({
           multiaddr: `/ip4/127.0.0.1/tcp/${port}`,
           peerId: maker.peerId,
+          // Keep the persistent beam warm for the next swap; only tear down the
+          // bridge server and any compat (random) beams.
           close() {
             try { srv.close(); } catch (_) {}
             for (const b of liveBeams) try { b.swarm.destroy(); } catch (_) {}
@@ -314,7 +398,15 @@ function startDiscovery(opts = {}) {
   }
 
   log("taker: listening on the swap board for makers");
-  return { list, openSwapBridge, stop() { try { board.swarm.destroy(); } catch (_) {} } };
+  return {
+    list,
+    openSwapBridge,
+    stop() {
+      for (const bs of beamCache.values()) try { bs.swarm.destroy(); } catch (_) {}
+      beamCache.clear();
+      try { board.swarm.destroy(); } catch (_) {}
+    },
+  };
 }
 
 module.exports = { startMaker, startDiscovery, BOARD_KEY };
