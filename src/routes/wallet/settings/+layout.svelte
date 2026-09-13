@@ -19,6 +19,11 @@
       active={$page.url.pathname === '/wallet/settings/node'}
     />
     <Button
+      text="BTC node"
+      on:click={() => goto('/wallet/settings/btc-node')}
+      active={$page.url.pathname === '/wallet/settings/btc-node'}
+    />
+    <Button
       text="Wallet"
       on:click={() => goto('/wallet/settings/wallet')}
       active={$page.url.pathname === '/wallet/settings/wallet'}

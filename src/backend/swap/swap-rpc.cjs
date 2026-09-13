@@ -70,6 +70,8 @@ const resume = (swapId, sellerMultiaddr) =>
 // The last recorded failure reason for a swap (async setup failures don't appear
 // in swap_infos). Returns { swap_id, error: string | null }.
 const swapError = (swapId) => call("swap_error", { swap_id: swapId });
+// Estimated on-chain fee (sats) for the BTC lock tx of `amountSat`. Returns { fee_sat }.
+const estimateLockFee = (amountSat) => call("estimate_lock_fee", { btc_amount_sat: amountSat });
 // Suspend whatever swap currently holds the engine's global swap lock, freeing it
 // so new swaps (and a subsequent cancel_and_refund) can run. Returns the suspended
 // swap id, or null if nothing was running.
@@ -100,6 +102,7 @@ module.exports = {
   withdrawBtc,
   resume,
   swapError,
+  estimateLockFee,
   suspendCurrentSwap,
   cancelAndRefund,
   buyXmrDirect,

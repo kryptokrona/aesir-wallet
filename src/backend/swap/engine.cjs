@@ -146,4 +146,12 @@ function isRunning() {
   return !!engineProcess;
 }
 
-module.exports = { startEngine, stopEngine, isRunning, resolveEngineBinary };
+// Restart the engine reusing the last start options, with `overrides` merged in
+// (e.g. a new electrumUrl when the user picks a different Bitcoin node). No-op if
+// the engine was never started.
+function restart(overrides = {}) {
+  if (!engineOpts) return null;
+  return startEngine({ ...engineOpts, ...overrides });
+}
+
+module.exports = { startEngine, stopEngine, isRunning, restart, resolveEngineBinary };
