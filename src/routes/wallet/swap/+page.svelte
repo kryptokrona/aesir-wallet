@@ -283,6 +283,26 @@
     amountXkr = computeXkr(amountBtc);
   }
 
+  // Estimated BTC lock-tx fee (sats), fetched from the engine when the confirm
+  // modal opens so the user sees the real network fee before committing.
+  let feeSat = null;
+  let feeLoading = false;
+  async function fetchFeeEstimate() {
+    feeSat = null;
+    if (!amountSat) return;
+    feeLoading = true;
+    try {
+      const res = await window.api.invoke('swap-estimate-fee', amountSat);
+      if (res && res.ok && res.result && typeof res.result.fee_sat === 'number') {
+        feeSat = res.result.fee_sat;
+      }
+    } catch (_) {
+      // leave feeSat null -> UI shows "—"
+    } finally {
+      feeLoading = false;
+    }
+  }
+
   function openPrepare() {
     if (!engineUp) return err("Swap engine isn't running yet");
     if (!activeSeller) return err('No makers available yet');
@@ -292,6 +312,7 @@
     if (overBalance)
       return err('Amount too high — leave room for the Bitcoin network fee (try Max)');
     showPrepare = true;
+    fetchFeeEstimate();
   }
 
   // A started swap can fail during setup (e.g. the maker is out of XKR) before it
@@ -1113,6 +1134,18 @@
         <div class="prow sub">
           <span>Rate</span>
           <span>{rate} sat/XKR</span>
+        </div>
+        <div class="prow sub">
+          <span>Bitcoin network fee</span>
+          <span>
+            {#if feeLoading}
+              estimating…
+            {:else if feeSat != null}
+              {(feeSat / 1e8).toFixed(8)} BTC{#if fiatStr(feeSat / 1e8, 'btc', $fiat)} <em>({fiatStr(feeSat / 1e8, 'btc', $fiat)})</em>{/if}
+            {:else}
+              —
+            {/if}
+          </span>
         </div>
         <div class="prow sub">
           <span>Maker</span>

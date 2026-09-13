@@ -219,6 +219,19 @@ const XKR_SWAP_SERVE_PORT = 40010;
 // (e.g. Blockstream) rate-limits/stalls the initial wallet scan. Override with
 // XKR_SWAP_ELECTRUM_URL to force a specific server.
 const XKR_SWAP_ELECTRUM_URL = process.env.XKR_SWAP_ELECTRUM_URL || "";
+// Suggested Bitcoin (electrum) servers for the settings picker. Empty url =
+// "Automatic": the engine uses its built-in multi-server list with failover.
+const BTC_NODE_PRESETS = [
+  { label: "Automatic (recommended)", url: "" },
+  { label: "Blockstream (testnet)", url: "tcp://electrum.blockstream.info:60001" },
+  { label: "Blockstream SSL (testnet)", url: "ssl://electrum.blockstream.info:60002" },
+];
+// The user-chosen electrum URL (persisted), else the env override, else "" (auto).
+function getElectrumUrl() {
+  const saved = miscs.get("btcElectrumUrl");
+  if (typeof saved === "string") return saved;
+  return XKR_SWAP_ELECTRUM_URL;
+}
 // XKR rendezvous point(s) for maker discovery: comma-separated multiaddrs, each
 // with a /p2p/<peer-id> part. Defaults to the deployed XKR rendezvous node;
 // override with XKR_SWAP_RENDEZVOUS (empty string disables discovery).
@@ -472,7 +485,7 @@ async function startXkrSwapService(node) {
       app,
       xkrRpcPort: XKR_SWAP_RPC_PORT,
       servePort: XKR_SWAP_SERVE_PORT,
-      electrumUrl: XKR_SWAP_ELECTRUM_URL,
+      electrumUrl: getElectrumUrl(),
       testnet: true,
       rendezvous: XKR_SWAP_RENDEZVOUS,
       // Resumed swaps read their receive address from this env (not persisted by
@@ -733,6 +746,75 @@ ipcMain.handle("swap-resume", (e, swapId) => swapRpc(() => xkrSwapRpc.resume(swa
 // The engine's recorded failure reason for a swap (async setup failures never
 // reach swap-infos), so the monitor can show WHY a swap didn't get off the ground.
 ipcMain.handle("swap-error", (e, swapId) => swapRpc(() => xkrSwapRpc.swapError(swapId)));
+// Estimated BTC lock-tx fee (sats) for a given amount, so the UI can show it
+// before the user confirms a swap.
+ipcMain.handle("swap-estimate-fee", (e, amountSat) => swapRpc(() => xkrSwapRpc.estimateLockFee(amountSat)));
+// Bitcoin (electrum) node picker. get returns the current url + presets; set
+// persists the choice and restarts the swap engine so the new server takes effect.
+// Liveness probe for a Bitcoin electrum server: open a tcp:// or ssl://
+// connection and do the electrum `server.version` handshake, resolving true only
+// if the server answers. Times out so a dead host can't hang the UI. An empty
+// url ("Automatic") always passes -- the engine uses its built-in list.
+function checkElectrum(url, timeoutMs = 6000) {
+  return new Promise((resolve) => {
+    const netMod = require("net");
+    const tlsMod = require("tls");
+    const raw = typeof url === "string" ? url.trim() : "";
+    if (!raw) return resolve(true); // Automatic / built-in list
+    const m = /^(tcp|ssl):\/\/([^:/]+):(\d+)$/.exec(raw);
+    if (!m) return resolve(false);
+    const [, scheme, host, portStr] = m;
+    const port = Number(portStr);
+    let done = false;
+    let buf = "";
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      try { sock.destroy(); } catch (_) {}
+      resolve(ok);
+    };
+    const onConnect = () => {
+      try {
+        sock.write(JSON.stringify({ id: 0, method: "server.version", params: ["aesir", "1.4"] }) + "\n");
+      } catch (_) {
+        finish(false);
+      }
+    };
+    const sock =
+      scheme === "ssl"
+        ? tlsMod.connect({ host, port, rejectUnauthorized: false }, onConnect)
+        : netMod.connect({ host, port }, onConnect);
+    sock.setTimeout(timeoutMs, () => finish(false));
+    sock.on("error", () => finish(false));
+    sock.on("data", (d) => {
+      buf += d.toString("utf8");
+      const i = buf.indexOf("\n");
+      if (i < 0) return;
+      try {
+        const res = JSON.parse(buf.slice(0, i));
+        finish(!!res && (res.result != null || res.id === 0));
+      } catch (_) {
+        finish(false);
+      }
+    });
+  });
+}
+ipcMain.handle("check-btc-node", (e, url) => checkElectrum(url));
+ipcMain.handle("get-btc-node", () => ({
+  url: getElectrumUrl(),
+  presets: BTC_NODE_PRESETS,
+}));
+ipcMain.handle("set-btc-node", (e, url) => {
+  try {
+    const value = typeof url === "string" ? url.trim() : "";
+    miscs.set("btcElectrumUrl", value);
+    // Restart the engine (if running) so it reconnects to the chosen server.
+    const child = xkrSwapEngine.restart({ electrumUrl: value });
+    return { ok: true, url: value, restarted: !!child };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
 
 // Cancel (abandon + refund) a swap the user no longer wants -- e.g. one wedged
 // because the maker never recorded it. Two steps, because the engine serialises
@@ -1243,7 +1325,7 @@ ipcMain.on("start-wallet", async (e, walletName, password, node, file) => {
         app,
         xkrRpcPort: XKR_SWAP_RPC_PORT,
         servePort: XKR_SWAP_SERVE_PORT,
-        electrumUrl: XKR_SWAP_ELECTRUM_URL,
+        electrumUrl: getElectrumUrl(),
         testnet: true,
         seedKey: privateSpendKey,
         rendezvous: XKR_SWAP_RENDEZVOUS,
