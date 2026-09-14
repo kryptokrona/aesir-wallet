@@ -740,7 +740,7 @@
     </div>
   {:else if view === 'monitor'}
     <div class="head-actions">
-      {#if activeInfo && !activeTerminal}
+      {#if activeSwapId && !activeTerminal}
         <button class="backbutton warn" title="Cancel swap" on:click={() => (confirmCancel = true)}>
           Cancel
         </button>
@@ -949,15 +949,11 @@
         {cancelling ? 'Cancelling…' : 'Back'}
       </button>
     {:else if monitorStatusMsg}
+      <!-- Still trying; the header Cancel button releases the lock and goes back. -->
       <p class="hint">{monitorStatusMsg}</p>
-      <button class="primary inline" on:click={cancelSwap} disabled={cancelling}>
-        {cancelling ? 'Cancelling…' : 'Cancel & go back'}
-      </button>
     {:else}
+      <!-- Loading; cancel via the header Cancel button (shown while a swap is in flight). -->
       <p class="hint">Loading swap…</p>
-      <button class="ghost inline" on:click={cancelSwap} disabled={cancelling}>
-        {cancelling ? 'Cancelling…' : 'Cancel'}
-      </button>
     {/if}
   </div>
 {/if}
@@ -1133,27 +1129,23 @@
         </div>
         <div class="prow sub">
           <span>Rate</span>
-          <span>{rate} sat/XKR</span>
+          <span class="strong">
+            {rate} sat/XKR
+            {#if $fiat.btcPrice}<em>{fmtFiatSmall((rate / 1e8) * $fiat.btcPrice)} / XKR</em>{/if}
+          </span>
         </div>
         <div class="prow sub">
           <span>Bitcoin network fee</span>
-          <span>
+          <span class="strong">
             {#if feeLoading}
               estimating…
             {:else if feeSat != null}
-              {(feeSat / 1e8).toFixed(8)} BTC{#if fiatStr(feeSat / 1e8, 'btc', $fiat)} <em>({fiatStr(feeSat / 1e8, 'btc', $fiat)})</em>{/if}
+              {(feeSat / 1e5).toFixed(3)} mBTC
+              {#if fiatStr(feeSat / 1e8, 'btc', $fiat)}<em>{fiatStr(feeSat / 1e8, 'btc', $fiat)}</em>{/if}
             {:else}
               —
             {/if}
           </span>
-        </div>
-        <div class="prow sub">
-          <span>Maker</span>
-          <span>{activeSeller ? short(activeSeller.peer_id) : '—'}</span>
-        </div>
-        <div class="prow sub">
-          <span>Receive at</span>
-          <span>{short(primaryAddress)}</span>
         </div>
       </div>
       <p class="disclaimer">
