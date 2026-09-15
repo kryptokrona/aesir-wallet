@@ -6,6 +6,7 @@
   import Backward from '$lib/components/icons/Backward.svelte';
   import NodeSelector from '$lib/components/NodeSelector.svelte';
   import Button from '$lib/components/buttons/Button.svelte';
+  import LoginRibbon from '$lib/components/layout/LoginRibbon.svelte';
   import { wallet } from '$lib/stores/wallet.js';
   import { node } from '$lib/stores/node.js';
   import { sleep } from '$lib/utils';
@@ -76,6 +77,8 @@
 {#if animate}
   <StartFlash />
 {/if}
+
+<LoginRibbon />
 
 {#if nodeShouldBeSelected}
   <div class="node-selector-wrapper">
@@ -165,6 +168,8 @@
     opacity: 0;
   }
   section {
+    position: relative;
+    z-index: 1; // sit above the decorative LoginRibbon
     width: 100%;
     height: 100%;
     display: flex;
