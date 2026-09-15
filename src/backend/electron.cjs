@@ -1,6 +1,6 @@
 const windowStateManager = require("electron-window-state");
 const contextMenu = require("electron-context-menu");
-const { app, BrowserWindow, ipcMain, systemPreferences, powerMonitor, dialog, globalShortcut } = require("electron");
+const { app, BrowserWindow, ipcMain, systemPreferences, powerMonitor, dialog, globalShortcut, session } = require("electron");
 
 // In development the app name defaults to "Electron", so every dev Electron app
 // shares ~/Library/Application Support/Electron. Give this app its own folder.
@@ -128,7 +128,33 @@ function createMainWindow() {
   else serveURL(mainWindow);
 }
 
-app.once("ready", createMainWindow);
+// Guard against stale cached renderer assets breaking the UI after an app
+// update. Production serves the built SPA over electron-serve's app:// protocol,
+// whose responses (and any service worker) are cached in Chromium's store under
+// userData. When those go stale across versions the app can load the wrong
+// chunk for a route -- the failure we hit where a settings tab wouldn't mount
+// until the whole "Application Support/Aesir" folder was deleted. So on a
+// version change (and first run) clear ONLY the renderer caches once; user prefs
+// (electron-store JSON, localStorage, cookies) are left intact.
+async function clearRendererCacheOnUpgrade() {
+  try {
+    const current = app.getVersion();
+    const last = miscs.get("lastRunVersion");
+    if (last === current) return;
+    const ses = session.defaultSession;
+    await ses.clearCache();
+    await ses.clearStorageData({ storages: ["serviceworkers", "cachestorage", "shadercache"] });
+    miscs.set("lastRunVersion", current);
+    console.log(`[cache] cleared renderer cache on version change: ${last || "(fresh install)"} -> ${current}`);
+  } catch (e) {
+    console.warn("[cache] could not clear renderer cache on upgrade:", e.message);
+  }
+}
+
+app.once("ready", async () => {
+  await clearRendererCacheOnUpgrade();
+  createMainWindow();
+});
 
 app.on("activate", () => {
   if (!mainWindow) {
@@ -226,10 +252,12 @@ const BTC_NODE_PRESETS = [
   { label: "Blockstream (testnet)", url: "tcp://electrum.blockstream.info:60001" },
   { label: "Blockstream SSL (testnet)", url: "ssl://electrum.blockstream.info:60002" },
 ];
-// The user-chosen electrum URL (persisted), else the env override, else "" (auto).
+// BTC node selection is hardcoded to "Automatic" for now (the in-app electrum
+// picker was rolled back). Honour only the env override for power users; an
+// empty string means the engine uses its built-in multi-server electrum list
+// with failover. Any previously-persisted `btcElectrumUrl` is intentionally
+// ignored so everyone gets automatic selection.
 function getElectrumUrl() {
-  const saved = miscs.get("btcElectrumUrl");
-  if (typeof saved === "string") return saved;
   return XKR_SWAP_ELECTRUM_URL;
 }
 // XKR rendezvous point(s) for maker discovery: comma-separated multiaddrs, each

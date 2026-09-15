@@ -85,7 +85,16 @@
 <style lang="scss">
   .ribbon {
     position: absolute;
-    inset: 0;
+    // Deliberately a centred, CONTAINED box -- not full-bleed. Full-bleed
+    // overlaid the fixed 30px TopBar window controls (the red/orange buttons),
+    // which on Windows blocked them; and the visible field is only the pinhole
+    // circle anyway, so it never needed the whole page. Callers can override the
+    // box via --ribbon-w / --ribbon-h.
+    top: 50%;
+    left: 50%;
+    width: var(--ribbon-w, min(520px, 88vw));
+    height: var(--ribbon-h, min(500px, 74vh));
+    transform: translate(-50%, -50%);
     z-index: 0;
     overflow: hidden;
     pointer-events: none;
