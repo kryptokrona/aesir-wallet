@@ -6,7 +6,6 @@
   import { createChart } from 'lightweight-charts';
   import { transactions } from '$lib/stores/wallet';
   import { node } from '$lib/stores/node';
-  import { walletMode } from '$lib/stores/walletMode.js';
   import { btc, refreshBtc } from '$lib/stores/btc.js';
   import { fiat, getCoinPriceFromAPI } from '$lib/stores/fiat.js';
   import { fiatStr } from '$lib/utils/fiat.js';
@@ -17,8 +16,8 @@
 
   const shortId = (s) => (s ? s.slice(0, 8) + '…' + s.slice(-8) : '');
 
-  // Unified history feed, filtered by the active wallet mode:
-  //   xkr  -> XKR txs only, btc -> BTC txs only, fiat -> both (merged by time).
+  // Unified history feed: always show BOTH XKR and BTC history, merged by time,
+  // regardless of which balance (wallet mode) is currently displayed.
   $: feed = (() => {
     const xkr = ($transactions.latest || []).map((t) => ({
       kind: 'xkr',
@@ -35,14 +34,10 @@
       time: t.timestamp || 0,
     }));
     // Pending (unconfirmed) txs just happened -- float them to the top even
-    // without a timestamp yet, then order each group newest-first.
+    // without a timestamp yet, then order newest-first.
     const byRecency = (a, b) =>
       a.confirmed === b.confirmed ? (b.time || 0) - (a.time || 0) : a.confirmed ? 1 : -1;
-    let list;
-    if ($walletMode === 'btc') list = [...bt].sort(byRecency);
-    else if ($walletMode === 'fiat') list = [...xkr, ...bt].sort(byRecency);
-    else list = [...xkr].sort(byRecency);
-    return list.slice(0, 8);
+    return [...xkr, ...bt].sort(byRecency).slice(0, 8);
   })();
   let txChart;
   let chart;
