@@ -1,72 +1,19 @@
-// XKR wallet RPC service for atomic swaps.
-//
-// This is the XKR side of a BTC<->XKR atomic swap. The Rust swap engine
-// (xkr-swap-core, forked from eigenwallet/core) owns the swap protocol, the
-// Bitcoin side, and the cross-curve DLEQ / adaptor-signature crypto. Everything
-// that touches the Kryptokrona chain lives here and is served over a tiny local
-// JSON-RPC endpoint, backed by kryptokrona-wallet-backend-js.
-//
-// The swap's shared 2-of-2 output works with plain key arithmetic: the shared
-// spend pubkey is B_A+B_B and the shared view secret is v_A+v_B. Whoever learns
-// both spend shares reconstructs the one-time key and sweeps with an ordinary
-// transaction. The engine computes the combined keys (ed25519, curve25519-dalek)
-// and calls the three methods below; no consensus-critical code runs here.
-//
-// Methods (JSON-RPC 2.0 over HTTP POST /):
-//   ping()                                              -> "pong"
-//   encodeAddress({spendPublicKey, viewPublicKey})      -> {address}
-//   watchForLock({address, viewSecret, amount, timeoutMs?, scanHeight?})
-//                                                       -> {detected, unlocked, locked, txHash}
-//   sweep({spendSecret, viewSecret, destAddress, fee?, amount?, scanHeight?})
-//                                                       -> {txHash, amount, fee}
-//   confirmTx({spendSecret, viewSecret, txHash, confirmations?, timeoutMs?, scanHeight?})
-//                                                       -> {confirmed, confirmations}
-//   lockSend({senderSpendSecret, senderViewSecret, destAddress, amount, fee?, scanHeight?})
-//                                                       -> {txHash, amount, fee}
-//
-// Run standalone (for testing):
-//   node xkr-wallet-rpc.cjs --port 40000 --daemon 127.0.0.1:31001
-
 const http = require('http');
 const WB = require('kryptokrona-wallet-backend-js');
 const { Address } = require('kryptokrona-utils');
 
-const DEFAULT_FEE = 10; // atomic units (network MINIMUM_FEE)
+const DEFAULT_FEE = 10;
 
-// These three settings are read lazily (per call, not at module load) so a host
-// process that embeds this module (e.g. the Aesir app, which requires it at
-// startup) can set them just before a swap -- and the standalone maker can set
-// them once via launch env.
-
-// Ring size / mixin for the swap's XKR lock and sweep. Mainnet forbids mixin 0
-// (mixinZeroDisabled since height 620000) and enforces a range per fork -- the
-// current V4 regime is [1,5]. 3 is a safe in-range default. A sparse local
-// testnet with too few decoy outputs can override this to 0 via XKR_SWAP_MIXIN.
 const swapMixin = () => parseInt(process.env.XKR_SWAP_MIXIN || '3', 10);
 
-// Floor scan height used when the caller doesn't supply one. Reconstructing a
-// wallet from keys and syncing from genesis is prohibitively slow once the chain
-// is long, and the swap engine's lock/redeem calls don't pass a restore height.
-// Set XKR_WALLET_SCAN_HEIGHT to (roughly) the height the swap wallets were funded
-// at so each per-call reconstruction only scans recent blocks. 0 = from genesis.
 const floorScanHeight = () => parseInt(process.env.XKR_WALLET_SCAN_HEIGHT || '0', 10);
 
-// Whether to scan coinbase transactions. Needed only when swap funds arrive as
-// mined coinbase (a local testnet funded by mining) -- it's ~20x slower. On
-// mainnet inventory arrives as normal transfers, so leave this OFF. Enable with
-// XKR_SCAN_COINBASE=1 for a mining-funded testnet.
 const scanCoinbase = () => process.env.XKR_SCAN_COINBASE === '1' || process.env.XKR_SCAN_COINBASE === 'true';
 
 function makeDaemon(daemonHost, daemonPort, ssl) {
-    // isCacheApi=false; ssl defaults to false for local/known nodes.
     return new WB.Daemon(daemonHost, daemonPort, false, !!ssl);
 }
 
-// Option A: when a maker-side call (`balance` / `lockSend`) is for the app's OWN
-// primary wallet, use that live, already-synced instance instead of re-importing
-// and re-syncing a second copy. The two would otherwise diverge (different scan
-// height / coinbase setting) and the ASB would quote a balance it can't spend.
-// Returns the live wallet iff the supplied spend secret is the primary wallet's.
 function mainWalletIfMatches(ctx, spendSecret) {
     try {
         const w = ctx.getMainWallet && ctx.getMainWallet();
@@ -78,10 +25,6 @@ function mainWalletIfMatches(ctx, spendSecret) {
     }
 }
 
-// Serialize writes against the live primary wallet so two concurrent swap locks
-// can't both select the same inputs. (A manual UI send racing a lock is still
-// possible; wallet-backend-js marks inputs as it builds a tx, which bounds that
-// window, and a lock takes only seconds.)
 let mainWalletWriteChain = Promise.resolve();
 function withMainWalletWriteLock(fn) {
     const run = mainWalletWriteChain.then(fn, fn);
@@ -89,22 +32,10 @@ function withMainWalletWriteLock(fn) {
     return run;
 }
 
-// Import a wallet, sync it, run `fn(wallet)`, and always stop it afterwards.
-// opts.scanPool: also scan mempool (pool) transactions. The maker's XKR lock
-// sits UNCONFIRMED in the pool right after it's broadcast; with pool scanning
-// off, neither getBalance() nor getTransactions() sees it until a block confirms
-// it (irregular/slow on testnet), so watchForLock would stall for minutes with
-// "timed out waiting for: deposit" / "detected the deposit but returned no
-// txHash". Scanning the pool lets us grab the lock the moment it hits the
-// mempool. Matches the main wallet, which runs scanPoolTransactions(true).
 async function withWallet(makeWallet, fn, opts = {}) {
     const [wallet, err] = await makeWallet();
     if (err) throw new Error(err.toString());
     try {
-        // On a mining-funded testnet the inventory is coinbase, which
-        // wallet-backend-js skips by default -- without this the wallet would
-        // report a 0 balance. Off on mainnet (normal transfers) where it's a
-        // large, needless sync cost. See scanCoinbase().
         if (scanCoinbase()) wallet.scanCoinbaseTransactions(true);
         if (opts.scanPool) wallet.scanPoolTransactions(true);
         await wallet.start();
@@ -124,55 +55,41 @@ async function poll(desc, timeoutMs, intervalMs, pred) {
     }
 }
 
-// ---- RPC methods -----------------------------------------------------------
-
 const methods = {
     async ping() {
         return 'pong';
     },
 
-    // Encode the shared 2-of-2 keys as a fundable Kryptokrona address.
     async encodeAddress({ spendPublicKey, viewPublicKey }) {
         if (!spendPublicKey || !viewPublicKey) throw new Error('spendPublicKey and viewPublicKey required');
         const address = await Address.fromPublicKeys(spendPublicKey, viewPublicKey);
         return { address: await address.toString() };
     },
 
-    // Watch the shared address (view-only) until the locked deposit lands.
     async watchForLock({ address, viewSecret, amount, timeoutMs, scanHeight }, ctx) {
         if (!address || !viewSecret || !amount) throw new Error('address, viewSecret, amount required');
         return withWallet(
             () => WB.WalletBackend.importViewWallet(makeDaemon(ctx.daemonHost, ctx.daemonPort, ctx.ssl), scanHeight || floorScanHeight(), viewSecret, address),
             async (wallet) => {
-                // Poll until BOTH the balance reflects the deposit AND the incoming
-                // tx is listed. The wallet-backend can update the balance a beat
-                // before the tx appears in getTransactions(), which used to make us
-                // return { detected: true, txHash: null } and force the engine to
-                // retry the whole "waiting for XKR lock" step. Keep polling instead.
                 const { unlocked, locked, txHash } = await poll('deposit', timeoutMs || 180000, 2000, async () => {
                     const [u, l] = await wallet.getBalance();
                     if (u + l < amount) return null;
                     const incoming = (await wallet.getTransactions()).find((t) => t.totalAmount() > 0);
-                    if (!incoming) return null; // balance in, tx not listed yet -- wait
+                    if (!incoming) return null;
                     return { unlocked: u, locked: l, txHash: incoming.hash };
                 });
                 return { detected: true, unlocked, locked, txHash };
             },
-            { scanPool: true }, // see the maker's lock while it's still unconfirmed in the pool
+            { scanPool: true },
         );
     },
 
-    // Reconstruct the shared wallet from the combined secrets and sweep it out.
     async sweep({ spendSecret, viewSecret, destAddress, fee, amount, scanHeight }, ctx) {
         if (!spendSecret || !viewSecret || !destAddress) throw new Error('spendSecret, viewSecret, destAddress required');
         const useFee = typeof fee === 'number' ? fee : DEFAULT_FEE;
         return withWallet(
             () => WB.WalletBackend.importWalletFromKeys(makeDaemon(ctx.daemonHost, ctx.daemonPort, ctx.ssl), scanHeight || floorScanHeight(), viewSecret, spendSecret),
             async (wallet) => {
-                // Idempotency: if the shared output was already swept (e.g. a prior
-                // attempt that broadcast but whose response was lost), return that tx
-                // rather than double-spending — otherwise the caller's retry loop
-                // would spin forever against an already-empty output.
                 const outcome = await poll('spendable balance or prior sweep', 180000, 2000, async () => {
                     const prior = (await wallet.getTransactions()).find((t) => t.totalAmount() < 0);
                     if (prior) return { existing: prior.hash };
@@ -185,13 +102,13 @@ const methods = {
                 const sendAmount = typeof amount === 'number' ? amount : outcome.spendable - useFee;
                 const result = await wallet.sendTransactionAdvanced(
                     [[destAddress, sendAmount]],
-                    swapMixin(), // mixin
+                    swapMixin(),
                     WB.FeeType.FixedFee(useFee),
-                    undefined, // paymentID
-                    undefined, // subWalletsToTakeFrom
-                    wallet.getPrimaryAddress(), // change back to the shared address
-                    true, // relayToNetwork
-                    false, // sendAll
+                    undefined,
+                    undefined,
+                    wallet.getPrimaryAddress(),
+                    true,
+                    false,
                 );
                 if (!result.success) throw new Error(result.error.toString());
                 return { txHash: result.transactionHash, amount: sendAmount, fee: useFee };
@@ -199,10 +116,6 @@ const methods = {
         );
     },
 
-    // Confirm a transaction that spends FROM the shared address (redeem/refund)
-    // has reached `confirmations` depth. Keyed by txHash so it is safe to re-poll
-    // after a restart without re-broadcasting. Imports the shared wallet from the
-    // combined keys (like `sweep`) so the outgoing spend is reliably tracked.
     async confirmTx({ spendSecret, viewSecret, txHash, confirmations, timeoutMs, scanHeight }, ctx) {
         if (!spendSecret || !viewSecret || !txHash) throw new Error('spendSecret, viewSecret, txHash required');
         const need = typeof confirmations === 'number' ? confirmations : 1;
@@ -211,7 +124,7 @@ const methods = {
             async (wallet) => {
                 const depth = await poll('tx confirmations', timeoutMs || 600000, 3000, async () => {
                     const tx = await wallet.getTransaction(txHash);
-                    if (!tx || !tx.blockHeight) return null; // unseen or still in the pool
+                    if (!tx || !tx.blockHeight) return null;
                     const [, , networkBlockCount] = wallet.getSyncStatus();
                     const d = networkBlockCount - tx.blockHeight + 1;
                     return d >= need ? d : null;
@@ -221,20 +134,12 @@ const methods = {
         );
     },
 
-    // Alice's side: send `amount` from the ASB's own funded wallet to the shared
-    // address (the XKR lock). Imports the sender wallet from the ASB's keys. Note:
-    // unlike Monero's build-then-publish, this broadcasts atomically, so it is not
-    // crash-idempotent on the ASB's general-purpose wallet — the engine's state
-    // persistence bounds the double-send window to a crash mid-broadcast.
     async lockSend({ senderSpendSecret, senderViewSecret, destAddress, amount, fee, scanHeight }, ctx) {
         if (!senderSpendSecret || !senderViewSecret || !destAddress || !amount) {
             throw new Error('senderSpendSecret, senderViewSecret, destAddress, amount required');
         }
         const useFee = typeof fee === 'number' ? fee : DEFAULT_FEE;
 
-        // Maker path: spend directly from the app's live primary wallet (already
-        // synced, so no re-import/poll) -- this is the same wallet the ASB quoted
-        // its balance from, so what it advertised is what it can lock.
         const mainWallet = mainWalletIfMatches(ctx, senderSpendSecret);
         if (mainWallet) {
             return withMainWalletWriteLock(async () => {
@@ -242,19 +147,15 @@ const methods = {
                 if (unlocked < amount + useFee) {
                     throw new Error(`insufficient spendable XKR for lock: have ${unlocked}, need ${amount + useFee}`);
                 }
-                // NB: the limit-sell target is enforced at swap SETUP (the `balance`
-                // method below is capped to the order's remaining), not here -- by the
-                // time we lock, the swap is already accepted and counted, so a check
-                // against `remaining` here would reject the very swap that fills the order.
                 const result = await mainWallet.sendTransactionAdvanced(
                     [[destAddress, amount]],
                     swapMixin(),
                     WB.FeeType.FixedFee(useFee),
-                    undefined, // paymentID
-                    undefined, // subWalletsToTakeFrom
-                    mainWallet.getPrimaryAddress(), // change back to us
-                    true, // relayToNetwork
-                    false, // sendAll
+                    undefined,
+                    undefined,
+                    mainWallet.getPrimaryAddress(),
+                    true,
+                    false,
                 );
                 if (!result.success) throw new Error(result.error.toString());
                 return { txHash: result.transactionHash, amount, fee: useFee };
@@ -270,13 +171,13 @@ const methods = {
                 });
                 const result = await wallet.sendTransactionAdvanced(
                     [[destAddress, amount]],
-                    swapMixin(), // mixin
+                    swapMixin(),
                     WB.FeeType.FixedFee(useFee),
-                    undefined, // paymentID
-                    undefined, // subWalletsToTakeFrom
-                    wallet.getPrimaryAddress(), // change back to the ASB wallet
-                    true, // relayToNetwork
-                    false, // sendAll
+                    undefined,
+                    undefined,
+                    wallet.getPrimaryAddress(),
+                    true,
+                    false,
                 );
                 if (!result.success) throw new Error(result.error.toString());
                 return { txHash: result.transactionHash, amount, fee: useFee };
@@ -284,23 +185,12 @@ const methods = {
         );
     },
 
-    // Unlocked (spendable) + locked balance of the wallet reconstructed from the
-    // given secrets, in atomic units. The maker uses this to advertise an honest
-    // max_buy and to reject a swap setup it can't fund -- before the taker locks
-    // any BTC. Syncs toward the chain tip (bounded by the floor height), then
-    // reports whatever balance it has.
     async balance({ spendSecret, viewSecret, scanHeight }, ctx) {
         if (!spendSecret || !viewSecret) throw new Error('spendSecret, viewSecret required');
 
-        // Maker path: read the app's live, already-synced primary wallet. It is
-        // authoritative and instant -- no re-import, no scan-height/coinbase
-        // guessing, and it can't diverge from the balance the maker will lock.
         const mainWallet = mainWalletIfMatches(ctx, spendSecret);
         if (mainWallet) {
             let [unlocked, locked] = await mainWallet.getBalance();
-            // Limit-sell: cap the balance the ASB sees to the order's remaining XKR,
-            // so its swap-setup gate won't fund a swap beyond what we've committed to
-            // sell -- rejecting it BEFORE the taker locks any BTC.
             const remaining = ctx.makerRemaining && ctx.makerRemaining();
             if (typeof remaining === "number") unlocked = Math.min(unlocked, remaining);
             return { unlocked, locked };
@@ -309,8 +199,6 @@ const methods = {
         return withWallet(
             () => WB.WalletBackend.importWalletFromKeys(makeDaemon(ctx.daemonHost, ctx.daemonPort, ctx.ssl), scanHeight || floorScanHeight(), viewSecret, spendSecret),
             async (wallet) => {
-                // Catch up to the network tip (bounded) so the balance is current,
-                // then read it. If we never fully catch up, report what we have.
                 await poll('balance sync', 60000, 2000, async () => {
                     const [walletHeight, , networkHeight] = wallet.getSyncStatus();
                     return networkHeight > 0 && walletHeight >= networkHeight - 1 ? true : null;
@@ -321,8 +209,6 @@ const methods = {
         );
     },
 };
-
-// ---- JSON-RPC HTTP server --------------------------------------------------
 
 function start({ port, daemonHost, daemonPort, ssl, getMainWallet, makerRemaining }) {
     const ctx = { daemonHost, daemonPort, ssl: !!ssl, getMainWallet, makerRemaining };
@@ -357,7 +243,6 @@ function start({ port, daemonHost, daemonPort, ssl, getMainWallet, makerRemainin
 
 module.exports = { start, methods };
 
-// CLI entry point for standalone testing.
 if (require.main === module) {
     const args = process.argv.slice(2);
     const get = (flag, def) => {

@@ -1,33 +1,14 @@
-// Child-process manager for a LOCAL maker (xkr-swap-core's `swap-asb` binary).
-// A taker swap needs a maker (ASB) to swap against; for a self-contained wallet
-// demo we can run one locally as a managed child.
-//
-// NOTE: `swap-asb ... start` requires a pre-existing config.toml (otherwise it
-// drops into interactive setup, which can't run headless). Generating a valid
-// ASB config -- the TOML, the ASB's funded XKR wallet keys, the Bitcoin electrum
-// URL, and the libp2p listen address -- is a follow-up sub-task. This manager
-// handles the process lifecycle and expects `configPath` to point at a ready
-// config; it is non-fatal if the binary or config is missing.
-
 const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
 let asbProcess;
-let asbFingerprint; // identifies the config the running ASB was started with
+let asbFingerprint;
 
-// A stable identity for "the ASB started with these inputs". Used to decide
-// whether an already-running ASB can be reused instead of killed+respawned.
 function asbConfigFingerprint(env, startArgs, configPath) {
   return JSON.stringify({ env: env || {}, startArgs: startArgs || [], configPath: configPath || "" });
 }
 
-// Force-disable the ASB's Tor features in an existing config. We do our own NAT
-// traversal over HyperSwarm, so the ASB must NOT stand up a Tor onion service or
-// negotiate a Tor "wormhole": those advertise /onion3/... addresses that the
-// taker engine (no Tor transport) can't dial, poisoning its address book and
-// making redial fail with MultiaddrNotSupported. The ASB's generate-config
-// defaults wormhole_enabled=true, so we patch it every start (idempotent).
 function disableTor(configPath) {
   try {
     if (!configPath || !fs.existsSync(configPath)) return;
@@ -45,11 +26,6 @@ function disableTor(configPath) {
   }
 }
 
-// Zero the maker ask_spread. The config defaults it to 0.02 (2%), which the ASB
-// applies ON TOP of the price the user set with the slider -- so the maker locks
-// price/(1+spread) XKR and the taker (quoting at the raw price) sees a ~2% shortfall
-// (e.g. buys "100000" but the maker records 98039). Our slider price IS the final
-// ask, so make the spread 0. Idempotent; re-applied on every start.
 function zeroAskSpread(configPath) {
   try {
     if (!configPath || !fs.existsSync(configPath)) return;
@@ -64,10 +40,6 @@ function zeroAskSpread(configPath) {
   }
 }
 
-// Resolve the ASB binary (the swap-asb crate builds a bin named `asb`):
-//   1. XKR_SWAP_ASB_BIN env var (dev / explicit override)
-//   2. packaged app: <resources>/bin/asb[.exe]
-//   3. dev fallback: a sibling xkr-swap-core checkout's built binary.
 function resolveAsbBinary(app) {
   const fromEnv = process.env.XKR_SWAP_ASB_BIN;
   if (fromEnv) return fromEnv;
@@ -82,12 +54,6 @@ function resolveAsbBinary(app) {
   return null;
 }
 
-// Generate a default config.toml at `configPath` by running the ASB's own
-// non-interactive `generate-config` command (so the TOML is correct by
-// construction). Resolves true on success. Non-fatal.
-//
-// NOTE: the generated config yields a maker that still needs a FUNDED XKR wallet
-// (keys via XKR_ASB_SPEND_SECRET / XKR_ASB_VIEW_SECRET) before it can lock XKR.
 function generateConfig({ app, configPath, testnet = true, force = false, env = {} } = {}) {
   return new Promise((resolve) => {
     const bin = resolveAsbBinary(app);
@@ -101,7 +67,6 @@ function generateConfig({ app, configPath, testnet = true, force = false, env = 
     args.push("generate-config");
     if (force) args.push("--force");
 
-    // Pass env (e.g. XKR_SWAP_RENDEZVOUS) so the generated config embeds it.
     const child = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, ...env } });
     child.stdout.on("data", (d) => console.log(`[xkr-swap-asb] ${d.toString().trim()}`));
     child.stderr.on("data", (d) => console.log(`[xkr-swap-asb] ${d.toString().trim()}`));
@@ -113,21 +78,7 @@ function generateConfig({ app, configPath, testnet = true, force = false, env = 
   });
 }
 
-// Spawn the local ASB maker. Non-fatal on any failure. If the config is missing
-// and `autoGenerateConfig` is set (default), it is generated first.
-//
-// Params:
-//   app                - electron app (for isPackaged / resourcesPath)
-//   configPath         - path to a swap-asb config.toml
-//   testnet            - run with --testnet defaults
-//   autoGenerateConfig - generate the config if it doesn't exist (default true)
-//   env                - extra env vars (e.g. XKR_ASB_SPEND_SECRET /
-//                        XKR_ASB_VIEW_SECRET, XKR_WALLET_RPC_URL)
-//   onLog              - optional (text, stream) log callback
 async function startAsb({ app, configPath, testnet = true, autoGenerateConfig = true, env = {}, startArgs = [], onLog } = {}) {
-  // Idempotent: if an ASB is already running with the exact same config, reuse
-  // it rather than kill+respawn. A SIGTERM here tears down every live HyperSwarm
-  // beam, which breaks any swap that is currently in setup or in flight.
   const fp = asbConfigFingerprint(env, startArgs, configPath);
   if (asbProcess && asbFingerprint === fp) {
     console.log("[xkr-swap-asb] already running with identical config; reusing existing process");
@@ -160,8 +111,6 @@ async function startAsb({ app, configPath, testnet = true, autoGenerateConfig = 
     }
   }
 
-  // Ensure Tor (onion service + wormhole) is off, and that the maker sells at the
-  // exact slider price (no hidden 2% spread), before every start.
   disableTor(configPath);
   zeroAskSpread(configPath);
 

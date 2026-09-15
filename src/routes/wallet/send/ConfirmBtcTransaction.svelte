@@ -16,13 +16,9 @@
 
   let sending = false;
 
-  // Network fee estimate, shown before confirming (same RPC/figure as the swap
-  // confirmation modal). null = still loading, -1 = estimate unavailable.
   let feeSat = null;
   let lastEstimatedFor = '';
 
-  // Re-estimate whenever a new BTC tx is staged. "Send all" has no explicit
-  // amount, so estimate against the whole balance.
   $: estimateFee($wallet.preparedBtcTransaction);
 
   async function estimateFee(tx) {

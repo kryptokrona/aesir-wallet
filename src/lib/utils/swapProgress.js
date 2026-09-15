@@ -1,10 +1,3 @@
-// Maps the Rust taker's BobState display strings (from swap_infos `state_name`)
-// onto a compact, user-facing progress timeline. Shared by the swap page and
-// the SwapTimeline component so both agree on step index, friendly wording and
-// terminal outcome. The strings here must match swap-machine/src/bob/mod.rs.
-
-// The happy-path milestones, in order. `state_name` is bucketed into one of
-// these by STATE_STEP below.
 export const STEPS = [
   "Send BTC",
   "BTC locked",
@@ -14,7 +7,6 @@ export const STEPS = [
   "Done",
 ];
 
-// state_name -> index into STEPS.
 const STATE_STEP = {
   "quote has been requested": 0,
   "execution setup done": 0,
@@ -31,7 +23,6 @@ const STATE_STEP = {
   "xmr is redeemed": 5,
 };
 
-// A friendly, present-tense description of what's happening right now.
 const FRIENDLY = {
   "quote has been requested": "Requesting quote…",
   "execution setup done": "Preparing swap…",
@@ -46,7 +37,6 @@ const FRIENDLY = {
   "xmr redeem tx is constructed": "Claiming your XKR…",
   "xmr redeem tx is published": "Receiving XKR…",
   "xmr is redeemed": "Swap complete — XKR received!",
-  // refund / failure wording
   "waiting for cancel timelock expiration": "Swap didn't complete — preparing refund…",
   "cancel timelock is expired": "Preparing Bitcoin refund…",
   "btc cancel is published": "Refunding your Bitcoin…",
@@ -63,8 +53,6 @@ const FRIENDLY = {
   "btc is punished": "Swap failed and was punished.",
 };
 
-// Terminal / branch classification. "active" means still progressing on the
-// happy path; the rest are outcomes the UI treats specially.
 const REFUNDED = new Set([
   "btc is refunded",
   "btc is early refunded",
@@ -82,7 +70,6 @@ const REFUNDING = new Set([
   "btc partial refund is published",
 ]);
 
-// Short per-step descriptions for the vertical timeline (taker/Bob side).
 const STEP_DESC = {
   "Send BTC": "Locking your Bitcoin into the swap contract",
   "BTC locked": "Your Bitcoin is locked on-chain",
@@ -92,9 +79,6 @@ const STEP_DESC = {
   "Done": "Swap complete",
 };
 
-// ---- Maker (Alice) side ----------------------------------------------------
-// The maker receives BTC and sends XKR, so its milestones and wording differ.
-// Strings must match swap-machine/src/alice/mod.rs.
 export const MAKER_STEPS = ["BTC locked", "Lock XKR", "Finalize", "BTC received"];
 
 const MAKER_STEP_DESC = {
@@ -104,7 +88,6 @@ const MAKER_STEP_DESC = {
   "BTC received": "Sweeping the Bitcoin to your wallet",
 };
 
-// A short description for a step label, given the role.
 export const descFor = (role, label) =>
   (role === "maker" ? MAKER_STEP_DESC : STEP_DESC)[label] || "";
 
@@ -132,7 +115,6 @@ const MAKER_FRIENDLY = {
   "encrypted signature is learned": "Signature received — claiming your Bitcoin…",
   "bitcoin redeem transaction published": "Receiving your Bitcoin…",
   "btc is redeemed": "Swap complete — Bitcoin received!",
-  // refund / failure (the maker keeps its XKR)
   "waiting for cancel timelock expiration": "Swap didn't complete — awaiting refund…",
   "cancel timelock is expired": "Returning your XKR…",
   "btc is cancelled": "Swap cancelled — returning your XKR…",
@@ -190,11 +172,9 @@ export const stateToStep = (stateName, role = "taker") =>
 export const friendlyState = (stateName, role = "taker") =>
   (role === "maker" ? MAKER_FRIENDLY : FRIENDLY)[stateName] || stateName || "Starting…";
 
-// Coarse status for the history lists, so rows stay uncluttered: just Ongoing /
-// Finished / Failed (the detailed per-stage wording lives in the monitor view).
 export function swapStatusLabel(stateName, role = "taker") {
   const o = swapOutcome(stateName, role);
   if (o === "done") return "Finished";
   if (o === "active") return "Ongoing";
-  return "Failed"; // refunding / refunded / aborted / punished
+  return "Failed";
 }

@@ -10,15 +10,12 @@
   // prefix (Xkr). Both decode to the same wallet, so recipients can hand out
   // either form.
   let addressForms = [];
-  let btcAddress = null; // the swap engine's on-chain BTC deposit address
+  let btcAddress = null;
   let busy = false;
   let qr = null; // { address, label } when the QR modal is open
 
   let btcPoll;
 
-  // The BTC wallet is derived from the XKR seed by the swap engine on wallet
-  // start, but the engine takes a few seconds to boot (BDK + electrum) --
-  // especially right after creating a new wallet. Poll until its address is up.
   const fetchBtcAddress = async () => {
     try {
       const res = await window.api.invoke("swap-bitcoin-address");

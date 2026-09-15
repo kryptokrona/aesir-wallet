@@ -2,9 +2,6 @@ const windowStateManager = require("electron-window-state");
 const contextMenu = require("electron-context-menu");
 const { app, BrowserWindow, ipcMain, systemPreferences, powerMonitor, dialog, globalShortcut, session } = require("electron");
 
-// In development the app name defaults to "Electron", so every dev Electron app
-// shares ~/Library/Application Support/Electron. Give this app its own folder.
-// Must run before any userData path is resolved (electron-store below).
 if (!app.isPackaged) app.setName("AesirDev");
 const serve = require("electron-serve");
 const path = require("path");
@@ -25,7 +22,6 @@ const { autoUpdater } = require("electron-updater");
 const fs = require("fs");
 const nodeCrypto = require("crypto");
 const { error } = require("console");
-
 
 try {
   require("electron-reloader")(module);
@@ -79,7 +75,6 @@ function createWindow() {
     windowState.saveState(mainWindow);
   });
 
-  
   if (dev) {
     console.log('Running in development')
     mainWindow.openDevTools()
@@ -128,14 +123,6 @@ function createMainWindow() {
   else serveURL(mainWindow);
 }
 
-// Guard against stale cached renderer assets breaking the UI after an app
-// update. Production serves the built SPA over electron-serve's app:// protocol,
-// whose responses (and any service worker) are cached in Chromium's store under
-// userData. When those go stale across versions the app can load the wrong
-// chunk for a route -- the failure we hit where a settings tab wouldn't mount
-// until the whole "Application Support/Aesir" folder was deleted. So on a
-// version change (and first run) clear ONLY the renderer caches once; user prefs
-// (electron-store JSON, localStorage, cookies) are left intact.
 async function clearRendererCacheOnUpgrade() {
   try {
     const current = app.getVersion();
@@ -166,16 +153,9 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-// Set once the user has confirmed quitting past the in-progress-swap guard, so
-// the second before-quit pass (from our own app.quit()) runs cleanup and exits.
 let forceQuit = false;
 
 app.on("before-quit", (e) => {
-  // Guard: don't let the app close mid-swap. Killing the engine/ASB while a swap
-  // is being set up or settled can strand funds -- worst case, the maker hasn't
-  // yet persisted its per-swap secrets (they're random and unrecoverable), so a
-  // taker that already broadcast its BTC lock is orphaned and loses the lock fee.
-  // Warn and require explicit confirmation; funds are safest once swaps finish.
   if (!forceQuit && swapUnsafeToQuit()) {
     e.preventDefault();
     const opts = {
@@ -221,7 +201,6 @@ ipcMain.on("minimize", () => {
   mainWindow.minimize();
 });
 
-
 //ABOVE IS ALL ELECTRON
 // 🟨🟨🟨🟨🟨🟨🟨🟨🟨🟨🟨🟨🟨🟨🟨🟨🟨🟨🟨🟨🟨
 //BELOW IS WALLET APP
@@ -231,38 +210,17 @@ let node;
 let ports;
 let daemon;
 
-// Local JSON-RPC service that handles the XKR (Kryptokrona) side of atomic
-// swaps, backed by wallet-backend-js. The Rust swap engine (xkr-swap-core)
-// drives it over 127.0.0.1:XKR_SWAP_RPC_PORT. See ./swap/xkr-wallet-rpc.cjs.
 const XKR_SWAP_RPC_PORT = 40000;
-// Port the taker `swap serve` daemon (the Rust engine) listens on for the
-// renderer's JSON-RPC calls (start swap / poll progress).
 const XKR_SWAP_SERVE_PORT = 40010;
-// Bitcoin electrum RPC URL for the BTC side of a swap. Overridable via env for
-// dev/regtest; defaults to a public testnet electrum server.
-// Empty by default so the engine uses its built-in multi-server testnet electrum
-// list (with failover) instead of a single server -- a single public electrum
-// (e.g. Blockstream) rate-limits/stalls the initial wallet scan. Override with
-// XKR_SWAP_ELECTRUM_URL to force a specific server.
 const XKR_SWAP_ELECTRUM_URL = process.env.XKR_SWAP_ELECTRUM_URL || "";
-// Suggested Bitcoin (electrum) servers for the settings picker. Empty url =
-// "Automatic": the engine uses its built-in multi-server list with failover.
 const BTC_NODE_PRESETS = [
   { label: "Automatic (recommended)", url: "" },
   { label: "Blockstream (testnet)", url: "tcp://electrum.blockstream.info:60001" },
   { label: "Blockstream SSL (testnet)", url: "ssl://electrum.blockstream.info:60002" },
 ];
-// BTC node selection is hardcoded to "Automatic" for now (the in-app electrum
-// picker was rolled back). Honour only the env override for power users; an
-// empty string means the engine uses its built-in multi-server electrum list
-// with failover. Any previously-persisted `btcElectrumUrl` is intentionally
-// ignored so everyone gets automatic selection.
 function getElectrumUrl() {
   return XKR_SWAP_ELECTRUM_URL;
 }
-// XKR rendezvous point(s) for maker discovery: comma-separated multiaddrs, each
-// with a /p2p/<peer-id> part. Defaults to the deployed XKR rendezvous node;
-// override with XKR_SWAP_RENDEZVOUS (empty string disables discovery).
 const XKR_SWAP_RENDEZVOUS =
   process.env.XKR_SWAP_RENDEZVOUS ??
   "/dns4/deploy.cloud.cbh.kth.se/tcp/20235/p2p/12D3KooW9xM8oboXDBcmF1JrYXKWJjwAYufsEL5Aq8iGFHArMsUd";
@@ -274,20 +232,9 @@ const wallets = new Store();
 const nodes = new Store();
 const contacts = new Store();
 const miscs = new Store();
-// Persistent cache of every swap ever seen (taker + maker), keyed by swap_id, so
-// the history survives the engine/ASB being down and needn't be re-fetched from
-// the binaries just to view it. Its own file to keep the (growing) list isolated.
 const swapsStore = new Store({ name: "swaps" });
-// Persistent maker LIMIT-SELL orders, per wallet: "sell up to targetAtomic XKR at
-// priceSats", filled across swaps over time (not the whole balance). See the
-// maker-order helpers below.
 const makerOrders = new Store({ name: "maker-orders" });
 
-// A short, stable, filesystem-safe id for the currently-open XKR wallet, used to
-// key ALL swap state per wallet so different wallets never see each other's swaps:
-// it scopes the swap cache below AND the ASB's data dir (XKR_ASB_DATA_DIR). Derived
-// from the primary address (a hash, so it's not the address verbatim in paths).
-// Returns null when no wallet is loaded.
 function walletKey() {
   try {
     const addr = walletBackend && walletBackend.getPrimaryAddress ? walletBackend.getPrimaryAddress() : null;
@@ -298,13 +245,6 @@ function walletKey() {
   }
 }
 
-// ---- maker limit-sell order (cap total XKR sold, not just per-swap) ---------
-// XKR unit note: the wallet uses 1e5 atomic units per XKR; the swap engine reports
-// xmr_amount in piconero (1e12 per XKR). Order math is done in wallet-atomic (1e5).
-
-// Maker states where the locked XKR has been RETURNED to the wallet, so it no
-// longer counts against the sell target. Conservative -- only definitive refunds
-// /aborts (everything else, in-flight or sold, still counts as committed).
 const MAKER_XKR_RETURNED = new Set(["xmr is refunded", "safely aborted"]);
 
 function getMakerOrder() {
@@ -321,11 +261,6 @@ function setMakerOrder(order) {
   makerOrders.set("orders", all);
 }
 
-// XKR (wallet-atomic) committed toward the order = sum the non-returned maker swaps
-// since the order started. The ASB records a swap (with its xmr_amount) at "btc is
-// locked" -- BEFORE it locks the XKR -- so the DB already accounts for every in-flight
-// swap; no extra in-memory reservation is needed (adding one double-counted the lock
-// mid-swap). piconero (1e12/XKR) -> wallet-atomic (1e5/XKR).
 function makerCommittedAtomic(order) {
   const wid = walletKey() || "default";
   const cache = (swapsStore.get("swaps") || {})[wid] || {};
@@ -339,28 +274,18 @@ function makerCommittedAtomic(order) {
   return Math.floor(pico / 1e7);
 }
 
-// Remaining sellable XKR (wallet-atomic) for the active order, or null when there
-// is no order (unlimited / legacy behaviour). This is THE hard-enforcement value:
-// the XKR wallet-RPC caps balance + rejects locks against it.
 function makerRemainingAtomic() {
   const order = getMakerOrder();
   if (!order) return null;
   return Math.max(0, order.targetAtomic - makerCommittedAtomic(order));
 }
 
-// True while any maker swap for the open wallet is still in flight (the ASB's
-// `completed` flag is the authority; refunding swaps count as in-flight too).
 function makerHasInflightSwaps() {
   const wid = walletKey() || "default";
   const cache = (swapsStore.get("swaps") || {})[wid] || {};
   return Object.values(cache).some((s) => s && s.role === "maker" && s.completed === false);
 }
 
-// Synchronous "is it dangerous to quit right now?" for the before-quit guard.
-// Unsafe when any swap (either role) is still in flight, OR the maker board is
-// live -- a taker could be mid swap-setup with us this instant, and killing the
-// ASB before it persists its per-swap secrets orphans that swap. Reads only the
-// cache + the maker flag so it can run inside the synchronous before-quit hook.
 function swapUnsafeToQuit() {
   try {
     const wid = walletKey() || "default";
@@ -372,9 +297,6 @@ function swapUnsafeToQuit() {
   }
 }
 
-// The boot-time resume-only ASB exists ONLY to finish stranded swaps and never
-// advertises, so it won't stop on its own. Once its swaps have settled, shut it
-// down and return to "off" -- otherwise the panel would show "recovering" forever.
 function maybeEndResumeOnly() {
   if (!swapMakerResumeOnly) return;
   if (makerHasInflightSwaps()) return;
@@ -386,22 +308,16 @@ function maybeEndResumeOnly() {
   swapMakerResumeOnly = false;
 }
 
-// Tear the maker board down once the limit-sell order is filled -- but ONLY when no
-// swaps are still in flight. The board carries the per-swap HyperSwarm beams, so
-// stopping it mid-swap destroys the beam and strands the swap (the taker never gets
-// the XKR transfer proof / can't return its signature). The order stays set until
-// then, so computeQuote keeps advertising ~0 and no NEW swaps start during wind-down.
 function maybeCompleteMakerOrder() {
   const order = getMakerOrder();
   if (!order || !swapMaker) return;
   const remainingAtomic = makerRemainingAtomic();
-  // Smallest sellable XKR at this price = the min quote size (BTC sats) / price.
   const minAtomic =
     order.priceSats && order.minSat
       ? Math.ceil((Number(order.minSat) / Number(order.priceSats)) * 100000)
       : 1;
   if (remainingAtomic > minAtomic) return;
-  if (makerHasInflightSwaps()) return; // wait for in-flight swaps to settle first
+  if (makerHasInflightSwaps()) return;
   console.log(`[swap-maker] limit-sell order filled and all swaps settled; stop advertising`);
   try {
     swapMaker.stop();
@@ -412,9 +328,6 @@ function maybeCompleteMakerOrder() {
   setMakerOrder(null);
 }
 
-// The engine stamps start_date via Rust's `time` OffsetDateTime Display, e.g.
-// "2026-09-07 21:19:26.642276 +00:00:00" -- which JS Date can't parse. Normalize
-// to ISO-8601 so sorts order by real time (unparseable -> 0, i.e. sorts last).
 function swapDateMs(str) {
   if (!str) return 0;
   let t = Date.parse(str);
@@ -426,11 +339,8 @@ function swapDateMs(str) {
   return Number.isFinite(t) ? t : 0;
 }
 
-// Merge freshly-fetched swaps into the local cache. `role` is 'taker' (from the
-// swap engine) or 'maker' (from the ASB); their state field differs, so normalize.
 function cacheSwaps(list, role) {
   if (!Array.isArray(list) || !list.length) return;
-  // Scope the cache to the open wallet so swaps never bleed between wallets.
   const wid = walletKey() || "default";
   const all = swapsStore.get("swaps") || {};
   const cache = all[wid] || {};
@@ -440,21 +350,12 @@ function cacheSwaps(list, role) {
     cache[s.swap_id] = {
       swap_id: s.swap_id,
       btc_amount: s.btc_amount,
-      xmr_amount: s.xmr_amount, // piconero -- drives the "XKR" amount in the monitor
+      xmr_amount: s.xmr_amount,
       state_name: role === "maker" ? s.state : s.state_name,
       start_date: s.start_date,
-      // Local timestamp of when we FIRST saw this swap. The engine's start_date can
-      // be unparseable/inconsistent, so the history list orders by this stable value.
-      // Seed it from start_date the first time (so already-cached swaps keep their
-      // order), falling back to now for a brand-new swap.
       firstSeen: (prev && prev.firstSeen) || swapDateMs(s.start_date) || Date.now(),
       completed: !!s.completed,
-      // BTC lock txid (step 1), normalized: the taker calls it tx_lock_id, the ASB
-      // btc_lock_txid. Cached so the monitor can link it even for maker swaps (which
-      // only reach the UI via this cache) and for taker swaps viewed after a restart.
       btc_lock_txid: role === "maker" ? s.btc_lock_txid : s.tx_lock_id,
-      // XKR lock/redeem tx hashes (same field names on both taker + maker responses;
-      // maker has no redeem txid). Cached so the monitor timeline can link them.
       xmr_lock_txid: s.xmr_lock_txid || null,
       xmr_redeem_txid: s.xmr_redeem_txid || null,
       role,
@@ -465,9 +366,6 @@ function cacheSwaps(list, role) {
   swapsStore.set("swaps", all);
 }
 
-// Start (or restart) the XKR swap RPC service pointed at the given node, so a
-// swap uses the same daemon the wallet is connected to. Non-fatal on failure:
-// the wallet keeps working even if the swap service can't bind.
 async function startXkrSwapService(node) {
   try {
     if (xkrSwapServer) {
@@ -475,14 +373,6 @@ async function startXkrSwapService(node) {
       xkrSwapServer = undefined;
     }
     if (!node) return;
-    // Floor the *shared-address* wallet reconstructions (watchForLock / sweep /
-    // confirmTx re-import the ephemeral 2-of-2 deposit from keys) near the chain
-    // tip so they don't sync from genesis (mainnet is 2.5M+ blocks). The shared
-    // deposit is always created "now", so a recent floor is safe. The maker's own
-    // balance and lock no longer go through a re-import at all -- they read/spend
-    // the already-synced primary wallet directly (getMainWallet below), so there's
-    // no coinbase-scan or scan-height guessing for the maker's inventory anymore.
-    // Respect an explicit XKR_WALLET_SCAN_HEIGHT if the operator set one.
     try {
       if (!process.env.XKR_WALLET_SCAN_HEIGHT) {
         const info = await fetchTimeout(`${node.ssl ? "https://" : "http://"}${node.url}:${node.port}/getinfo`);
@@ -495,20 +385,12 @@ async function startXkrSwapService(node) {
       daemonHost: node.url,
       daemonPort: node.port,
       ssl: node.ssl,
-      // Option A: the maker's balance/lock use the app's live, already-synced
-      // wallet instead of a separate re-imported instance, so the ASB and the UI
-      // can never disagree about the balance. Only maker-key operations match.
       getMainWallet: () => walletBackend,
-      // Limit-sell enforcement: the maker's balance report is capped to the order's
-      // remaining XKR, so the ASB won't set up a swap beyond it. Returns null when
-      // there's no active order (sell freely, as before).
       makerRemaining: () => makerRemainingAtomic(),
     });
     xkrSwapServer.on("error", (err) => {
       console.error("xkr-swap RPC service error:", err.message);
     });
-    // Spawn the taker `swap serve` daemon: it reaches the XKR chain through the
-    // wallet RPC service above and exposes its own JSON-RPC on the serve port.
     xkrSwapEngine.startEngine({
       app,
       xkrRpcPort: XKR_SWAP_RPC_PORT,
@@ -516,33 +398,17 @@ async function startXkrSwapService(node) {
       electrumUrl: getElectrumUrl(),
       testnet: true,
       rendezvous: XKR_SWAP_RENDEZVOUS,
-      // Resumed swaps read their receive address from this env (not persisted by
-      // the engine); use our primary XKR address when the wallet is loaded.
       xkrReceiveAddress:
         walletBackend && walletBackend.getPrimaryAddress ? walletBackend.getPrimaryAddress() : undefined,
     });
-    // The daemon does NOT auto-resume in-flight swaps on boot, so a swap that was
-    // mid-flight when the app closed/restarted would otherwise sit frozen (e.g.
-    // stuck at "btc is locked") until manually resumed. Give the daemon a moment
-    // to bind, then resume every unfinished swap so restarts are self-healing.
     setTimeout(resumeInFlightSwaps, 6000);
-    // Same idea for the MAKER side: if we were mid-swap when the app closed, bring
-    // the ASB back resume-only so its refunds/redeems finish on their own. Slightly
-    // later so the XKR wallet RPC is bound first -- the ASB needs it.
     setTimeout(resumeMakerSwapsIfAny, 8000);
-    // Watchdog: rescue any taker swap that stalls pre-BTC-lock (a first beam that
-    // never connected), so it self-heals in ~90s instead of needing an app restart.
     if (!swapRescueTimer) swapRescueTimer = setInterval(rescueStalledSwaps, 20000);
   } catch (e) {
     console.error("failed to start xkr-swap RPC service:", e.message);
   }
 }
 
-// Resume any swap the daemon has persisted as not-yet-completed. Safe to call
-// repeatedly: resuming an already-finished swap is a no-op, and the daemon
-// serialises work per swap behind its own lock.
-// Wait (bounded) for a maker peer to (re)appear on the HyperSwarm board, so a
-// resumed swap can be re-bridged to it. Returns the maker record or null.
 async function waitForMakerOnBoard(discovery, peerId, timeoutMs = 45000) {
   const start = Date.now();
   for (;;) {
@@ -553,13 +419,6 @@ async function waitForMakerOnBoard(discovery, peerId, timeoutMs = 45000) {
   }
 }
 
-// Re-open a fresh HyperSwarm bridge to a swap's maker and resume it. The engine's
-// stored maker address is a dead bridge port from a previous process (or a beam
-// that never connected on the first attempt), so we wait for the maker to (re)appear
-// on the board, open a NEW bridge, and hand resume() its new address -- otherwise
-// the swap keeps dialing a dead/never-connected port ("request channel closed") and
-// can never finish. `resume` is idempotent (a no-op on a finished swap; the daemon
-// serialises work per swap), so this is safe to call on any unfinished swap.
 async function reBridgeAndResume(info, reason = "resume") {
   const peerId = info.seller && info.seller.peer_id;
   let multiaddr;
@@ -584,12 +443,8 @@ async function reBridgeAndResume(info, reason = "resume") {
     .catch((err) => console.error(`${reason}: resume failed for`, info.swap_id, err.message));
 }
 
-// Swaps the user has explicitly asked to cancel/abandon. The resume + rescue
-// paths skip these so they aren't re-driven (and don't re-grab the global swap
-// lock) while they're being torn down / refunded.
 const cancelRequested = new Set();
 
-// Resume every unfinished swap after an engine (re)start.
 async function resumeInFlightSwaps() {
   try {
     const infos = await xkrSwapRpc.swapInfos();
@@ -604,27 +459,20 @@ async function resumeInFlightSwaps() {
   }
 }
 
-// A taker swap can occasionally fail to "get off the ground": the first private
-// beam to the maker doesn't connect within BEAM_CONNECT_TIMEOUT_MS, so the initial
-// buy_xmr_direct handshake never reaches the maker and the swap sits in its earliest
-// (pre-BTC-lock) state -- the maker never even sees it. NOTHING has moved on-chain
-// yet, so it is safe to simply re-bridge to the maker and resume, which re-drives the
-// negotiation. This is exactly what an app RESTART does (resumeInFlightSwaps runs on
-// launch); the watchdog below does it in-process so the user never has to restart.
 const SWAP_PRELOCK_STATES = new Set([
   "quote has been requested",
   "execution setup done",
   "btc lock ready to publish",
 ]);
-const SWAP_STALL_RESCUE_MS = 90000; // grace before a pre-lock swap counts as stalled (> the 60s beam timeout)
-const SWAP_RESCUE_COOLDOWN_MS = 120000; // don't re-rescue the same swap more often than this
-const swapPrelockSince = new Map(); // swap_id -> ts we first saw it still pre-lock
-const swapLastRescue = new Map(); // swap_id -> ts of last rescue attempt
+const SWAP_STALL_RESCUE_MS = 90000;
+const SWAP_RESCUE_COOLDOWN_MS = 120000;
+const swapPrelockSince = new Map();
+const swapLastRescue = new Map();
 let rescuingStalledSwaps = false;
 let swapRescueTimer = null;
 
 async function rescueStalledSwaps() {
-  if (rescuingStalledSwaps) return; // never overlap (each pass can wait ~45s for the board)
+  if (rescuingStalledSwaps) return;
   rescuingStalledSwaps = true;
   try {
     const infos = await xkrSwapRpc.swapInfos();
@@ -633,11 +481,9 @@ async function rescueStalledSwaps() {
     const livePrelock = new Set();
     for (const info of infos) {
       if (!info || !info.swap_id) continue;
-      // Pre-lock == unfinished AND still before BTC is locked (unknown/empty state
-      // means "just created", which is also pre-lock).
       if (cancelRequested.has(info.swap_id)) {
         swapPrelockSince.delete(info.swap_id);
-        continue; // user is cancelling this one; don't fight it
+        continue;
       }
       const preLock =
         info.completed === false && (!info.state_name || SWAP_PRELOCK_STATES.has(info.state_name));
@@ -653,7 +499,6 @@ async function rescueStalledSwaps() {
       console.log(`rescue: swap ${info.swap_id} stalled pre-lock (${info.state_name || "created"}); re-bridging`);
       await reBridgeAndResume(info, "rescue");
     }
-    // Forget swaps that have advanced past pre-lock or completed.
     for (const id of [...swapPrelockSince.keys()]) if (!livePrelock.has(id)) swapPrelockSince.delete(id);
   } catch (e) {
     console.error("rescueStalledSwaps: failed to enumerate swaps:", e.message);
@@ -662,8 +507,6 @@ async function rescueStalledSwaps() {
   }
 }
 
-// Lets the renderer discover where the swap service is listening and whether
-// the Rust engine child process is up.
 ipcMain.handle("swap-rpc-status", () => ({
   running: !!xkrSwapServer,
   port: XKR_SWAP_RPC_PORT,
@@ -672,9 +515,6 @@ ipcMain.handle("swap-rpc-status", () => ({
   asbRunning: xkrSwapAsb.isRunning(),
 }));
 
-// ---- Swap actions (renderer -> taker `swap serve` daemon over JSON-RPC) ----
-// Each returns { ok, result } or { ok: false, error } so the renderer can show
-// a clear message instead of an unhandled rejection.
 async function swapRpc(fn) {
   try {
     return { ok: true, result: await fn() };
@@ -684,20 +524,17 @@ async function swapRpc(fn) {
   }
 }
 
-// ---- HyperSwarm swap connectivity (no rendezvous) ----
-// Discovery + per-swap NAT-traversing bridge live in swap-swarm.cjs; the Rust
-// engine only ever sees local sockets.
-let swapDiscovery = null; // taker: board discovery of makers
-let swapMaker = null; // maker: board advertising, when market-making
-let swapMakerPeerId = null; // this ASB's libp2p peer id, parsed from its log
-let swapMakerError = null; // last maker-board start error, surfaced to the panel
-let swapMakerRpc = null; // asb-rpc client: peer id, XKR inventory, swaps
-let swapMakerAdvertised = null; // the quote actually being advertised (price/min/max)
-let swapMakerPriceSats = null; // price the running ASB was started with (restart only on change)
-let swapMakerResumeOnly = false; // true when the ASB was auto-started on boot ONLY to recover/refund unfinished swaps (not advertising)
-let swapMakerOrderFilled = false; // true once a limit-sell order has fully filled (stopped advertising)
-const ASB_LISTEN_PORT = 9839; // must match the ASB config's libp2p `listen` tcp port
-const ASB_RPC_PORT = 9945; // ASB control JSON-RPC (localhost, Bearer-authed)
+let swapDiscovery = null;
+let swapMaker = null;
+let swapMakerPeerId = null;
+let swapMakerError = null;
+let swapMakerRpc = null;
+let swapMakerAdvertised = null;
+let swapMakerPriceSats = null;
+let swapMakerResumeOnly = false;
+let swapMakerOrderFilled = false;
+const ASB_LISTEN_PORT = 9839;
+const ASB_RPC_PORT = 9945;
 
 function ensureDiscovery() {
   if (swapDiscovery) return swapDiscovery;
@@ -712,9 +549,6 @@ function ensureDiscovery() {
   return swapDiscovery;
 }
 
-// Start a swap: open a private HyperSwarm beam to the chosen maker, then hand the
-// Rust taker the local bridge address + the maker's real libp2p PeerId.
-// args: { xkrAddress, amountSat, xkrReceiveAddress, changeAddress? }
 ipcMain.handle("swap-start", (e, args) =>
   swapRpc(async () => {
     const bridge = await ensureDiscovery().openSwapBridge(args.xkrAddress);
@@ -732,35 +566,24 @@ ipcMain.handle("swap-start", (e, args) =>
     }
   }),
 );
-// Poll all swaps + their current state (for progress).
 ipcMain.handle("swap-infos", async () => {
   const res = await swapRpc(() => xkrSwapRpc.swapInfos());
   if (res.ok && Array.isArray(res.result)) cacheSwaps(res.result, "taker");
   return res;
 });
-// Merged, persistent swap history (taker + maker) read straight from the local
-// cache -- available instantly and even when the engine/ASB are down.
 ipcMain.handle("swap-history-cache", () => {
   const wid = walletKey() || "default";
   const cache = (swapsStore.get("swaps") || {})[wid] || {};
   const list = Object.values(cache).sort((a, b) => swapDateMs(b.start_date) - swapDateMs(a.start_date));
   return { ok: true, result: list };
 });
-// Completed-swap history.
 ipcMain.handle("swap-history", () => swapRpc(() => xkrSwapRpc.history()));
-// The taker's Bitcoin balance.
 ipcMain.handle("swap-balance", () => swapRpc(() => xkrSwapRpc.balance()));
-// A fresh Bitcoin deposit address (fund the taker wallet to swap from).
 ipcMain.handle("swap-bitcoin-address", () => swapRpc(() => xkrSwapRpc.bitcoinAddress()));
-// Send BTC from the wallet. args: { address, amountSat? } (omit amountSat to drain).
 ipcMain.handle("swap-withdraw-btc", (e, args) => swapRpc(() => xkrSwapRpc.withdrawBtc(args)));
-// The BTC wallet's transaction history.
 ipcMain.handle("swap-btc-txs", () => swapRpc(() => xkrSwapRpc.bitcoinTransactions()));
-// Makers discovered over the HyperSwarm board (replaces the rendezvous). Shape
-// matches the old quote-board so the UI is unchanged: { peer_id, xkrAddress, quote }.
 ipcMain.handle("swap-list-sellers", () =>
   swapRpc(async () => {
-    // Don't offer ourselves as a maker: our own announce is on the same board.
     const ownAddress =
       walletBackend && walletBackend.getPrimaryAddress ? walletBackend.getPrimaryAddress() : null;
     return ensureDiscovery()
@@ -769,26 +592,15 @@ ipcMain.handle("swap-list-sellers", () =>
       .map((m) => ({ peer_id: m.peerId, xkrAddress: m.xkrAddress, multiaddr: null, quote: m.quote }));
   }),
 );
-// Resume a swap by id.
 ipcMain.handle("swap-resume", (e, swapId) => swapRpc(() => xkrSwapRpc.resume(swapId)));
-// The engine's recorded failure reason for a swap (async setup failures never
-// reach swap-infos), so the monitor can show WHY a swap didn't get off the ground.
 ipcMain.handle("swap-error", (e, swapId) => swapRpc(() => xkrSwapRpc.swapError(swapId)));
-// Estimated BTC lock-tx fee (sats) for a given amount, so the UI can show it
-// before the user confirms a swap.
 ipcMain.handle("swap-estimate-fee", (e, amountSat) => swapRpc(() => xkrSwapRpc.estimateLockFee(amountSat)));
-// Bitcoin (electrum) node picker. get returns the current url + presets; set
-// persists the choice and restarts the swap engine so the new server takes effect.
-// Liveness probe for a Bitcoin electrum server: open a tcp:// or ssl://
-// connection and do the electrum `server.version` handshake, resolving true only
-// if the server answers. Times out so a dead host can't hang the UI. An empty
-// url ("Automatic") always passes -- the engine uses its built-in list.
 function checkElectrum(url, timeoutMs = 6000) {
   return new Promise((resolve) => {
     const netMod = require("net");
     const tlsMod = require("tls");
     const raw = typeof url === "string" ? url.trim() : "";
-    if (!raw) return resolve(true); // Automatic / built-in list
+    if (!raw) return resolve(true);
     const m = /^(tcp|ssl):\/\/([^:/]+):(\d+)$/.exec(raw);
     if (!m) return resolve(false);
     const [, scheme, host, portStr] = m;
@@ -836,7 +648,6 @@ ipcMain.handle("set-btc-node", (e, url) => {
   try {
     const value = typeof url === "string" ? url.trim() : "";
     miscs.set("btcElectrumUrl", value);
-    // Restart the engine (if running) so it reconnects to the chosen server.
     const child = xkrSwapEngine.restart({ electrumUrl: value });
     return { ok: true, url: value, restarted: !!child };
   } catch (err) {
@@ -844,48 +655,20 @@ ipcMain.handle("set-btc-node", (e, url) => {
   }
 });
 
-// Cancel (abandon + refund) a swap the user no longer wants -- e.g. one wedged
-// because the maker never recorded it. Two steps, because the engine serialises
-// swaps behind a single global lock:
-//   1. suspend_current_swap -- releases that lock so the wedged swap stops holding
-//      it and new swaps can run again (this is the immediate unblock).
-//   2. cancel_and_refund -- returns the locked BTC. It's gated by the on-chain
-//      cancel timelock (it publishes the cancel tx, which the network only accepts
-//      once the timelock has expired), so before then it errors and the refund
-//      must be retried later; nothing is lost, the BTC stays safely locked.
-// The swap is flagged so the resume/rescue paths don't immediately re-drive it and
-// re-block the engine while the user is tearing it down.
 ipcMain.handle("swap-cancel", async (e, swapId) => {
   if (swapId) cancelRequested.add(swapId);
-  // Free the global swap lock first (unblocks new swaps right away).
   await swapRpc(() => xkrSwapRpc.suspendCurrentSwap());
-  await sleep(750); // let the suspended swap release the lock before we re-acquire it
-  // Kick the cancel+refund. It can run long (waits for the cancel tx to confirm)
-  // and is time-gated, so don't block the UI on it -- report that teardown began
-  // and let swap-infos polling surface the refund/failed state.
+  await sleep(750);
   swapRpc(() => xkrSwapRpc.cancelAndRefund(swapId))
     .then((r) => console.log("swap-cancel: cancel_and_refund", swapId, JSON.stringify(r)))
     .catch((err) => console.warn("swap-cancel: cancel_and_refund", swapId, err.message));
   return { ok: true };
 });
 
-// Start market-making: launch the local ASB with its control JSON-RPC enabled,
-// ask it (over RPC, not by scraping logs) for its libp2p peer id, then advertise
-// it on the HyperSwarm board so takers can find and reach it behind NAT (no
-// rendezvous). The ASB locks XKR from this wallet's own keys.
-// args: { configPath?, priceSats?, minSat?, maxSat?, env? }
-// Spawn the ASB child with the maker env + start args. Shared by the interactive
-// "start market-making" handler and the boot-time resume-only recovery so the two
-// can NEVER drift on critical env (e.g. XKR_ASB_REFUND_ADDRESS, whose absence
-// leaves refunds stuck at "xmr is refundable"). Returns { child, password };
-// `password` authenticates the ASB control RPC.
 async function spawnMakerAsb({ priceSats, resumeOnly = false, configPath, extraEnv = {} } = {}) {
-  // The maker's XKR inventory IS this wallet -- the ASB locks XKR from the user's
-  // own keys, so market-making needs no separate funded wallet.
   const [makerSpend, makerView] = walletBackend.getPrimaryAddressPrivateKeys();
   const cfgPath = configPath || path.join(app.getPath("userData"), "xkr-asb-config.toml");
 
-  // Enable the ASB control RPC on localhost, Bearer-authed via a verifier file.
   const { password, verifier } = asbRpc.generateAuth();
   const authFile = path.join(app.getPath("userData"), "asb-rpc-auth");
   fs.writeFileSync(authFile, verifier, { mode: 0o600 });
@@ -895,25 +678,8 @@ async function spawnMakerAsb({ priceSats, resumeOnly = false, configPath, extraE
     "--rpc-bind-port", String(ASB_RPC_PORT),
     "--rpc-auth-file", authFile,
   ];
-  // Resume-only: resume/refund the swaps already in the ASB's DB but accept NO
-  // new swap requests (and we skip advertising on the board). Used on boot to
-  // finish refunds without silently re-entering the market.
   if (resumeOnly) startArgs.push("--resume-only");
 
-  // Redeem maker BTC proceeds INTO the app's own spendable wallet. The ASB and the
-  // taker engine share a seed/descriptor but keep separate wallet DBs, so BTC the
-  // ASB redeems into its own wallet is invisible to the app (which shows the taker
-  // wallet) until a restart's full rescan. Fetching a receive address from the
-  // taker daemon reveals it in THAT wallet, so redeeming there makes proceeds show
-  // up live. Best-effort: if the engine isn't reachable, fall back to the ASB's
-  // internal wallet (the old behaviour).
-  //
-  // KNOWN, ACCEPTED privacy trade-off (deliberate -- do NOT "fix" without a design
-  // decision): this address is fetched once per MM session, so every swap in that
-  // session redeems to the SAME address (reuse), and proceeds commingle with the
-  // user's other BTC in the one app wallet. The privacy-preserving alternative is a
-  // dedicated swap-proceeds derivation path with a fresh address per swap; chosen
-  // against for now in favour of live visibility + zero extra on-chain fees.
   let redeemBtcAddress = null;
   try {
     const r = await xkrSwapRpc.bitcoinAddress();
@@ -931,22 +697,9 @@ async function spawnMakerAsb({ priceSats, resumeOnly = false, configPath, extraE
       XKR_ASB_PRICE_SATS: priceSats,
       XKR_ASB_SPEND_SECRET: makerSpend,
       XKR_ASB_VIEW_SECRET: makerView,
-      // Where a FAILED swap's XKR is swept back to when the maker refunds. A
-      // cancelled swap leaves the engine at "xmr is refundable"; the refund step
-      // reconstructs the shared XKR wallet and sweeps to this address. Without it
-      // the engine errors ("XKR_ASB_REFUND_ADDRESS not set") and the swap gets
-      // stuck refundable forever. Refund to our own primary address -- the same
-      // wallet the locked XKR came from.
       XKR_ASB_REFUND_ADDRESS: walletBackend.getPrimaryAddress(),
-      // Derive the ASB's Bitcoin wallet from the XKR spend key -- the SAME seed
-      // the taker engine uses -- so maker BTC proceeds land in the one shared
-      // BTC wallet (visible/withdrawable in the app), not a separate ASB wallet.
       XKR_SWAP_SEED_KEY: makerSpend,
-      // Redeem completed-swap BTC into the app's spendable wallet (see above).
       ...(redeemBtcAddress ? { XKR_ASB_REDEEM_ADDRESS: redeemBtcAddress } : {}),
-      // Per-wallet ASB data dir: isolates the swap DB, identity and wallet so
-      // different opened XKR wallets never see each other's maker swaps. Keyed by
-      // the open wallet; falls back to a shared "default" dir if no wallet id.
       XKR_ASB_DATA_DIR: path.join(app.getPath("userData"), "asb-data", walletKey() || "default"),
       ...extraEnv,
     },
@@ -955,20 +708,12 @@ async function spawnMakerAsb({ priceSats, resumeOnly = false, configPath, extraE
   return { child, password };
 }
 
-// On boot (after the wallet is loaded), bring the maker ASB back in RESUME-ONLY
-// mode if there are unfinished maker swaps -- e.g. one left at "xmr is refundable"
-// after both sides went offline. This resumes them so refunds complete, WITHOUT
-// re-advertising on the board (the user chose resume-only recovery). A later
-// explicit "start market-making" replaces this with a full advertising instance.
 async function resumeMakerSwapsIfAny() {
   try {
     if (!walletBackend) return;
-    if (xkrSwapAsb.isRunning()) return; // already up (e.g. user started MM already)
-    // Only the OPEN wallet's maker swaps -- don't resume another wallet's swaps.
+    if (xkrSwapAsb.isRunning()) return;
     const wid = walletKey() || "default";
     const cache = (swapsStore.get("swaps") || {})[wid] || {};
-    // `completed` is the engine's own authoritative done flag (same signal the
-    // taker resume uses); a refundable-but-not-yet-refunded swap is completed=false.
     const pending = Object.values(cache).filter((s) => s && s.role === "maker" && s.completed === false);
     if (!pending.length) return;
 
@@ -982,8 +727,6 @@ async function resumeMakerSwapsIfAny() {
       return;
     }
     swapMakerResumeOnly = true;
-    // Keep a control-RPC client so the UI's swap-maker-swaps poll can refresh the
-    // cached state as the refund progresses, but do NOT advertise (no startMakerBoard).
     swapMakerRpc = asbRpc.client(ASB_RPC_PORT, password);
   } catch (e) {
     console.error("[swap-maker] resume-only recovery failed:", e.message);
@@ -994,13 +737,8 @@ ipcMain.handle("swap-maker-start", async (e, args = {}) => {
   try {
     const priceSats = String(args.priceSats || process.env.XKR_ASB_PRICE_SATS || "5");
 
-    // An explicit start always clears a prior "order filled" state, so re-starting
-    // to recover a stranded swap doesn't immediately read as filled.
     swapMakerOrderFilled = false;
 
-    // Limit-sell order: "sell up to targetXkr XKR at this price". Keep an existing
-    // order (continue filling it) when the target is unchanged; (re)create it when
-    // the target changes; leave it unset to sell freely (legacy behaviour).
     const targetXkr = parseFloat(args.targetXkr);
     if (targetXkr > 0) {
       const targetAtomic = Math.round(targetXkr * 100000);
@@ -1016,13 +754,6 @@ ipcMain.handle("swap-maker-start", async (e, args = {}) => {
       }
     }
 
-    // Idempotent: if the maker engine is already running (and advertising) with the
-    // same price, do NOT tear it down. Killing+respawning the ASB (SIGTERM) drops
-    // every live HyperSwarm beam and breaks any swap currently in setup/flight --
-    // the exact cause of "the swap didn't get off the ground" on the taker. Just
-    // make sure we're still advertising on the board and return the existing
-    // identity. A resume-only recovery instance is NOT reused here: an explicit
-    // start must upgrade it to a full advertising instance (accept new swaps).
     if (xkrSwapAsb.isRunning() && !swapMakerResumeOnly && swapMakerPriceSats === priceSats && !swapMakerError) {
       if (!swapMaker && swapMakerPeerId) startMakerBoard(args, priceSats);
       return { ok: true, reused: true };
@@ -1048,18 +779,13 @@ ipcMain.handle("swap-maker-start", async (e, args = {}) => {
           "or its port (9839) is in use. Check the app logs.",
       };
     }
-    // Remember what price this ASB is running with, so a later start with the
-    // same price is a no-op (see the idempotent guard above) rather than a
-    // swap-killing restart.
     swapMakerPriceSats = priceSats;
 
-    // Ask the ASB for its peer id over its control RPC, retrying while it boots,
-    // then advertise on the board. Robust -- no stdout parsing.
     const rpc = asbRpc.client(ASB_RPC_PORT, password);
     swapMakerRpc = rpc;
     (async () => {
       for (let i = 0; i < 45; i++) {
-        if (swapMakerRpc !== rpc) return; // stopped / cancelled
+        if (swapMakerRpc !== rpc) return;
         try {
           const res = await rpc.peerId();
           const id = res && (res.peer_id || res.peerId);
@@ -1070,7 +796,6 @@ ipcMain.handle("swap-maker-start", async (e, args = {}) => {
             return;
           }
         } catch (_) {
-          // RPC not up yet / transient -- keep polling
         }
         await new Promise((r) => setTimeout(r, 1000));
       }
@@ -1086,15 +811,12 @@ ipcMain.handle("swap-maker-start", async (e, args = {}) => {
   }
 });
 
-// Stop advertising on the board (the ASB child keeps its own lifecycle).
 ipcMain.handle("swap-maker-stop", () => {
   try {
     if (swapMaker) {
       swapMaker.stop();
       swapMaker = null;
     }
-    // Stop the maker engine too, otherwise asbRunning stays true and the panel is
-    // stuck showing "starting". Clearing swapMakerRpc also halts the peer-id poll.
     xkrSwapAsb.stopAsb();
     swapMakerRpc = null;
     swapMakerPeerId = null;
@@ -1102,18 +824,13 @@ ipcMain.handle("swap-maker-stop", () => {
     swapMakerAdvertised = null;
     swapMakerPriceSats = null;
     swapMakerResumeOnly = false;
-    // Stopping cancels the limit-sell order (an explicit user action).
     setMakerOrder(null);
     swapMakerOrderFilled = false;
   } catch (_) {}
   return { ok: true };
 });
 
-// Market-making status for the maker panel.
 ipcMain.handle("swap-maker-status", async () => {
-  // The maker RECEIVES BTC into the ASB's own Bitcoin wallet (a separate wallet
-  // from the taker engine's, which is what the main BTC balance shows), so query
-  // the ASB directly for the maker's earned BTC. Best-effort: only while running.
   let btcBalanceSat = null;
   if (swapMakerRpc) {
     try {
@@ -1121,8 +838,6 @@ ipcMain.handle("swap-maker-status", async () => {
       if (r && typeof r.balance === "number") btcBalanceSat = r.balance;
     } catch (_) {}
   }
-  // Limit-sell progress for the panel (atomic XKR): target, committed (sold +
-  // in-flight), remaining. Null when selling freely (no order).
   const order = getMakerOrder();
   let orderInfo = null;
   if (order) {
@@ -1139,8 +854,6 @@ ipcMain.handle("swap-maker-status", async () => {
     result: {
       advertising: !!swapMaker,
       asbRunning: xkrSwapAsb.isRunning ? xkrSwapAsb.isRunning() : false,
-      // The ASB is up purely to recover/refund unfinished swaps (booted resume-only),
-      // NOT advertising -- lets the panel show "recovering swaps" instead of "starting".
       resumeOnly: swapMakerResumeOnly,
       peerId: swapMakerPeerId,
       error: swapMakerError,
@@ -1152,16 +865,11 @@ ipcMain.handle("swap-maker-status", async () => {
   };
 });
 
-// Maker-side swaps (from the ASB's own DB), so the swap history can show swaps
-// where YOU sold XKR for BTC too -- not just taker swaps. Only available while
-// market-making is running (the ASB control RPC is up then). Best-effort: [].
 ipcMain.handle("swap-maker-swaps", async () => {
   if (!swapMakerRpc) return { ok: true, result: [] };
   try {
     const swaps = await swapMakerRpc.getSwaps();
     if (Array.isArray(swaps)) cacheSwaps(swaps, "maker");
-    // Once the cache reflects the latest fills: stop advertising if the limit-sell
-    // order is filled, or shut down a resume-only recovery once its swaps have settled.
     maybeCompleteMakerOrder();
     maybeEndResumeOnly();
     return { ok: true, result: Array.isArray(swaps) ? swaps : [] };
@@ -1177,38 +885,24 @@ function startMakerBoard(args, priceSats) {
     const configuredMaxSat = Number(args.maxSat || 4999999);
     const minSat = Number(args.minSat || 10000);
 
-    // The advertised max is re-derived from the maker's LIVE unlocked XKR balance
-    // on every announce, so a taker can never request (or the maker advertise)
-    // more XKR than is actually spendable. max_quantity is in BTC satoshis, and
-    // the maker delivers XKR for BTC, so the cap is unlockedXKR * price(sats/XKR),
-    // minus a small haircut for the on-chain lock fee/change. The ASB swap-setup
-    // gate re-validates against the real balance as the hard backstop. Also kept
-    // in swapMakerAdvertised so the panel shows the true, balance-capped quote.
     async function computeQuote() {
       let maxSat = configuredMaxSat;
       try {
         const [unlockedAtomic] = await walletBackend.getBalance();
-        const unlockedXkr = Number(unlockedAtomic) / 100000; // XKR has 5 decimals
+        const unlockedXkr = Number(unlockedAtomic) / 100000;
         const balanceCapSat = Math.floor(unlockedXkr * Number(priceSats) * 0.98);
         maxSat = Math.max(0, Math.min(configuredMaxSat, balanceCapSat));
-        // Limit-sell: also cap the advertised max by the order's REMAINING XKR, so
-        // honest takers never request more than we're still selling. (The XKR
-        // wallet-RPC is the hard backstop for anyone who ignores the advert.)
         const remainingAtomic = makerRemainingAtomic();
         if (remainingAtomic != null) {
           const remainingSat = Math.floor((remainingAtomic / 100000) * Number(priceSats));
           maxSat = Math.min(maxSat, remainingSat);
         }
       } catch (_) {
-        // On a balance-read failure, fall back to the configured max; the ASB gate
-        // still protects against overcommitting.
       }
       swapMakerAdvertised = { price: Number(priceSats), min_quantity: minSat, max_quantity: maxSat };
       return swapMakerAdvertised;
     }
 
-    // Seed the advertised quote before the first announce so the panel and the
-    // initial broadcast both have a value.
     swapMakerAdvertised = { price: Number(priceSats), min_quantity: minSat, max_quantity: configuredMaxSat };
     swapMaker = swapSwarm.startMaker({
       xkrAddress: walletBackend.getPrimaryAddress(),
@@ -1300,23 +994,13 @@ ipcMain.on("start-wallet", async (e, walletName, password, node, file) => {
     daemon = new WB.Daemon(node.url, node.port);
   }
 
-  // Point the XKR swap RPC service at the same node the wallet uses -- but ONLY
-  // on a fresh login. On a re-login (unlocking after the renderer's idle
-  // auto-lock, where the backend never logged out: `loggedIn` stayed true and the
-  // engine kept running), startXkrSwapService would kill the good taker engine and
-  // respawn one WITHOUT the XKR seed key -- its startEngine() call passes no
-  // seedKey, so the engine falls back to seed.pem and loads a DIFFERENT, empty
-  // Bitcoin wallet, making the real BTC balance + history disappear. The seed-key
-  // restart that fixes this only runs on the fresh-login path below (line ~1081),
-  // which the re-login early-return never reaches. So skip the restart entirely
-  // when already logged in: the service is already up and correct.
   if (loggedIn) {
     await verifyPassword(password);
     return;
   }
 
   startXkrSwapService(node);
-  
+
   let knownWallets = await getMyWallets()
   //Save opened wallet file path if we did not create a new one on first start and name it if it's not known
   if (file) {
@@ -1343,9 +1027,6 @@ ipcMain.on("start-wallet", async (e, walletName, password, node, file) => {
   walletBackend.scanPoolTransactions(true)
   walletBackend.scanCoinbaseTransactions(true);
 
-  // Re-spawn the swap engine seeded from the XKR wallet's private spend key, so
-  // its Bitcoin wallet + libp2p identity derive deterministically from this XKR
-  // wallet -- restoring the XKR seed restores the entire (BTC + XKR) wallet.
   try {
     const [privateSpendKey] = walletBackend.getPrimaryAddressPrivateKeys();
     if (privateSpendKey) {
@@ -1357,16 +1038,9 @@ ipcMain.on("start-wallet", async (e, walletName, password, node, file) => {
         testnet: true,
         seedKey: privateSpendKey,
         rendezvous: XKR_SWAP_RENDEZVOUS,
-        // Resumed swaps read the receive address from XKR_RECEIVE_ADDRESS (the
-        // engine doesn't persist it), so seed it with our primary XKR address.
         xkrReceiveAddress: walletBackend.getPrimaryAddress(),
       });
-      // Resume any swap interrupted by a previous shutdown now that the engine
-      // is respawned with the receive address available.
       setTimeout(resumeInFlightSwaps, 6000);
-      // Same idea for the MAKER side: if we were mid-swap when the app closed, bring
-      // the ASB back resume-only so its refunds/redeems finish on their own. Slightly
-      // later so the XKR wallet RPC is bound first -- the ASB needs it.
       setTimeout(resumeMakerSwapsIfAny, 8000);
     }
   } catch (e) {
@@ -1398,7 +1072,7 @@ ipcMain.on("start-wallet", async (e, walletName, password, node, file) => {
     console.log(`🚨 INCOMING TX - AMOUNT: ${WB.prettyPrintAmount(transaction.totalAmount())}`);
   });
 
-  walletBackend.on("unconfirmedtx", (amount, hash) => { 
+  walletBackend.on("unconfirmedtx", (amount, hash) => {
     mainWindow.webContents.send("incoming-hash", {hash, amount});
     notifier.notify({
       appID: "Kryptokrona Wallet",
@@ -1421,9 +1095,6 @@ ipcMain.on("start-wallet", async (e, walletName, password, node, file) => {
   mainWindow.webContents.send("wallet-started");
 
   while (true) {
-    // Stop the sync loop once the window is gone (app closing/closed), otherwise
-    // every `mainWindow.webContents.send` below throws "reading 'webContents' of
-    // null" on shutdown.
     if (!mainWindow || mainWindow.isDestroyed()) break;
 
     try {
@@ -1442,7 +1113,7 @@ ipcMain.on("start-wallet", async (e, walletName, password, node, file) => {
         console.log("localDaemonBlockCount", localDaemonBlockCount);
         console.log("networkBlockCount", networkBlockCount);
         console.log("SYNCED");
-        
+
         mainWindow.webContents.send("node-status", "Synced");
       } else {
         if (walletBlockCount === 0) {
@@ -1490,10 +1161,6 @@ ipcMain.on("rewind-wallet", async (e, height) => {
 
 });
 
-// Coalesce fragmented inputs (e.g. lots of mining rewards) into fewer, larger
-// outputs via zero-fee fusion transactions so big sends stop failing on
-// "too many inputs". Auto-optimization is already on, but this lets the user
-// force a full pass on demand. Returns { ok, sent, hashes } for UI feedback.
 ipcMain.handle("wallet-optimize", async () => {
   if (!walletBackend) return { ok: false, error: "Wallet not loaded" };
   try {
@@ -1511,16 +1178,14 @@ ipcMain.handle("wallet-optimize", async () => {
 });
 
 ipcMain.handle("wallet-exists", async (e, walletName) => {
-  if (fs.existsSync(userDataDir + '/' + walletName + '.wallet')) { 
+  if (fs.existsSync(userDataDir + '/' + walletName + '.wallet')) {
     return true;
    }
    return false;
 });
 
-
-
 ipcMain.handle("create-wallet", async (e, walletName, password, node) => {
-  
+
   try {
 
     if (!daemon) {
@@ -1553,7 +1218,6 @@ ipcMain.handle("create-wallet", async (e, walletName, password, node) => {
       height = 1650000;
     }
 
-  
     const walletPath = await saveWalletInfo(walletName)
 
     await saveWallet(walletPath, password)
@@ -1643,7 +1307,6 @@ ipcMain.handle("import-seed", async (e, seed, walletName, password, height, node
   await saveWalletInfo(walletName)
   const walletPath = await getWalletPath(walletName)
   await saveWallet(walletPath, password)
-
 
   console.log("*******IMPORTED WALLET FROM SEED********");
   nodes.set("node", { url: node.url, port: node.port, ssl: node.ssl });
@@ -1736,7 +1399,6 @@ ipcMain.handle('verify-pass', async (e, password) => {
   return await checkPass(password)
 })
 
-
 ipcMain.handle('get-privkeys', async () => {
   return walletBackend.getPrimaryAddressPrivateKeys()
 })
@@ -1782,7 +1444,7 @@ ipcMain.handle('change-node', async (e, node) => {
   } else {
     errorMessage('Cannot connect to node')
   }
-  
+
   return node
 })
 
@@ -2014,7 +1676,6 @@ ipcMain.handle('generate-paymentId', async (e) => {
   return (await crypto.generateKeys()).public_key
 })
 
-
 ipcMain.handle('validate-paymentId', async (e, paymentId) => {
   return WB.validatePaymentID(paymentId);
 })
@@ -2031,7 +1692,6 @@ ipcMain.on('successmessage', async (e, message) => {
 
 successMessage
 ///////////// HYPER CORE
-
 
 ///////////// OPEN URL IN EXTERNAL BROWSER
 

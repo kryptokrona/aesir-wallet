@@ -44,7 +44,6 @@
     return () => clearInterval(randomInterval);
   });
 
-  // Keep the BTC wallet (balance/txs) fresh so the BTC and Total modes are live.
   onMount(() => {
     refreshBtc();
     const i = setInterval(refreshBtc, 6000);
@@ -87,24 +86,17 @@
     await tick();
   }
 
-  // Reveal the initial balance on first load.
   $: if (loading && $wallet.balance !== null) {
     const target = prettyNumbers($wallet.balance[0] + $wallet.balance[1]).toString().split('');
     revealBalance(target);
   }
 
-  // Total value across both wallets, in the selected fiat/crypto ticker.
   function totalFiat() {
     const xkrValue = (($wallet.balance?.[0] ?? 0) / 100000) * ($fiat.balance ?? 0);
     const btcValue = (($btc.balanceSat ?? 0) / 1e8) * ($fiat.btcPrice ?? 0);
     return (xkrValue + btcValue).toFixed(2);
   }
 
-  // One denomination at a time, cycled by clicking the balance ('///' renders as
-  // spacing before the unit):
-  //   xkr  -> "1,000,000.00000 XKR"
-  //   btc  -> "136.00 mBTC"   (1 mBTC = 100,000 sat)
-  //   fiat -> total value in the selected fiat ticker.
   $: {
     if (!loading && $wallet.balance) {
       if ($walletMode === 'fiat') {
