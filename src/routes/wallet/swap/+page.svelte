@@ -592,6 +592,7 @@
   // ---- sell-book depth chart (reuses lightweight-charts, like the dashboard) -----
   let bookChartEl;
   let bookChart = null;
+  let bookResizeObs = null; // our own observer (lightweight-charts' autoSize leaks a callback on teardown)
   let bookSeries = null;
   let bookTooltip = null;
   const BOOK_PRICE_SCALE = 1e6; // map the sats/XKR price onto lightweight-charts "time"
@@ -603,7 +604,12 @@
     const textColor = cs.getPropertyValue('--text-color').trim();
     if (!bookChart) {
       bookChart = createChart(bookChartEl, {
-        autoSize: true,
+        // Manual sizing + our own ResizeObserver instead of `autoSize` -- the
+        // library's autoSize observer can fire a queued callback after the chart
+        // is removed, throwing "Cannot read properties of null (reading
+        // 'appendChild')" in a promise. We disconnect ours in destroyBook.
+        width: bookChartEl.clientWidth || 300,
+        height: bookChartEl.clientHeight || 160,
         layout: { background: { color: '#00000000' }, textColor },
         grid: { vertLines: { color: '#00000000' }, horzLines: { color: '#00000000' } },
         // Hide the y-axis (it ate horizontal space) -- the value shows in the tooltip.
@@ -637,6 +643,13 @@
       bookTooltip.style.borderColor = cs.getPropertyValue('--border-color');
       bookTooltip.style.color = primary;
       bookChartEl.appendChild(bookTooltip);
+
+      // Keep the chart sized to its container; guarded + disconnected on teardown.
+      bookResizeObs = new ResizeObserver(() => {
+        if (bookChart && bookChartEl)
+          bookChart.applyOptions({ width: bookChartEl.clientWidth, height: bookChartEl.clientHeight });
+      });
+      bookResizeObs.observe(bookChartEl);
 
       bookChart.subscribeCrosshairMove((param) => {
         const el = bookChartEl;
@@ -675,6 +688,10 @@
     bookChart.timeScale().fitContent();
   }
   function destroyBook() {
+    if (bookResizeObs) {
+      try { bookResizeObs.disconnect(); } catch (_) {}
+      bookResizeObs = null;
+    }
     if (bookChart) {
       try {
         bookChart.remove();
