@@ -37,20 +37,35 @@ jobs:
       fail-fast: true
       matrix:
         config:
+          # engine_os / engine_arch / engine_ext map this runner to the matching
+          # xkr-swap-core release archive (e.g. swap_<tag>_Windows_x86_64.zip);
+          # engine_exe is the binary suffix inside it.
           - {
             name: "Windows Latest",
             os: windows-latest,
-            platform: x64
+            platform: x64,
+            engine_os: Windows,
+            engine_arch: x86_64,
+            engine_ext: zip,
+            engine_exe: ".exe"
           }
           - {
             name: "Ubuntu Latest",
             os: ubuntu-latest,
-            platform: x64
+            platform: x64,
+            engine_os: Linux,
+            engine_arch: x86_64,
+            engine_ext: tar,
+            engine_exe: ""
           }
           - {
             name: "macOS arm64",
             os: macos-latest,
-            platform: arm64
+            platform: arm64,
+            engine_os: Darwin,
+            engine_arch: aarch64,
+            engine_ext: tar,
+            engine_exe: ""
           }
 
     env:
@@ -111,6 +126,44 @@ jobs:
 
       - name: Install dependencies
         run: npm install --quiet
+
+      # Bundle the swap engine: pull the latest xkr-swap-core release's `swap`
+      # and `asb` binaries for THIS platform into bin/, where electron-builder
+      # picks them up via extraResources ("bin/*"). Without this the packaged
+      # wallet ships with no swap engine. bsdtar (default `tar` on all three
+      # runners) extracts both .tar and Windows .zip archives.
+      - name: Bundle swap engine binaries
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ENGINE_OS: ${{ matrix.config.engine_os }}
+          ENGINE_ARCH: ${{ matrix.config.engine_arch }}
+          ENGINE_EXT: ${{ matrix.config.engine_ext }}
+          ENGINE_EXE: ${{ matrix.config.engine_exe }}
+        run: |
+          set -euo pipefail
+          mkdir -p bin dl
+          for b in swap asb; do
+            echo "Downloading latest ${b} for ${ENGINE_OS}_${ENGINE_ARCH}…"
+            gh release download --repo kryptokrona/xkr-swap-core \
+              --pattern "${b}_*_${ENGINE_OS}_${ENGINE_ARCH}.${ENGINE_EXT}" \
+              --dir dl --clobber
+          done
+          # Extract with Python (present via setup-python) so both .tar and
+          # Windows .zip work the same regardless of which `tar` is on PATH.
+          python - <<'PY'
+          import glob, tarfile, zipfile, os
+          for f in glob.glob("dl/*.tar") + glob.glob("dl/*.zip"):
+              if f.endswith(".tar"):
+                  with tarfile.open(f) as a: a.extractall("dl")
+              else:
+                  with zipfile.ZipFile(f) as a: a.extractall("dl")
+              print("extracted", f)
+          PY
+          mv "dl/swap${ENGINE_EXE}" "bin/swap${ENGINE_EXE}"
+          mv "dl/asb${ENGINE_EXE}"  "bin/asb${ENGINE_EXE}"
+          chmod +x "bin/swap${ENGINE_EXE}" "bin/asb${ENGINE_EXE}" || true
+          echo "Bundled engine binaries:"; ls -la bin/swap* bin/asb*
 
       - name: Build ${{ matrix.config.name }}
         if: matrix.config.os == 'windows-latest'
