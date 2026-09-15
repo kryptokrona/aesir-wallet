@@ -16,8 +16,6 @@
 
   const shortId = (s) => (s ? s.slice(0, 8) + '…' + s.slice(-8) : '');
 
-  // Unified history feed: always show BOTH XKR and BTC history, merged by time,
-  // regardless of which balance (wallet mode) is currently displayed.
   $: feed = (() => {
     const xkr = ($transactions.latest || []).map((t) => ({
       kind: 'xkr',
@@ -33,8 +31,6 @@
       confirmed: !!t.confirmed,
       time: t.timestamp || 0,
     }));
-    // Pending (unconfirmed) txs just happened -- float them to the top even
-    // without a timestamp yet, then order newest-first.
     const byRecency = (a, b) =>
       a.confirmed === b.confirmed ? (b.time || 0) - (a.time || 0) : a.confirmed ? 1 : -1;
     return [...xkr, ...bt].sort(byRecency).slice(0, 8);
@@ -49,8 +45,6 @@
     await formatAndRender(false);
     refreshBtc();
     getCoinPriceFromAPI();
-    // Poll the BTC wallet so incoming/outgoing txs (incl. unconfirmed) appear in
-    // the feed live, without needing to navigate away and back.
     btcPoll = setInterval(refreshBtc, 8000);
   });
   onDestroy(() => btcPoll && clearInterval(btcPoll));
@@ -68,18 +62,14 @@
     await renderchart(update);
   }
 
-  // Interpolate a series of {t (unix secs), v} with a monotone cubic (Fritsch–
-  // Carlson) spline into many points, so the plotted line is a true smooth curve
-  // instead of a few straight segments with visible corners. Monotone => it never
-  // overshoots between points (no phantom dips below the balance).
   function densifyMonotone(pts, perGap = 14) {
     const n = pts.length;
     if (n < 3) return pts.map((p) => ({ time: p.t, value: p.v }));
     const xs = pts.map((p) => p.t);
     const ys = pts.map((p) => p.v);
-    const m = []; // secant slopes
+    const m = [];
     for (let i = 0; i < n - 1; i++) m[i] = (ys[i + 1] - ys[i]) / (xs[i + 1] - xs[i]);
-    const c = new Array(n); // tangents
+    const c = new Array(n);
     c[0] = m[0];
     c[n - 1] = m[n - 2];
     for (let i = 1; i < n - 1; i++) c[i] = m[i - 1] * m[i] <= 0 ? 0 : (m[i - 1] + m[i]) / 2;
@@ -121,9 +111,6 @@
   async function renderchart(update) {
     let data = [];
     let runningBalance = 0.0;
-    // Accumulate the running balance in chronological (oldest-first) order --
-    // wallet-backend-js returns transactions newest-first, and summing them in
-    // that order produces a nonsensical, spiky curve.
     const chronological = [...transactionsList].sort((a, b) => (a.time || 0) - (b.time || 0));
     for (const thisTx of chronological) {
       runningBalance += thisTx.amount;
@@ -140,9 +127,6 @@
       }, {}),
     );
 
-    // Smooth the daily balance series with a centered moving average so a single
-    // large tx doesn't dominate the whole chart with a spike. The window scales
-    // with the amount of data; short series are left as-is.
     const smoothed = (() => {
       const n = summarizedData.length;
       if (n < 5) return summarizedData;
@@ -201,8 +185,6 @@
 
     area.priceScale().applyOptions({ visible: false });
     chart.timeScale().applyOptions({ borderColor: border_color, visible: false });
-    // Timestamp the (smoothed) daily points, then interpolate into a dense,
-    // genuinely smooth curve.
     const toTs = (d) => Math.floor(Date.parse(d + 'T00:00:00Z') / 1000);
     const dense = densifyMonotone(smoothed.map((p) => ({ t: toTs(p.time), v: p.value })));
     area.setData(dense);
@@ -238,7 +220,6 @@
       } else {
         // time will be in the same format that we supplied to setData.
         // thus it will be YYYY-MM-DD
-        // param.time is now a unix timestamp (we interpolate on a seconds axis).
         const dateStr =
           typeof param.time === 'number'
             ? new Date(param.time * 1000).toISOString().split('T')[0]
@@ -406,8 +387,6 @@
   .amt .tx {
     margin: 0;
   }
-  // Fiat value is hidden by default and swapped in for the crypto amount only
-  // while the row is hovered (and only when a price is available).
   .amount-fiat {
     display: none;
   }

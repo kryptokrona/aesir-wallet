@@ -1,21 +1,10 @@
 <script>
-  // Decorative background for the login screen: diagonal "ribbons" of the
-  // Kryptokrona logo, spaced out and tiled edge-to-edge, each line drifting the
-  // opposite way to its neighbours at a slightly different opacity so the whole
-  // field reads like layered ribbons.
-  //
-  // The logos are tinted with the theme's highlight colour (see .logo below),
-  // so the same mask works on every theme.
   import { onMount, onDestroy } from 'svelte';
   import { scale, blur } from 'svelte/transition';
 
-  export let angle = 40; // tilt in degrees
-  export let logoWidth = 128; // px
-  export let gapX = -10; // px of empty space between logos on a line
-  // Pinhole mask: reveal the drifting field only through a soft circle, fading to
-  // nothing at the edges. `pinholeX`/`pinholeY` place the circle centre (CSS
-  // <position>), `pinholeInner`/`pinholeOuter` are the fully-visible and
-  // fully-hidden radii.
+  export let angle = 40;
+  export let logoWidth = 128;
+  export let gapX = -10;
   export let pinhole = true;
   export let pinholeX = '50%';
   export let pinholeY = '38%';
@@ -24,25 +13,19 @@
 
   const LOGO_RATIO = 54 / 176;
   const rowHeight = Math.round(logoWidth * LOGO_RATIO);
-  const pitch = rowHeight + 52; // vertical distance between ribbon centres
-  const cell = logoWidth + gapX; // one logo + its trailing gap
+  const pitch = rowHeight + 52;
+  const cell = logoWidth + gapX;
 
   let cols = 30;
   let rows = 30;
-  // px width of one repeating half; scrolling by exactly this loops seamlessly.
   $: half = cols * cell;
 
   const sizeToViewport = () => {
-    // The field is a 220vmax square rotated behind the form; cover it fully.
     const field = 4 * Math.max(window.innerWidth, window.innerHeight);
     cols = Math.ceil(field / cell) + 2;
     rows = Math.ceil(field / pitch) + 1;
   };
 
-  // Svelte/SvelteKit skips intro transitions on the initial (hydrated) render, so
-  // `in:scale` would never fire on the login screen -- it's the first screen on
-  // app start. Gate the ribbon on this flag, flipped after mount, so the element
-  // is inserted client-side and the intro (and outro on teardown) run reliably.
   let mounted = false;
   onMount(() => {
     sizeToViewport();
@@ -53,12 +36,10 @@
     if (typeof window !== 'undefined') window.removeEventListener('resize', sizeToViewport);
   });
 
-  // A gentle sine wave of opacities gives the layered-ribbon look; each row
-  // also drifts against its neighbour at a slightly different speed.
   $: lines = Array.from({ length: rows }, (_, i) => ({
     opacity: 0.05 + 0.06 * (0.5 + 0.5 * Math.sin(-i * 0.7)),
     reverse: i % 2 === 1,
-    duration: (120 + (i % 5) * 0.4) * (cell / 20), // px/s roughly constant
+    duration: (120 + (i % 5) * 0.4) * (cell / 20),
   }));
 
   $: mask = pinhole
@@ -85,11 +66,6 @@
 <style lang="scss">
   .ribbon {
     position: absolute;
-    // Deliberately a centred, CONTAINED box -- not full-bleed. Full-bleed
-    // overlaid the fixed 30px TopBar window controls (the red/orange buttons),
-    // which on Windows blocked them; and the visible field is only the pinhole
-    // circle anyway, so it never needed the whole page. Callers can override the
-    // box via --ribbon-w / --ribbon-h.
     top: 50%;
     left: 50%;
     width: var(--ribbon-w, min(520px, 88vw));
@@ -99,13 +75,10 @@
     overflow: hidden;
     pointer-events: none;
     border-radius: 15px;
-    // Pinhole: only reveal the drifting field through a soft circle (see `mask`
-    // in the script). `none` when pinhole is disabled, so nothing is masked.
     -webkit-mask: var(--mask, none);
     mask: var(--mask, none);
   }
 
-  // Oversized, centred and rotated so the tilted rows still cover every corner.
   .field {
     position: absolute;
     top: 50%;
@@ -138,8 +111,6 @@
     animation-name: drift-rev;
   }
 
-  // The logo is drawn as a mask so it can be painted in the theme's highlight
-  // colour (an <img> would render the SVG's own fill and can't be tinted).
   .logo {
     height: var(--h);
     flex: none;
@@ -150,7 +121,6 @@
     user-select: none;
   }
 
-  // One repeating half of travel per cycle keeps the loop perfectly seamless.
   @keyframes drift {
     from {
       transform: translateX(0);

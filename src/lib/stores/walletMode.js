@@ -1,5 +1,3 @@
-// The wallet's active display mode, shared between the Balance component and the
-// dashboard history. Cycles XKR -> BTC -> Total fiat value.
 import { writable } from "svelte/store";
 
 export const MODES = ["xkr", "btc", "fiat"];

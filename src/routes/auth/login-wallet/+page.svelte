@@ -56,10 +56,6 @@
     animate = false;
     wrongPassword = false;
 
-    // Auto-lock case: the wallet is ALREADY running (this screen is just acting as
-    // a lock). Don't call walletStart -- that would tear down and restart the
-    // wallet + swap engine, interrupting any in-flight swap. Just verify the
-    // password and slip back in; the backend never stopped.
     if ($wallet.started) {
       const ok = await window.api.verifyPass(password);
       if (!ok) {
@@ -77,9 +73,6 @@
 
     nodeOnline = await window.api.checkNode($node.selectedNode);
     if (!nodeOnline) {
-      // Don't start the wallet against a dead node -- that leaves it half-started
-      // and the app bounces. Open the node selector so the user can pick a working
-      // node (needed e.g. to switch to a testnet node), then they retry login.
       toast.error('Node error — pick a working node', {
         position: 'top-right',
         style:
@@ -171,8 +164,6 @@
 {/if}
 
 <style lang="scss">
-  // Fills the login viewport and contains the decorative ribbon (absolute)
-  // without affecting the rest of the wallet's layout.
   .login-stage {
     position: absolute;
     inset: 0;

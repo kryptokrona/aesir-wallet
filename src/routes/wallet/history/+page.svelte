@@ -12,11 +12,6 @@
   let pageNum = 0;
   let xkrTxs = [];
 
-  // Locally-recorded "first seen" time (unix seconds) per tx, so testnet block
-  // timestamps that are 0 or bogusly in the FUTURE don't scramble the order. We
-  // trust an on-chain time only when it's sane (present and not in the future);
-  // otherwise we fall back to when this wallet first saw the tx. Persisted so the
-  // order is stable across reloads.
   const TX_SEEN_KEY = 'txFirstSeen';
   let txSeen = {};
   try {
@@ -36,22 +31,16 @@
   let btcPoll;
   onMount(async () => {
     await Promise.all([loadXkr(), refreshBtc(), getCoinPriceFromAPI()]);
-    // Poll BTC so newly sent/received (unconfirmed) txs appear without a reload.
     btcPoll = setInterval(refreshBtc, 8000);
   });
   onDestroy(() => btcPoll && clearInterval(btcPoll));
 
   async function loadXkr() {
-    // all=true returns every XKR tx, already stripped of 0-amount optimize txs.
-    // We paginate client-side so each page has a fixed count (the old server-side
-    // paging filtered AFTER slicing, so pages had a fluctuating number of rows).
     const res = await window.api.getTransactions(0, true);
     xkrTxs = (res && res.pageTx) || [];
-    // Keep the store populated so the tx-detail page can look XKR txs up by hash.
     $transactions.txs = xkrTxs;
   }
 
-  // One unified history of BOTH assets, newest first.
   $: merged = [
     ...xkrTxs.map((t) => ({
       kind: 'xkr',
@@ -67,12 +56,8 @@
       time: effTime('btc:' + t.txid, t.timestamp || 0),
       confirmed: !!t.confirmed,
     }))),
-    // Pending (unconfirmed) txs just happened -- float them to the top even
-    // though they have no timestamp yet, then order each group newest-first.
   ].sort((a, b) => (a.confirmed === b.confirmed ? b.time - a.time : a.confirmed ? 1 : -1));
 
-  // Fixed rows per page (the last page may be shorter). Clamp the current page if
-  // the underlying list shrank between refreshes.
   $: pages = Math.max(1, Math.ceil(merged.length / PER_PAGE));
   $: if (pageNum > pages - 1) pageNum = pages - 1;
   $: pageTx = merged.slice(pageNum * PER_PAGE, pageNum * PER_PAGE + PER_PAGE);
@@ -101,8 +86,6 @@
         {@const fiatAmt = fiatStr(tx.amount, tx.kind, $fiat)}
         <div class="row" class:unconfirmed={!tx.confirmed} on:click={() => open(tx)}>
           <p style="opacity: 80%;">{shortId(tx.id)}</p>
-          <!-- On hover, swap the crypto amount out for its fiat value (only when
-               we actually have a price -- otherwise keep showing the crypto). -->
           <div class="amt" class:has-fiat={fiatAmt}>
             <p class="tx amount-crypto" style="background: none" class:sent={tx.amount > 0}>
               {tx.kind === 'btc' ? tx.amount.toFixed(8) + ' BTC' : tx.amount.toFixed(5) + ' XKR'}
@@ -188,8 +171,6 @@
   .amt .tx {
     margin: 0;
   }
-  // Fiat value is hidden by default and swapped in for the crypto amount only
-  // while the row is hovered (and only when a price is available).
   .amount-fiat {
     display: none;
   }

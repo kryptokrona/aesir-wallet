@@ -1,8 +1,4 @@
 <script>
-  // Vertical progress timeline for a swap: a rail of dots (done / active / pending)
-  // with a title, description, timestamp and — for the on-chain steps — the tx hash
-  // linking to a block explorer. Driven by the swap's `state_name`; see
-  // $lib/utils/swapProgress.js for the step mapping.
   import {
     stepsFor,
     stateToStep,
@@ -12,12 +8,11 @@
   } from "$lib/utils/swapProgress.js";
 
   export let stateName = "";
-  export let role = "taker"; // "taker" (buy) or "maker" (sell)
-  export let txLockId = null; // BTC lock txid, links to the explorer on the lock step
-  export let xkrLockTxid = null; // XKR lock tx hash (both roles), shown on the "Lock XKR" step
-  export let xkrRedeemTxid = null; // XKR redeem sweep hash (taker only), shown on "Receive XKR"
-  export let startDate = null; // swap start timestamp (shown on the first step)
-  // testnet for now; the wallet's BTC side runs on testnet.
+  export let role = "taker";
+  export let txLockId = null;
+  export let xkrLockTxid = null;
+  export let xkrRedeemTxid = null;
+  export let startDate = null;
   export let btcExplorer = "https://mempool.space/testnet/tx/";
   export let xkrExplorer = "https://xkr.network/transaction?hash=";
 
@@ -26,14 +21,10 @@
   $: current = outcome === "done" ? steps.length - 1 : stateToStep(stateName, role);
   $: friendly = friendlyState(stateName, role);
   $: failed = ["refunded", "refunding", "punished", "aborted"].includes(outcome);
-  // The step that represents the BTC lock (gets the tx link + confirmation note).
   $: lockStep = steps.indexOf("BTC locked");
-  // XKR on-chain steps (present on both roles for the lock; redeem is taker-only).
   $: lockXkrStep = steps.indexOf("Lock XKR");
-  $: receiveXkrStep = steps.indexOf("Receive XKR"); // -1 for the maker
+  $: receiveXkrStep = steps.indexOf("Receive XKR");
 
-  // The engine stamps timestamps via Rust's `time` crate (space-separated, micros,
-  // "+00:00:00" offset) which JS Date can't parse; normalize before formatting.
   function fmtTime(str) {
     if (!str) return "";
     let ms = Date.parse(str);
@@ -130,7 +121,6 @@
     min-height: 2.9rem;
   }
 
-  // The vertical rail: a line through the column, a dot per step.
   .rail {
     position: relative;
     display: flex;
@@ -144,7 +134,6 @@
     width: 2px;
     background: var(--border-color);
   }
-  // No line above the first dot / below the last.
   .step:first-child .rail::before {
     top: 11px;
   }

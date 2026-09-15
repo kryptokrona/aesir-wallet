@@ -17,17 +17,11 @@
     transition: 150ms ease-in-out;
   }
 
-
   .window-buttons {
     display: flex;
     gap: 0.5rem;
     align-items: center;
     padding: 12px 0 5px 12px;
-    // The controls sit right next to the draggable region. A
-    // `-webkit-app-region: drag` region is hit-tested by the OS as titlebar and
-    // swallows clicks -- on Windows this is enforced strictly (macOS is lenient),
-    // which made these buttons unclickable. Opt the controls out explicitly so
-    // clicks always reach them.
     -webkit-app-region: no-drag;
 
     .button {
@@ -47,8 +41,6 @@
   }
 
   .drag-area {
-    // Take only the space left of the buttons -- `width: 100%` could report a
-    // full-width drag rect that overlaps (and blocks) the controls on Windows.
     flex: 1;
     cursor: grab;
   }

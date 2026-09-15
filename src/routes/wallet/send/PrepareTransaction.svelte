@@ -7,8 +7,6 @@
   import { fiat } from '$lib/stores/fiat.js';
   import { btc } from '$lib/stores/btc.js';
 
-  // "xkr" -> normal Kryptokrona send; "btc" -> withdraw from the engine's
-  // Bitcoin wallet via the swap daemon.
   export let mode = 'xkr';
 
   let address;
@@ -27,9 +25,6 @@
     ? '$' + ((mode === 'btc' ? $fiat.btcPrice : $fiat.balance) * amount).toFixed(mode === 'btc' ? 2 : 5)
     : '$0.00';
 
-  // Stage a BTC withdrawal for confirmation (mirrors the XKR prepare step): just
-  // validate and set the prepared tx -- ConfirmBtcTransaction broadcasts it on
-  // Confirm. Blank amount + Max drains the wallet.
   function prepareBtc() {
     const toastStyle = {
       position: 'top-right',
@@ -92,7 +87,6 @@
   const pasteAddress = async () => {
     address = '';
     let pastedAddress = await navigator.clipboard.readText();
-    // BTC addresses aren't XKR addresses; the daemon validates them on send.
     if (mode === 'btc') {
       address = pastedAddress.trim();
       return;

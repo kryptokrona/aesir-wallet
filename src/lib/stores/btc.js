@@ -1,7 +1,3 @@
-// The BTC side of the wallet (the swap engine's on-chain Bitcoin wallet),
-// exposed to the renderer through the electron.cjs swap-* IPC handlers.
-// balanceSat is in satoshis; txs are { txid, amount_sat, confirmed, timestamp,
-// height } (amount_sat: positive = received, negative = sent).
 import { writable, get } from "svelte/store";
 
 export const btc = writable({
@@ -11,8 +7,6 @@ export const btc = writable({
   engineUp: false,
 });
 
-// Pull balance, deposit address and tx history from the daemon. Safe to call
-// repeatedly (poll); keeps the last known value on transient failures.
 export async function refreshBtc() {
   if (typeof window === "undefined" || !window.api) return;
   try {
@@ -33,7 +27,5 @@ export async function refreshBtc() {
       txs: txs && txs.ok && Array.isArray(txs.result) ? txs.result : cur.txs,
       engineUp: !!(status && status.engineRunning),
     });
-  } catch (_) {
-    // keep previous values on failure
-  }
+  } catch (_) {}
 }

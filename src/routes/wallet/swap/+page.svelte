@@ -1,11 +1,4 @@
 <script>
-  // BTC -> XKR atomic swap screen.
-  //
-  // The received XKR always lands on the wallet's own primary address (no address
-  // field). Makers are auto-discovered via rendezvous and the best price is picked
-  // automatically (no maker picker). The user sees a live fiat preview of what they
-  // send and receive, confirms in a prepared-swap popup, then watches a live
-  // progress timeline. Talks to the Rust taker daemon via the electron.cjs swap-* IPC.
   import { onMount, onDestroy } from 'svelte';
   import { fade, fly, scale } from 'svelte/transition';
   import toast from 'svelte-french-toast';
@@ -22,25 +15,21 @@
 
   let engineUp = false;
   let sellers = [];
-  let infos = []; // live taker swaps (drives the in-progress monitor)
-  let historyList = []; // merged, persistent swap history (taker + maker) from the local cache
-  let primaryAddress = ''; // our own XKR receive address (never shown as a field)
+  let infos = [];
+  let historyList = [];
+  let primaryAddress = '';
   let poll;
 
-  let view = 'form'; // "form" | "monitor"
+  let view = 'form';
   let showPrepare = false;
   let starting = false;
   let activeSwapId = null;
-  let snapshot = null; // { btc, xkr, rate, maker } captured at start for the monitor
+  let snapshot = null;
 
   let amountBtc = '';
   let amountXkr = '';
-  let lastEdited = 'btc'; // which field the user typed in, so we know which to derive
+  let lastEdited = 'btc';
 
-  // Headroom reserved for the taker's on-chain Bitcoin lock-tx fee, which is
-  // charged on top of the swap amount. The engine floors it to the 1000-sat
-  // min-relay fee on testnet; reserve extra so fee-rate variation never tips a
-  // near-max swap into "Insufficient funds" during setup.
   const BTC_LOCK_FEE_BUFFER_SAT = 2000;
 
   const short = (s) => (s ? s.slice(0, 8) + '…' + s.slice(-6) : '');
@@ -51,32 +40,24 @@
         'border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);',
     });
 
-  // ---- pricing / preview (all reactive) ------------------------------------
   $: amountNum = parseFloat(amountBtc) || 0;
   $: amountSat = Math.round(amountNum * 1e8);
-  // Best price for a buyer = the lowest sat-per-XKR quote on offer.
   $: quotedSellers = sellers.filter((s) => s.quote && s.quote.price > 0);
   $: bestSeller = quotedSellers.length ? quotedSellers.reduce((a, b) => (b.quote.price < a.quote.price ? b : a)) : null;
-  // A specific maker the user picked from the sell book (a cheap maker can offer a
-  // tiny amount, blocking bigger trades -- so you can pick a pricier maker with the
-  // size you want). Tracked by XKR address and re-resolved each poll so it survives
-  // quote refreshes; if that maker disappears, we fall back to the best price.
   let selectedAddr = null;
   $: selectedSeller = selectedAddr ? quotedSellers.find((s) => s.xkrAddress === selectedAddr) : null;
   $: activeSeller = selectedSeller || bestSeller;
-  $: rate = activeSeller?.quote.price ?? null; // sats per XKR (of the active maker)
+  $: rate = activeSeller?.quote.price ?? null;
   $: minBtc = activeSeller ? activeSeller.quote.min_quantity / 1e8 : null;
   $: maxBtc = activeSeller ? activeSeller.quote.max_quantity / 1e8 : null;
 
-  // Sell book (asks): each maker's advertised offer, cheapest first. `xkr` is how
-  // much XKR they'll sell (max BTC sats / price), `cum` the running total.
   $: asks = quotedSellers
     .map((s) => ({
       price: s.quote.price,
       xkr: s.quote.price > 0 ? s.quote.max_quantity / s.quote.price : 0,
       btcSat: s.quote.max_quantity,
       peer: s.peer_id,
-      address: s.xkrAddress, // used to pick this maker for a swap
+      address: s.xkrAddress,
     }))
     .sort((a, b) => a.price - b.price);
   $: cumAsks = (() => {
@@ -85,7 +66,6 @@
   })();
   $: bookTotalXkr = cumAsks.length ? cumAsks[cumAsks.length - 1].cum : 0;
 
-  // Sell-book pagination (5 offers per page). The chart still shows the full depth.
   const BOOK_PER_PAGE = 5;
   let bookPageNum = 0;
   $: bookPages = Math.max(1, Math.ceil(cumAsks.length / BOOK_PER_PAGE));
@@ -95,10 +75,6 @@
   $: xkrReceive = parseFloat(amountXkr) || 0;
   $: withinRange =
     activeSeller && amountSat >= activeSeller.quote.min_quantity && amountSat <= activeSeller.quote.max_quantity;
-  // The taker must also pay the on-chain Bitcoin lock-tx fee on top of the swap
-  // amount. On testnet this floors to the 1000-sat min-relay fee; reserve a
-  // safe headroom so "swap almost my whole balance" can't fail mid-setup with
-  // "Insufficient funds" (which shows up as a stuck/never-started swap).
   $: maxSpendableSat =
     $btc.balanceSat != null ? Math.max(0, $btc.balanceSat - BTC_LOCK_FEE_BUFFER_SAT) : null;
   $: overBalance = maxSpendableSat != null && amountSat > maxSpendableSat;
@@ -112,7 +88,6 @@
     return c.symbolLocation === 'prefix' ? `${c.symbol}${n}` : `${n} ${c.symbol}`;
   }
   const fmtXkr = (v) => (v || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
-  // Fiat with more precision, for the tiny per-XKR fiat price.
   const fmtFiatSmall = (v) => {
     const c = ($fiat.currencies || []).find((x) => x.ticker === $fiat.ticker) || {
       symbol: '$',
@@ -121,19 +96,13 @@
     const n = (v || 0).toLocaleString(undefined, { maximumSignificantDigits: 3 });
     return c.symbolLocation === 'prefix' ? `${c.symbol}${n}` : `${n} ${c.symbol}`;
   };
-  // XKR amount a swap will/did receive, from swap_infos (xmr_amount is piconero;
-  // 1 XKR = 1e12 piconero in the engine's units). Used when we have no local snapshot.
   const xkrFromInfo = (info) => (info?.xmr_amount || 0) / 1e12;
-  // Fiat value of a swap, for the history rows/details. Prefer pricing the XKR
-  // leg (what the user cares about); fall back to the BTC leg if we have no XKR
-  // price. `f` is passed in so the template re-renders when prices arrive.
   const swapFiatStr = (info, f) =>
     fiatStr(xkrFromInfo(info), 'xkr', f) || fiatStr((info?.btc_amount || 0) / 1e8, 'btc', f);
 
   $: btcFiatStr = fmtFiat($fiat.btcPrice * amountNum);
   $: xkrFiatStr = fmtFiat($fiat.balance * xkrReceive);
 
-  // ---- two-way BTC <-> XKR amount conversion (rate = sats per XKR) ----------
   function computeXkr(btcStr) {
     const sat = Math.round((parseFloat(btcStr) || 0) * 1e8);
     return rate && sat ? String(+(sat / rate).toFixed(5)) : '';
@@ -153,7 +122,6 @@
     lastEdited = 'xkr';
     amountBtc = computeBtc(amountXkr);
   }
-  // When the live rate changes under us, refresh whichever field is derived.
   function reconcileFromSource() {
     if (!rate) return;
     if (lastEdited === 'xkr') amountBtc = computeBtc(amountXkr);
@@ -161,7 +129,6 @@
   }
   $: rate, reconcileFromSource();
 
-  // ---- data ----------------------------------------------------------------
   async function refreshStatus() {
     try {
       const s = await window.api.invoke('swap-rpc-status');
@@ -170,18 +137,13 @@
       engineUp = false;
     }
   }
-  // TEMP (dev only): preview the sell book with ~50 fake makers. Never runs in a
-  // production build (gated on `dev`). Flip to true to re-enable; delete MOCK_BOOK +
-  // generateMockSellers to remove entirely.
   const MOCK_BOOK = false;
   function generateMockSellers() {
-    const base = marketSats > 0 ? marketSats * 1.01 : 4.8; // best ask ~1% above market
+    const base = marketSats > 0 ? marketSats * 1.01 : 4.8;
     const out = [];
     for (let i = 0; i < 50; i++) {
       const t = i / 49;
-      // Price rises from the best ask up to ~2.4x, denser near the best.
       const price = +(base * (1 + Math.pow(t, 1.6) * 1.4)).toPrecision(4);
-      // Deterministic pseudo-random size, in BTC sats (~0.001 .. 0.15 BTC).
       const r = Math.abs((Math.sin(i * 12.9898) * 43758.5453) % 1);
       const btcSat = Math.round((0.001 + r * 0.14) * 1e8);
       out.push({
@@ -203,12 +165,9 @@
     if (res && res.ok && Array.isArray(res.result)) sellers = res.result;
   }
   async function refreshInfos() {
-    // Live taker swaps drive the in-progress monitor and refresh the taker cache.
     const res = await window.api.invoke('swap-infos');
     if (res && res.ok && Array.isArray(res.result)) infos = res.result;
-    // Refresh the maker cache too (no-op result unless market-making is running).
     await window.api.invoke('swap-maker-swaps');
-    // Read the merged, persistent history (survives engine/ASB being down).
     const hist = await window.api.invoke('swap-history-cache');
     if (hist && hist.ok && Array.isArray(hist.result)) historyList = hist.result;
   }
@@ -220,8 +179,6 @@
     } catch (_) {}
   }
 
-  // Prefer the LIVE taker swap (freshest state); fall back to the persistent cache
-  // so maker swaps (and older taker swaps) can still open the progress page.
   $: activeInfo =
     (() => {
       const live = infos.find((i) => i.swap_id === activeSwapId);
@@ -229,39 +186,27 @@
       return sortedInfos.find((i) => i.swap_id === activeSwapId) || null;
     })();
   $: activeTerminal = activeInfo ? isTerminal(activeInfo.state_name, activeInfo.role) : false;
-  // The engine stamps start_date via the Rust `time` crate's OffsetDateTime
-  // Display, e.g. "2026-09-07 21:19:26.642276 +00:00:00" -- space-separated, with
-  // microseconds and a seconds-bearing offset, which JS `Date` can't parse.
-  // Normalize it to ISO-8601 before parsing so the sort actually orders by time.
   function parseSwapDate(str) {
     if (!str) return NaN;
     let t = Date.parse(str);
     if (Number.isFinite(t)) return t;
     const iso = String(str)
-      .replace(' ', 'T') // date/time separator
-      .replace(/\s*([+-]\d{2}):?(\d{2})(?::\d{2})?$/, '$1:$2'); // "+00:00:00" -> "+00:00"
+      .replace(' ', 'T')
+      .replace(/\s*([+-]\d{2}):?(\d{2})(?::\d{2})?$/, '$1:$2');
     return Date.parse(iso);
   }
 
-  // Sort key: prefer the locally-recorded `firstSeen` (stable, monotonic -- set when
-  // we first cached the swap), since the engine's start_date can be unparseable or
-  // inconsistent. Fall back to start_date, then to "now" (a brand-new swap pins top).
   const swapTime = (s) => {
     if (s && Number.isFinite(s.firstSeen)) return s.firstSeen;
     const t = parseSwapDate(s?.start_date);
     return Number.isFinite(t) ? t : Date.now();
   };
-  // Active (in-flight) swaps rank above finished ones so they always show first.
   const swapRank = (s) => (isTerminal(s?.state_name, s?.role) ? 0 : 1);
 
-  // The cached history is already merged (taker + maker) and normalized; sort it
-  // active-first, then newest-first, for both the recent list (top 3) and the
-  // full history view.
   $: sortedInfos = [...historyList].sort(
     (a, b) => swapRank(b) - swapRank(a) || swapTime(b) - swapTime(a),
   );
 
-  // Full swap-history pagination, mirroring /history (10 per page).
   const HISTORY_PER_PAGE = 10;
   let historyPageNum = 0;
   $: historyPages = Math.max(1, Math.ceil(sortedInfos.length / HISTORY_PER_PAGE));
@@ -274,8 +219,6 @@
 
   function setMax() {
     if ($btc.balanceSat == null) return;
-    // Reserve headroom for the on-chain lock fee so the swap can actually afford
-    // amount + fee (see BTC_LOCK_FEE_BUFFER_SAT).
     let sat = $btc.balanceSat - BTC_LOCK_FEE_BUFFER_SAT;
     if (maxBtc != null) sat = Math.min(sat, activeSeller.quote.max_quantity);
     amountBtc = sat > 0 ? String(+(sat / 1e8).toFixed(8)) : '0';
@@ -283,8 +226,6 @@
     amountXkr = computeXkr(amountBtc);
   }
 
-  // Estimated BTC lock-tx fee (sats), fetched from the engine when the confirm
-  // modal opens so the user sees the real network fee before committing.
   let feeSat = null;
   let feeLoading = false;
   async function fetchFeeEstimate() {
@@ -297,7 +238,6 @@
         feeSat = res.result.fee_sat;
       }
     } catch (_) {
-      // leave feeSat null -> UI shows "—"
     } finally {
       feeLoading = false;
     }
@@ -315,12 +255,9 @@
     fetchFeeEstimate();
   }
 
-  // A started swap can fail during setup (e.g. the maker is out of XKR) before it
-  // ever shows up in swap-infos, which would otherwise leave the monitor spinning
-  // on "Loading swap…" forever. If nothing loads within the window, surface it.
   let monitorLoadFailed = false;
-  let monitorErrorMsg = ''; // terminal failure reason from the engine, when we have one
-  let monitorStatusMsg = ''; // transient "still trying" reason (e.g. reaching the maker)
+  let monitorErrorMsg = '';
+  let monitorStatusMsg = '';
   let monitorTimer = null;
   function watchMonitorLoad() {
     monitorLoadFailed = false;
@@ -332,10 +269,6 @@
     }, 25000);
   }
 
-  // Ask the engine for the active swap's real failure reason. A swap that fails
-  // during setup never appears in swap-infos (no SwapSetupCompleted state), so we
-  // poll this by swap_id while watching a freshly-started swap. When a reason
-  // lands, show it instead of the generic timeout and stop the spinner.
   async function checkSwapError() {
     if (view !== 'monitor' || !activeSwapId || activeTerminal) return;
     try {
@@ -343,14 +276,11 @@
       const r = res && res.ok && res.result;
       const msg = r && r.error;
       if (msg && r.terminal) {
-        // The swap gave up — show it as a failure and stop the spinner/timeout.
         if (monitorTimer) clearTimeout(monitorTimer);
         monitorStatusMsg = '';
         monitorErrorMsg = msg;
         monitorLoadFailed = true;
       } else if (msg) {
-        // Transient: still trying (e.g. reaching the maker). Show the reason but
-        // keep waiting -- cancel the generic timeout so it doesn't flip to failed.
         if (monitorTimer) clearTimeout(monitorTimer);
         monitorStatusMsg = msg;
         monitorErrorMsg = '';
@@ -359,7 +289,6 @@
         monitorStatusMsg = '';
       }
     } catch (_) {
-      // engine not reachable right now; the poll will retry
     }
   }
 
@@ -378,8 +307,6 @@
         xkrReceiveAddress: primaryAddress,
       };
       let res = await window.api.invoke('swap-start', startArgs);
-      // A previous swap that never got off the ground can still hold the swap
-      // lock; free it and retry once so the user isn't dead-ended.
       if (res && !res.ok && /active swap lock/i.test(res.error || '')) {
         await window.api.invoke('swap-cancel', activeSwapId || null).catch(() => {});
         await new Promise((r) => setTimeout(r, 900));
@@ -416,82 +343,58 @@
     confirmCancel = false;
   }
 
-  // ---- cancel / abandon an ongoing swap ------------------------------------
-  // Two-stage (inline confirm) because it can cost the on-chain lock fee. The
-  // backend suspends the swap (freeing the engine's global lock so new swaps can
-  // run) and starts the timelock-gated BTC refund. Fees already spent on the lock
-  // are lost; the locked BTC itself comes back once the cancel timelock expires.
   let confirmCancel = false;
   let cancelling = false;
   async function cancelSwap() {
-    // Use activeSwapId (set at start) as the fallback: a swap stuck getting off
-    // the ground never reaches swap_infos, so activeInfo is null -- but we still
-    // need to cancel it to release the swap lock and retry.
     const id = activeInfo?.swap_id || activeSwapId;
     if (!id) return;
     cancelling = true;
     try {
       await window.api.invoke('swap-cancel', id);
     } catch (_) {
-      // best-effort: the suspend half still frees the lock; refund is retryable
     }
     confirmCancel = false;
     cancelling = false;
-    // Refresh so the row reflects the new (refunding/abandoned) state, then leave
-    // the monitor -- the swap now lives in history and no longer blocks new swaps.
     await refreshInfos().catch(() => {});
     newSwap();
   }
 
-  // ---- market maker (sell XKR for BTC) -------------------------------------
   let makerStatus = { advertising: false, asbRunning: false, peerId: null, error: null, advertised: null, btcBalanceSat: null };
-  // Per-swap bounds are background defaults now — the UI is two sliders (price +
-  // amount), not free-text fields.
   const makerMinBtc = 0.0001;
   const makerMaxBtc = 0.05;
-  // Two-slider controls: ask price (sats/XKR) centered on the live market price,
-  // and the total XKR to sell (0..inventory). Captured once when the form opens so
-  // live price ticks don't shift the sliders under the user.
-  let priceCenterSats = 5; // market price captured at open (for the "% vs market" readout)
-  let priceSatsValue = 5; // the chosen ask (sats/XKR) -- typed, or nudged with +/-
-  const PRICE_NUDGE = 0.05; // +/- buttons move the ask 5% per click (scale-invariant)
-  let maxSellXkr = 0; // total XKR to sell (the limit-order size)
+  let priceCenterSats = 5;
+  let priceSatsValue = 5;
+  const PRICE_NUDGE = 0.05;
+  let maxSellXkr = 0;
   let makerCtrlInit = false;
   let makerBusy = false;
-  let makerStarting = false; // clicked start, engine booting
+  let makerStarting = false;
 
-  $: inventoryXkr = ($wallet?.balance?.[0] ?? 0) / 100000; // atomic -> XKR (5 dp)
+  $: inventoryXkr = ($wallet?.balance?.[0] ?? 0) / 100000;
   $: makerState = makerStatus.error
     ? 'error'
     : makerStatus.advertising
       ? 'live'
       : makerStatus.orderFilled
         ? 'filled'
-        : // Booted resume-only to finish an in-flight swap -- it never advertises, so
-          // don't show it as an endless "starting…".
+        :
           makerStatus.resumeOnly && makerStatus.asbRunning && !makerStarting
           ? 'recovering'
           : makerStarting || makerStatus.asbRunning
             ? 'starting'
             : 'off';
-  // Live market price in sats/XKR = XKR fiat price / BTC fiat price, expressed in sats.
   $: marketSats = $fiat.balance > 0 && $fiat.btcPrice > 0 ? ($fiat.balance / $fiat.btcPrice) * 1e8 : 0;
-  // Initialize the sliders once the form is open AND the balance has loaded (so the
-  // sell slider isn't locked at 0). Price centers on the live market, or 5 sat/XKR
-  // if prices aren't in yet.
   $: if (!makerCtrlInit && view === 'maker' && makerState === 'off' && inventoryXkr > 0) {
     priceCenterSats = marketSats > 0 ? marketSats : 5;
-    priceSatsValue = +priceCenterSats.toPrecision(4); // start at market
+    priceSatsValue = +priceCenterSats.toPrecision(4);
     maxSellXkr = inventoryXkr;
     makerCtrlInit = true;
   }
   $: priceFiatPerXkr = ((parseFloat(priceSatsValue) || 0) * ($fiat.btcPrice || 0)) / 1e8;
   $: pricePct = ((parseFloat(priceSatsValue) || 0) / (priceCenterSats || 1) - 1) * 100;
   $: sellPct = inventoryXkr > 0 ? (maxSellXkr / inventoryXkr) * 100 : 0;
-  // Fiat proceeds at YOUR chosen ask price (not the current market price).
   $: sellFiat = maxSellXkr * priceFiatPerXkr;
 
-  // Limit-sell progress (atomic XKR -> XKR), when an order is active.
   $: makerOrder = makerStatus.order || null;
   $: orderSoldXkr = makerOrder ? makerOrder.committedAtomic / 100000 : 0;
   $: orderTargetXkr = makerOrder ? makerOrder.targetAtomic / 100000 : 0;
@@ -508,11 +411,9 @@
   }
   function openMaker() {
     view = 'maker';
-    makerCtrlInit = false; // recapture the market-centered controls from fresh data
+    makerCtrlInit = false;
     refreshMakerStatus();
   }
-  // Pick a specific maker from the sell book as the swap counterparty (or clear
-  // back to auto/best). Selection is by XKR address (see selectedAddr above).
   function selectSeller(a) {
     selectedAddr = a.address;
     view = 'form';
@@ -520,7 +421,6 @@
   function clearSeller() {
     selectedAddr = null;
   }
-  // +/- step the ask multiplicatively so it works at any price scale (incl. sub-sat).
   function nudgePrice(dir) {
     const base = parseFloat(priceSatsValue) || priceCenterSats || 1;
     const next = dir > 0 ? base * (1 + PRICE_NUDGE) : base / (1 + PRICE_NUDGE);
@@ -533,15 +433,14 @@
     try {
       const res = await window.api.invoke('swap-maker-start', {
         priceSats: String(priceSatsValue),
-        minSat: Math.round(makerMinBtc * 1e8), // per-swap bounds: background defaults
+        minSat: Math.round(makerMinBtc * 1e8),
         maxSat: Math.round(makerMaxBtc * 1e8),
-        targetXkr: maxSellXkr || 0, // total to sell (0 = sell freely)
+        targetXkr: maxSellXkr || 0,
       });
       if (!(res && res.ok)) {
         makerStarting = false;
         err(res?.error || 'Failed to start market making');
       }
-      // poll through the boot -> live transition (engine takes a few seconds)
       for (const d of [1500, 3500, 6000, 10000, 16000, 24000, 32000]) setTimeout(refreshMakerStatus, d);
     } finally {
       makerBusy = false;
@@ -551,7 +450,7 @@
     if (makerBusy) return;
     makerBusy = true;
     makerStarting = false;
-    makerCtrlInit = false; // re-center the sliders next time the form opens
+    makerCtrlInit = false;
     try {
       await window.api.invoke('swap-maker-stop');
       await refreshMakerStatus();
@@ -564,11 +463,6 @@
     makerStarting = false;
   }
 
-  // If a swap is in flight, jump to watching it. This must survive the engine
-  // being briefly down (e.g. right after the wallet auto-locks and you log back
-  // in, which restarts the engine): the in-flight swap won't appear in swap-infos
-  // until the engine is back up, so we keep trying on every poll and restore the
-  // first time it surfaces -- once per page mount, so it won't fight navigation.
   let didRestore = false;
   function maybeRestoreLiveSwap() {
     if (didRestore || view !== 'form') return;
@@ -589,13 +483,12 @@
       if (view === 'maker') await refreshMakerStatus();
     }, 4000);
   });
-  // ---- sell-book depth chart (reuses lightweight-charts, like the dashboard) -----
   let bookChartEl;
   let bookChart = null;
-  let bookResizeObs = null; // our own observer (lightweight-charts' autoSize leaks a callback on teardown)
+  let bookResizeObs = null;
   let bookSeries = null;
   let bookTooltip = null;
-  const BOOK_PRICE_SCALE = 1e6; // map the sats/XKR price onto lightweight-charts "time"
+  const BOOK_PRICE_SCALE = 1e6;
 
   function renderBook() {
     if (!bookChartEl || !cumAsks.length) return;
@@ -604,18 +497,11 @@
     const textColor = cs.getPropertyValue('--text-color').trim();
     if (!bookChart) {
       bookChart = createChart(bookChartEl, {
-        // Manual sizing + our own ResizeObserver instead of `autoSize` -- the
-        // library's autoSize observer can fire a queued callback after the chart
-        // is removed, throwing "Cannot read properties of null (reading
-        // 'appendChild')" in a promise. We disconnect ours in destroyBook.
         width: bookChartEl.clientWidth || 300,
         height: bookChartEl.clientHeight || 160,
         layout: { background: { color: '#00000000' }, textColor },
         grid: { vertLines: { color: '#00000000' }, horzLines: { color: '#00000000' } },
-        // Hide the y-axis (it ate horizontal space) -- the value shows in the tooltip.
         rightPriceScale: { visible: false, scaleMargins: { top: 0.15, bottom: 0.1 } },
-        // The x-axis is PRICE, not time: format the synthetic timestamp back to the
-        // fiat price per XKR (sats -> BTC fiat price).
         timeScale: {
           borderVisible: false,
           tickMarkFormatter: (t) => fmtFiatSmall(((t / BOOK_PRICE_SCALE) * ($fiat.btcPrice || 0)) / 1e8),
@@ -631,12 +517,10 @@
         bottomColor: primary + '28',
         lineColor: primary,
         lineWidth: 2,
-        lineType: 1, // steps -> reads like an order-book depth
+        lineType: 1,
         priceLineVisible: false,
       });
 
-      // Floating tooltip (same pattern as the dashboard): show the cumulative XKR
-      // available at the hovered price, since the y-axis is hidden.
       bookTooltip = document.createElement('div');
       bookTooltip.style = `position: absolute; display: none; padding: 6px 8px; box-sizing: border-box; font-size: 12px; z-index: 1000; top: 12px; left: 12px; pointer-events: none; border: 1px solid; border-radius: 6px; white-space: nowrap;`;
       bookTooltip.style.background = cs.getPropertyValue('--backgound-color');
@@ -644,7 +528,6 @@
       bookTooltip.style.color = primary;
       bookChartEl.appendChild(bookTooltip);
 
-      // Keep the chart sized to its container; guarded + disconnected on teardown.
       bookResizeObs = new ResizeObserver(() => {
         if (bookChart && bookChartEl)
           bookChart.applyOptions({ width: bookChartEl.clientWidth, height: bookChartEl.clientHeight });
@@ -680,7 +563,6 @@
         bookTooltip.style.top = Math.max(0, param.point.y - 10) + 'px';
       });
     }
-    // Unique, ascending "time" per price level (dedupe equal prices, keep max cum).
     const byTime = new Map();
     for (const a of cumAsks) byTime.set(Math.round(a.price * BOOK_PRICE_SCALE), a.cum);
     const data = [...byTime.entries()].sort((x, y) => x[0] - y[0]).map(([time, value]) => ({ time, value }));
@@ -706,8 +588,6 @@
       bookTooltip = null;
     }
   }
-  // Render when the book view is open and the container is mounted; refresh on new
-  // quotes; tear the chart down when we leave the view.
   $: if (view === 'book' && bookChartEl && cumAsks) renderBook();
   $: if (view !== 'book' && bookChart) destroyBook();
 
@@ -820,8 +700,6 @@
     </p>
   {/if}
 
-  <!-- Gate on the merged history (sortedInfos), NOT live taker `infos`: a pure
-       maker has no taker infos, so gating on `infos` hid its swap history entirely. -->
   {#if sortedInfos.length}
     <div class="recent" in:fly={{ y: 16, delay: 120 }}>
       <div class="list-header">
@@ -960,16 +838,15 @@
           or became unreachable during setup. No BTC was sent. Check the app logs for details.
         </p>
       {/if}
-      <!-- A stuck swap still holds the swap lock; cancel (not just navigate) so a
-           retry isn't blocked by "an active swap lock". No-op if already released. -->
+
       <button class="primary inline" on:click={cancelSwap} disabled={cancelling}>
         {cancelling ? 'Cancelling…' : 'Back'}
       </button>
     {:else if monitorStatusMsg}
-      <!-- Still trying; the header Cancel button releases the lock and goes back. -->
+
       <p class="hint">{monitorStatusMsg}</p>
     {:else}
-      <!-- Loading; cancel via the header Cancel button (shown while a swap is in flight). -->
+
       <p class="hint">Loading swap…</p>
     {/if}
   </div>
@@ -1070,7 +947,6 @@
         wallet is the inventory, and buyers reach you peer-to-peer.
       </p>
 
-      <!-- Price: text entry with +/- steppers (reuses the shared Button component). -->
       <div class="slider-block">
         <div class="slider-head">
           <span class="sl-label">Price (sat/XKR)</span>
@@ -1090,7 +966,6 @@
         </div>
       </div>
 
-      <!-- Amount slider: total XKR to sell (0..inventory). Per-swap min/max are hidden. -->
       <div class="slider-block">
         <div class="slider-head">
           <span class="sl-label">Sell</span>
@@ -1265,7 +1140,6 @@
     }
   }
 
-  // Amount fields -- 1:1 with the /wallet/send amount field (.field / .fiat-value).
   .fieldlabel {
     display: flex;
     justify-content: space-between;
@@ -1331,7 +1205,6 @@
       font-weight: 700;
     }
   }
-  // Rows are buttons (pick this maker as the swap counterparty).
   .book-pick {
     background: none;
     border: none;
@@ -1430,8 +1303,6 @@
     width: calc(100% - 3.2rem);
     margin: 0.6rem 1.6rem;
     background: var(--primary-color);
-    // Font in the background colour so it contrasts on light-highlight themes
-    // (e.g. the dark theme's neon-green highlight).
     color: var(--backgound-color);
     border: none;
     border-radius: 8px;
@@ -1449,8 +1320,6 @@
     }
   }
 
-  // Header "Cancel" action: a header button (like .backbutton) tinted with the
-  // warning colour. Falls back to --swap-fail-color when --warning isn't defined.
   button.backbutton.warn {
     width: auto;
     padding: 0 0.85rem;
@@ -1466,8 +1335,6 @@
     }
   }
 
-  // Full-width swap list, styled exactly like the transaction list on /history:
-  // a header bar (title left, action right) followed by full-bleed rows.
   .recent {
     width: 100%;
 
@@ -1505,8 +1372,6 @@
         background-color: var(--border-color);
         border-bottom: 1px solid transparent;
       }
-      // Maker (sell) swaps aren't monitorable through the taker engine, so they're
-      // read-only rows -- no pointer, no hover highlight.
       &.readonly {
         cursor: default;
 
@@ -1515,8 +1380,6 @@
           border-bottom: 1px solid var(--border-color);
         }
       }
-      // Match the /history transaction rows: the id reads like the hash there
-      // (default body size, slightly dimmed), with the amount as a smaller detail.
       .swap-id {
         opacity: 0.8;
         display: flex;
@@ -1778,7 +1641,6 @@
   .overlay {
     position: fixed;
     inset: 0;
-    // Dim scrim over the page; the theme var is `--backgound-color` (sic).
     background: rgba(0, 0, 0, 0.55);
     display: flex;
     align-items: center;

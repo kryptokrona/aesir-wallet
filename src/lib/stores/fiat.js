@@ -113,22 +113,17 @@ export const currencies = [
 
 export const fiat = writable({
     balance: 0,
-    // Bitcoin price in the selected ticker. Used for the "Total fiat" balance
-    // mode and, later, for pricing swap quotes.
     btcPrice: 0,
     ticker: "usd",
     currencies: currencies,
 })
 
-// How often the shared poller refreshes prices while the app is open, and the
-// minimum gap enforced between fetches so navigating between pages (each of
-// which asks for a price on mount) can't hammer CoinGecko's rate limit.
 const POLL_INTERVAL_MS = 60_000;
 const MIN_FETCH_GAP_MS = 30_000;
 
 let lastFetch = 0;
-let inFlight = null; // the in-flight fetch promise, so concurrent callers share one request
-let pollTimer = null; // the single app-wide polling interval
+let inFlight = null;
+let pollTimer = null;
 
 async function fetchCoinPrice() {
     let ticker
@@ -160,11 +155,6 @@ async function fetchCoinPrice() {
     }
 }
 
-// Fetch the latest XKR + BTC prices into the shared `fiat` store. Deduped and
-// throttled: concurrent callers share a single request, and calls within
-// MIN_FETCH_GAP_MS of the last fetch are skipped -- so any number of pages can
-// call this on mount without triggering extra network requests. Pass
-// { force: true } (e.g. when the user changes currency) to bypass the throttle.
 export async function getCoinPriceFromAPI({ force = false } = {}) {
     if (!force) {
         if (inFlight) return inFlight;
@@ -176,8 +166,6 @@ export async function getCoinPriceFromAPI({ force = false } = {}) {
     return p;
 }
 
-// Start the single, app-wide price poller. Idempotent: extra calls won't create
-// additional intervals, so every consumer of the store shares one poll loop.
 export function startFiatPolling(intervalMs = POLL_INTERVAL_MS) {
     getCoinPriceFromAPI({ force: true });
     if (pollTimer || typeof setInterval === 'undefined') return;
@@ -185,5 +173,4 @@ export function startFiatPolling(intervalMs = POLL_INTERVAL_MS) {
 }
 
 startFiatPolling();
-
 

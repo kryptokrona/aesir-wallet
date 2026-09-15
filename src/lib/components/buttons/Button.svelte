@@ -6,8 +6,6 @@
   export let wUnit;
   export let hUnit;
   export let active;
-  // Fill with the theme highlight (primary) colour -- for the main action buttons
-  // (Swap, Send) so they stand out from the neutral header buttons.
   export let highlight = false;
   export let disabled = false;
 </script>
@@ -56,9 +54,6 @@
   .highlight {
     background-color: var(--primary-color);
     border-color: var(--primary-color);
-    // Font in the theme's BACKGROUND colour, not a fixed white: on themes whose
-    // highlight is light (e.g. the dark theme's neon green), white-on-highlight has
-    // almost no contrast. The background colour is the highlight's natural opposite.
     color: var(--backgound-color);
 
     &:hover {
