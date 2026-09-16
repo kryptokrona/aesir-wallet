@@ -171,11 +171,16 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    // Don't intercept clicks: this full-viewport container otherwise covers the
+    // fixed TopBar's window buttons (top strip) and blocks them on Windows.
+    // Empty areas fall through to TopBar; interactive children re-enable below.
+    pointer-events: none;
   }
 
   .content {
     position: relative;
     z-index: 1; // sit above the ribbon
+    pointer-events: auto;
   }
 
   .field {
@@ -245,6 +250,7 @@
     position: absolute;
     bottom: 30px;
     z-index: 1;
+    pointer-events: auto;
     display: flex;
     flex-direction: column;
     gap: 1rem;
