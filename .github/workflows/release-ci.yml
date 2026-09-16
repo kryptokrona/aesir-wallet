@@ -41,8 +41,11 @@ jobs:
           # xkr-swap-core release archive (e.g. swap_<tag>_Windows_x86_64.zip);
           # engine_exe is the binary suffix inside it.
           - {
-            name: "Windows Latest",
-            os: windows-latest,
+            # Pin to windows-2022 (VS2022): windows-latest is now VS2026 ("18"),
+            # which the old node-gyp bundled with Node 18 can't detect, breaking
+            # the native build of kryptokrona-crypto.
+            name: "Windows 2022",
+            os: windows-2022,
             platform: x64,
             engine_os: Windows,
             engine_arch: x86_64,
@@ -166,7 +169,7 @@ jobs:
           echo "Bundled engine binaries:"; ls -la bin/swap* bin/asb*
 
       - name: Build ${{ matrix.config.name }}
-        if: matrix.config.os == 'windows-latest'
+        if: matrix.config.os == 'windows-2022'
         run: npm run build:win-x64
 
       - name: Build ${{ matrix.config.name }}
