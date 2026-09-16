@@ -533,7 +533,10 @@ let swapMakerAdvertised = null;
 let swapMakerPriceSats = null;
 let swapMakerResumeOnly = false;
 let swapMakerOrderFilled = false;
-const ASB_LISTEN_PORT = 9839;
+// Must match the `listen` port in the generated ASB config (xkr-asb-config.toml),
+// which uses the asb binary's default of 9939. The board bridge dials the ASB
+// here; a mismatch => ECONNREFUSED and swaps never reach the maker's ASB.
+const ASB_LISTEN_PORT = 9939;
 const ASB_RPC_PORT = 9945;
 
 function ensureDiscovery() {
@@ -776,7 +779,7 @@ ipcMain.handle("swap-maker-start", async (e, args = {}) => {
         ok: false,
         error:
           "The market-maker engine (asb) couldn't start — its binary may be missing " +
-          "or its port (9839) is in use. Check the app logs.",
+          "or its port (9939) is in use. Check the app logs.",
       };
     }
     swapMakerPriceSats = priceSats;
