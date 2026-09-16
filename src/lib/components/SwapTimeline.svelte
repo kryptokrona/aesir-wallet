@@ -13,7 +13,7 @@
   export let xkrLockTxid = null;
   export let xkrRedeemTxid = null;
   export let startDate = null;
-  export let btcExplorer = "https://mempool.space/testnet/tx/";
+  export let btcExplorer = import.meta.env.DEV ? "https://mempool.space/testnet/tx/" : "https://mempool.space/tx/";
   export let xkrExplorer = "https://xkr.network/transaction?hash=";
 
   $: steps = stepsFor(role);

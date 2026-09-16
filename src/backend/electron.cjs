@@ -396,7 +396,7 @@ async function startXkrSwapService(node) {
       xkrRpcPort: XKR_SWAP_RPC_PORT,
       servePort: XKR_SWAP_SERVE_PORT,
       electrumUrl: getElectrumUrl(),
-      testnet: true,
+      testnet: dev,
       rendezvous: XKR_SWAP_RENDEZVOUS,
       xkrReceiveAddress:
         walletBackend && walletBackend.getPrimaryAddress ? walletBackend.getPrimaryAddress() : undefined,
@@ -691,7 +691,7 @@ async function spawnMakerAsb({ priceSats, resumeOnly = false, configPath, extraE
   const child = await xkrSwapAsb.startAsb({
     app,
     configPath: cfgPath,
-    testnet: true,
+    testnet: dev,
     env: {
       XKR_WALLET_RPC_URL: `http://127.0.0.1:${XKR_SWAP_RPC_PORT}`,
       XKR_ASB_PRICE_SATS: priceSats,
@@ -1035,7 +1035,7 @@ ipcMain.on("start-wallet", async (e, walletName, password, node, file) => {
         xkrRpcPort: XKR_SWAP_RPC_PORT,
         servePort: XKR_SWAP_SERVE_PORT,
         electrumUrl: getElectrumUrl(),
-        testnet: true,
+        testnet: dev,
         seedKey: privateSpendKey,
         rendezvous: XKR_SWAP_RENDEZVOUS,
         xkrReceiveAddress: walletBackend.getPrimaryAddress(),
