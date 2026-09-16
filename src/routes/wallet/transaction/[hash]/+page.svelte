@@ -50,7 +50,7 @@
   function openExplorer() {
     const url =
       transaction.kind === 'btc'
-        ? `https://mempool.space/testnet/tx/${transaction.id}`
+        ? `https://mempool.space/${import.meta.env.DEV ? 'testnet/' : ''}tx/${transaction.id}`
         : `https://xkr.network/transaction?hash=${transaction.id}`;
     window.api.openLink(url);
   }
