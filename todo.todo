@@ -1,1 +1,16 @@
 ☐ Mnemonic check at wallet creation is skipped
+☐ Remove BTC icon from tx history
+☐ Create BTC tx details
+☐ Make sure BTC tx history is correctly sorted by date
+☐ Make draggable area larger
+☐ Use number flow for cool balance digits (https://number-flow.barvian.me/svelte/)
+☐ Make it possible to logout from a wallet without restarting the app
+
+
+Swap
+----
+☐ Improve precision on market maker page
+☐ Make sure inventory is spendable before starting market making
+☐ Create market making for buys as well.
+☐ Show fiat price on chosen market maker
+☐ Show swaps on market maker page
