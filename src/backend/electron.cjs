@@ -786,6 +786,63 @@ async function resumeMakerSwapsIfAny() {
   }
 }
 
+// Standard on-chain fee for a normal XKR transfer (atomic units, 0.1 XKR).
+const MAKER_CONSOLIDATE_FEE = 10000;
+const makerConsolidateMixin = () => parseInt(process.env.XKR_SWAP_MIXIN || "3", 10);
+
+// Before advertising, send the sell amount to our own address. This proves the
+// funds are actually spendable at the swap mixin (if the send fails, no swap could
+// have locked them either) and re-decomposes coinbase / odd-denomination outputs
+// into clean standard denominations the per-swap lock can spend. We skip when we've
+// already consolidated at least this much and no new funds have arrived since, so
+// ordinary restarts don't burn a fee. Non-fatal: on failure we warn and proceed —
+// computeQuote still caps the advertised amount to what's actually unlocked.
+async function ensureMakerFundsSpendable(sellAtomic) {
+  try {
+    if (!walletBackend || !(sellAtomic > 0)) return { ok: true, skipped: "no-target" };
+
+    const [unlocked] = await walletBackend.getBalance();
+    if (unlocked <= MAKER_CONSOLIDATE_FEE) return { ok: true, skipped: "no-unlocked" };
+
+    const wid = walletKey() || "default";
+    const markers = swapsStore.get("makerConsolidation") || {};
+    const marker = markers[wid];
+    // Already cleaned at least this much and nothing new came in since → skip the fee.
+    if (marker && marker.amount >= sellAtomic && unlocked <= marker.amount + MAKER_CONSOLIDATE_FEE) {
+      return { ok: true, skipped: "already-spendable" };
+    }
+
+    const sendAtomic = Math.min(sellAtomic, unlocked - MAKER_CONSOLIDATE_FEE);
+    if (sendAtomic <= 0) return { ok: true, skipped: "nothing-to-send" };
+
+    const primary = walletBackend.getPrimaryAddress();
+    console.log(`[swap-maker] pre-spend ${sendAtomic} atomic XKR to self to verify/clean spendable funds`);
+    const result = await walletBackend.sendTransactionAdvanced(
+      [[primary, sendAtomic]],
+      makerConsolidateMixin(),
+      { isFixedFee: true, fixedFee: MAKER_CONSOLIDATE_FEE },
+      undefined,
+      undefined,
+      primary,
+      true,
+      false,
+      undefined,
+    );
+    if (!result || !result.success) {
+      const err = (result && result.error && (result.error.toString ? result.error.toString() : result.error)) || "unknown error";
+      console.warn("[swap-maker] pre-spend to self failed:", err);
+      return { ok: false, error: String(err) };
+    }
+    markers[wid] = { amount: unlocked, at: Date.now(), txHash: result.transactionHash };
+    swapsStore.set("makerConsolidation", markers);
+    console.log(`[swap-maker] pre-spend sent: ${result.transactionHash}`);
+    return { ok: true, sent: true, txHash: result.transactionHash };
+  } catch (e) {
+    console.warn("[swap-maker] ensureMakerFundsSpendable error:", e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
 ipcMain.handle("swap-maker-start", async (e, args = {}) => {
   try {
     const priceSats = String(args.priceSats || process.env.XKR_ASB_PRICE_SATS || "5");
@@ -804,6 +861,20 @@ ipcMain.handle("swap-maker-start", async (e, args = {}) => {
           maxSat: Number(args.maxSat) || 0,
           startedAt: Date.now(),
         });
+      }
+    }
+
+    // Pre-flight: make sure the XKR we're about to sell is actually spendable by
+    // sending it to ourselves first (skipped if already done). Runs before any
+    // advertising so takers only see funds we've proven we can lock.
+    {
+      const order = getMakerOrder();
+      const sellAtomic = order && order.targetAtomic > 0 ? order.targetAtomic : 0;
+      const consolidation = await ensureMakerFundsSpendable(sellAtomic);
+      if (consolidation.sent) {
+        successMessage("Preparing your XKR for selling — confirming on-chain…");
+      } else if (!consolidation.ok) {
+        errorMessage("Couldn't pre-spend your XKR to verify it's swap-ready: " + consolidation.error);
       }
     }
 
