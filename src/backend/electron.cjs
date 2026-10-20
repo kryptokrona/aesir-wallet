@@ -210,8 +210,12 @@ let node;
 let ports;
 let daemon;
 
-const XKR_SWAP_RPC_PORT = 40000;
-const XKR_SWAP_SERVE_PORT = 40010;
+// Dev and release builds can run on the same machine at once (dev == testnet,
+// release == mainnet). Offset every swap-related port in dev so the two never
+// fight over a socket; release keeps the canonical ports.
+const SWAP_DEV_PORT_OFFSET = dev ? 1000 : 0;
+const XKR_SWAP_RPC_PORT = 40000 + SWAP_DEV_PORT_OFFSET;
+const XKR_SWAP_SERVE_PORT = 40010 + SWAP_DEV_PORT_OFFSET;
 const XKR_SWAP_ELECTRUM_URL = process.env.XKR_SWAP_ELECTRUM_URL || "";
 const BTC_NODE_PRESETS = [
   { label: "Automatic (recommended)", url: "" },
@@ -533,11 +537,14 @@ let swapMakerAdvertised = null;
 let swapMakerPriceSats = null;
 let swapMakerResumeOnly = false;
 let swapMakerOrderFilled = false;
-// Must match the `listen` port in the generated ASB config (xkr-asb-config.toml),
-// which uses the asb binary's default of 9939. The board bridge dials the ASB
-// here; a mismatch => ECONNREFUSED and swaps never reach the maker's ASB.
-const ASB_LISTEN_PORT = 9939;
-const ASB_RPC_PORT = 9945;
+// The board bridge dials the ASB's libp2p `listen` port; a mismatch between this
+// and the port baked into xkr-asb-config.toml => ECONNREFUSED and swaps never
+// reach the maker's ASB. Rather than depend on the asb binary's config default
+// (which has drifted before), the wallet is authoritative: spawnMakerAsb writes
+// this exact port into the config's `listen` line (see setListenPort in asb.cjs).
+// Offset in dev so a dev maker and a release maker can coexist on one machine.
+const ASB_LISTEN_PORT = 9939 + SWAP_DEV_PORT_OFFSET;
+const ASB_RPC_PORT = 9945 + SWAP_DEV_PORT_OFFSET;
 
 function ensureDiscovery() {
   if (swapDiscovery) return swapDiscovery;
@@ -695,6 +702,7 @@ async function spawnMakerAsb({ priceSats, resumeOnly = false, configPath, extraE
     app,
     configPath: cfgPath,
     testnet: dev,
+    listenPort: ASB_LISTEN_PORT,
     env: {
       XKR_WALLET_RPC_URL: `http://127.0.0.1:${XKR_SWAP_RPC_PORT}`,
       XKR_ASB_PRICE_SATS: priceSats,
@@ -779,7 +787,7 @@ ipcMain.handle("swap-maker-start", async (e, args = {}) => {
         ok: false,
         error:
           "The market-maker engine (asb) couldn't start — its binary may be missing " +
-          "or its port (9939) is in use. Check the app logs.",
+          `or its port (${ASB_LISTEN_PORT}) is in use. Check the app logs.`,
       };
     }
     swapMakerPriceSats = priceSats;

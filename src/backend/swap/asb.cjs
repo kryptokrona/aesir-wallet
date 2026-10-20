@@ -40,6 +40,26 @@ function zeroAskSpread(configPath) {
   }
 }
 
+// Force the libp2p `listen` port in the config to a specific value. The board
+// bridge in electron.cjs dials this exact port, so the wallet — not the asb
+// binary's config default — is the single source of truth. Rewrites the port in
+// any /tcp/<port> multiaddr on the `listen` line (keeps host/protocol intact).
+function setListenPort(configPath, port) {
+  try {
+    if (!configPath || !fs.existsSync(configPath) || !port) return;
+    const toml = fs.readFileSync(configPath, "utf8");
+    const patched = toml.replace(/^\s*listen\s*=\s*.*$/m, (line) =>
+      line.replace(/(\/tcp\/)\d+/g, `$1${port}`),
+    );
+    if (patched !== toml) {
+      fs.writeFileSync(configPath, patched);
+      console.log(`[xkr-swap-asb] set maker listen port = ${port} in config`);
+    }
+  } catch (e) {
+    console.warn(`[xkr-swap-asb] could not patch listen port: ${e.message}`);
+  }
+}
+
 function resolveAsbBinary(app) {
   const fromEnv = process.env.XKR_SWAP_ASB_BIN;
   if (fromEnv) return fromEnv;
@@ -78,7 +98,7 @@ function generateConfig({ app, configPath, testnet = true, force = false, env = 
   });
 }
 
-async function startAsb({ app, configPath, testnet = true, autoGenerateConfig = true, env = {}, startArgs = [], onLog } = {}) {
+async function startAsb({ app, configPath, testnet = true, autoGenerateConfig = true, env = {}, startArgs = [], listenPort, onLog } = {}) {
   const fp = asbConfigFingerprint(env, startArgs, configPath);
   if (asbProcess && asbFingerprint === fp) {
     console.log("[xkr-swap-asb] already running with identical config; reusing existing process");
@@ -113,6 +133,7 @@ async function startAsb({ app, configPath, testnet = true, autoGenerateConfig = 
 
   disableTor(configPath);
   zeroAskSpread(configPath);
+  if (listenPort) setListenPort(configPath, listenPort);
 
   const args = [];
   if (testnet) args.push("--testnet");

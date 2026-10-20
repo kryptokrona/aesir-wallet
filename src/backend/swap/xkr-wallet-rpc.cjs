@@ -14,6 +14,69 @@ function makeDaemon(daemonHost, daemonPort, ssl) {
     return new WB.Daemon(daemonHost, daemonPort, false, !!ssl);
 }
 
+// How many blocks below a known lock height we start the ephemeral sweep wallet,
+// to absorb any reorg / unlock window. Small so the rescan stays fast.
+const LOCK_SCAN_MARGIN = 100;
+
+// Raw POST to the kryptokrona daemon (wallet-backend-js has no tx-by-hash call).
+function daemonRequest(ctx, path, payload) {
+    return new Promise((resolve, reject) => {
+        const data = JSON.stringify(payload);
+        const mod = ctx.ssl ? require('https') : http;
+        const req = mod.request(
+            {
+                host: ctx.daemonHost,
+                port: ctx.daemonPort,
+                path,
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+                timeout: 15000,
+            },
+            (res) => {
+                let body = '';
+                res.on('data', (c) => (body += c));
+                res.on('end', () => {
+                    try {
+                        resolve(JSON.parse(body));
+                    } catch (e) {
+                        reject(e);
+                    }
+                });
+            },
+        );
+        req.on('error', reject);
+        req.on('timeout', () => req.destroy(new Error('daemon request timed out')));
+        req.end(data);
+    });
+}
+
+// Resolve the block height a transaction was mined in, straight from the daemon.
+// Lets a resumed/old swap start its sweep at the exact lock height even when the
+// swap record carries no scan height (older swaps persisted height 0).
+async function txBlockHeight(ctx, txid) {
+    try {
+        const r = await daemonRequest(ctx, '/get_transaction_details_by_hashes', { transactionHashes: [txid] });
+        const tx = r && Array.isArray(r.transactions) ? r.transactions[0] : null;
+        if (tx && tx.inBlockchain && typeof tx.blockIndex === 'number' && tx.blockIndex > 0) {
+            return tx.blockIndex;
+        }
+    } catch (_) {
+        // fall through to the caller's floor
+    }
+    return null;
+}
+
+// Where the ephemeral sweep wallet should begin scanning.
+// Priority: explicit scanHeight > exact lock-tx height (looked up by txid) > global floor.
+async function resolveSweepHeight(ctx, scanHeight, lockTxid) {
+    if (typeof scanHeight === 'number' && scanHeight > 0) return scanHeight;
+    if (lockTxid) {
+        const h = await txBlockHeight(ctx, lockTxid);
+        if (h) return Math.max(0, h - LOCK_SCAN_MARGIN);
+    }
+    return floorScanHeight();
+}
+
 function mainWalletIfMatches(ctx, spendSecret) {
     try {
         const w = ctx.getMainWallet && ctx.getMainWallet();
@@ -84,13 +147,18 @@ const methods = {
         );
     },
 
-    async sweep({ spendSecret, viewSecret, destAddress, fee, amount, scanHeight }, ctx) {
+    async sweep({ spendSecret, viewSecret, destAddress, fee, amount, scanHeight, lockTxid }, ctx) {
         if (!spendSecret || !viewSecret || !destAddress) throw new Error('spendSecret, viewSecret, destAddress required');
         const useFee = typeof fee === 'number' ? fee : DEFAULT_FEE;
+        const importHeight = await resolveSweepHeight(ctx, scanHeight, lockTxid);
+        console.log(
+            `xkr-wallet-rpc sweep: importHeight=${importHeight} dest=${destAddress}` +
+                (lockTxid ? ` lockTxid=${lockTxid}` : ''),
+        );
         return withWallet(
-            () => WB.WalletBackend.importWalletFromKeys(makeDaemon(ctx.daemonHost, ctx.daemonPort, ctx.ssl), scanHeight || floorScanHeight(), viewSecret, spendSecret),
+            () => WB.WalletBackend.importWalletFromKeys(makeDaemon(ctx.daemonHost, ctx.daemonPort, ctx.ssl), importHeight, viewSecret, spendSecret),
             async (wallet) => {
-                const outcome = await poll('spendable balance or prior sweep', 180000, 2000, async () => {
+                const outcome = await poll('spendable balance or prior sweep', 300000, 2000, async () => {
                     const prior = (await wallet.getTransactions()).find((t) => t.totalAmount() < 0);
                     if (prior) return { existing: prior.hash };
                     const [u] = await wallet.getBalance();
