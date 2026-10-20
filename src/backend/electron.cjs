@@ -13,6 +13,7 @@ const xkrSwapRpc = require("./swap/swap-rpc.cjs");
 const swapSwarm = require("./swap/swap-swarm.cjs");
 const asbRpc = require("./swap/asb-rpc.cjs");
 const xkrSwapAsb = require("./swap/asb.cjs");
+const { swapNotification } = require("./swap/swapNotify.cjs");
 const notifier = require("node-notifier");
 const Crypto = require("kryptokrona-crypto").Crypto;
 const fetch = require("cross-fetch");
@@ -343,15 +344,28 @@ function swapDateMs(str) {
   return Number.isFinite(t) ? t : 0;
 }
 
+function fireSwapNotify(title, message) {
+  try {
+    notifier.notify({
+      appID: "Kryptokrona Wallet",
+      title,
+      message,
+      icon: path.join(__dirname, "../", "../", "static", "icon.png"),
+      wait: false,
+    });
+  } catch (_) {}
+}
+
 function cacheSwaps(list, role) {
   if (!Array.isArray(list) || !list.length) return;
   const wid = walletKey() || "default";
   const all = swapsStore.get("swaps") || {};
   const cache = all[wid] || {};
+  const notes = [];
   for (const s of list) {
     if (!s || !s.swap_id) continue;
     const prev = cache[s.swap_id];
-    cache[s.swap_id] = {
+    const entry = {
       swap_id: s.swap_id,
       btc_amount: s.btc_amount,
       xmr_amount: s.xmr_amount,
@@ -365,9 +379,15 @@ function cacheSwaps(list, role) {
       role,
       updated_at: Date.now(),
     };
+    cache[s.swap_id] = entry;
+    // Decide any lifecycle notification from the prev -> new transition. We persist
+    // the new state below first, so a concurrent poll of the same data won't re-fire.
+    const note = swapNotification(prev, entry);
+    if (note) notes.push(note);
   }
   all[wid] = cache;
   swapsStore.set("swaps", all);
+  for (const note of notes) fireSwapNotify(note.title, note.message);
 }
 
 async function startXkrSwapService(node) {
@@ -408,9 +428,31 @@ async function startXkrSwapService(node) {
     setTimeout(resumeInFlightSwaps, 6000);
     setTimeout(resumeMakerSwapsIfAny, 8000);
     if (!swapRescueTimer) swapRescueTimer = setInterval(rescueStalledSwaps, 20000);
+    startSwapNotifyPoll();
   } catch (e) {
     console.error("failed to start xkr-swap RPC service:", e.message);
   }
+}
+
+// Background refresh of the swap caches so lifecycle notifications fire even when
+// the swap page is closed (it's the only thing that otherwise polls swap state).
+// cacheSwaps() both updates the store and emits the notification for each change.
+let swapNotifyTimer = null;
+async function pollSwapsForNotifications() {
+  if (xkrSwapServer) {
+    const infos = await xkrSwapRpc.swapInfos().catch(() => null);
+    if (Array.isArray(infos)) cacheSwaps(infos, "taker");
+  }
+  if (swapMakerRpc) {
+    const swaps = await swapMakerRpc.getSwaps().catch(() => null);
+    if (Array.isArray(swaps)) cacheSwaps(swaps, "maker");
+  }
+}
+function startSwapNotifyPoll() {
+  if (swapNotifyTimer) return;
+  swapNotifyTimer = setInterval(() => {
+    pollSwapsForNotifications().catch(() => {});
+  }, 12000);
 }
 
 async function waitForMakerOnBoard(discovery, peerId, timeoutMs = 45000) {
