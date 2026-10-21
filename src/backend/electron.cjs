@@ -252,6 +252,32 @@ function walletKey() {
 
 const MAKER_XKR_RETURNED = new Set(["xmr is refunded", "safely aborted"]);
 
+// Maker states in which the swap is fully settled for BOTH parties and no taker
+// can still need a cooperative redeem from us — the only states in which we let
+// the maker drop its network presence. "btc is redeemed" is settled because the
+// honest redeem reveals our key share on the Bitcoin chain, so the taker sweeps
+// the XKR without us. Everything else (in-flight, cancelled, and crucially
+// "btc is punished") leaves a taker who may still reconnect to redeem, so we stay
+// reachable for it indefinitely.
+const MAKER_SETTLED = new Set([
+  "btc is redeemed",
+  "xmr is refunded",
+  "btc is refunded",
+  "btc is early refunded",
+  "safely aborted",
+]);
+
+// True when we hold any maker swap a taker might still reconnect to finish (e.g.
+// a cooperative XMR redeem after we punished them). While true, we keep the ASB
+// running and a rendezvous presence up so the taker can always reach us.
+function makerOwesCooperativeRedeem() {
+  const wid = walletKey() || "default";
+  const cache = (swapsStore.get("swaps") || {})[wid] || {};
+  return Object.values(cache).some(
+    (s) => s && s.role === "maker" && s.state_name && !MAKER_SETTLED.has(s.state_name),
+  );
+}
+
 function getMakerOrder() {
   const wid = walletKey();
   if (!wid) return null;
@@ -305,6 +331,9 @@ function swapUnsafeToQuit() {
 function maybeEndResumeOnly() {
   if (!swapMakerResumeOnly) return;
   if (makerHasInflightSwaps()) return;
+  // Stay up for punished / not-yet-settled swaps: a taker may still reconnect to
+  // cooperatively redeem the XKR. We only tear down once nothing is owed.
+  if (makerOwesCooperativeRedeem()) return;
   console.log("[swap-maker] resume-only recovery complete; stopping the ASB");
   try {
     xkrSwapAsb.stopAsb();
@@ -428,6 +457,14 @@ async function startXkrSwapService(node) {
     setTimeout(resumeInFlightSwaps, 6000);
     setTimeout(resumeMakerSwapsIfAny, 8000);
     if (!swapRescueTimer) swapRescueTimer = setInterval(rescueStalledSwaps, 20000);
+    // Drive both sides of post-punish (and any unsettled) recovery: keep the maker
+    // reachable while a redeem is owed, and keep the taker reconnecting until it
+    // lands. Runs forever while obligations remain (no cap, both roles).
+    if (!swapRecoveryTimer)
+      swapRecoveryTimer = setInterval(() => {
+        ensureMakerPresence().catch(() => {});
+        retryStuckTakerSwaps().catch(() => {});
+      }, 90000);
     startSwapNotifyPoll();
   } catch (e) {
     console.error("failed to start xkr-swap RPC service:", e.message);
@@ -516,6 +553,7 @@ const swapPrelockSince = new Map();
 const swapLastRescue = new Map();
 let rescuingStalledSwaps = false;
 let swapRescueTimer = null;
+let swapRecoveryTimer = null;
 
 async function rescueStalledSwaps() {
   if (rescuingStalledSwaps) return;
@@ -767,12 +805,17 @@ async function resumeMakerSwapsIfAny() {
     if (xkrSwapAsb.isRunning()) return;
     const wid = walletKey() || "default";
     const cache = (swapsStore.get("swaps") || {})[wid] || {};
-    const pending = Object.values(cache).filter((s) => s && s.role === "maker" && s.completed === false);
+    // Include not-yet-settled swaps (in-flight AND punished/cancelled), not just
+    // `completed === false`: the engine marks a punished maker swap complete, but
+    // the taker can still reconnect to cooperatively redeem, so we must come back.
+    const pending = Object.values(cache).filter(
+      (s) => s && s.role === "maker" && s.state_name && !MAKER_SETTLED.has(s.state_name),
+    );
     if (!pending.length) return;
 
     const priceSats = String(swapMakerPriceSats || process.env.XKR_ASB_PRICE_SATS || "5");
     console.log(
-      `[swap-maker] ${pending.length} unfinished maker swap(s) found; starting ASB resume-only to recover/refund`,
+      `[swap-maker] ${pending.length} unsettled maker swap(s) found; starting ASB resume-only to recover/refund/service redeems`,
     );
     const { child, password } = await spawnMakerAsb({ priceSats, resumeOnly: true });
     if (!child) {
@@ -781,9 +824,71 @@ async function resumeMakerSwapsIfAny() {
     }
     swapMakerResumeOnly = true;
     swapMakerRpc = asbRpc.client(ASB_RPC_PORT, password);
+    // Become reachable on the rendezvous so a punished taker can bridge back to us
+    // for the cooperative redeem. Resume-only alone is invisible (no board).
+    await startMakerServicePresence();
   } catch (e) {
     console.error("[swap-maker] resume-only recovery failed:", e.message);
   }
+}
+
+// A non-selling rendezvous presence: joins the board and relays to the local ASB
+// so takers can reach us for the cooperative-redeem protocol, while advertising
+// zero quantity so nobody tries to start a new buy against us.
+async function startMakerServicePresence() {
+  try {
+    if (swapMaker) return; // a selling or service board is already up
+    if (!swapMakerRpc) return;
+    if (!swapMakerPeerId) {
+      for (let i = 0; i < 20; i++) {
+        try {
+          const res = await swapMakerRpc.peerId();
+          const id = res && (res.peer_id || res.peerId);
+          if (id) {
+            swapMakerPeerId = id;
+            break;
+          }
+        } catch (_) {}
+        await sleep(1000);
+      }
+    }
+    if (!swapMakerPeerId) return;
+    const priceSats = String(swapMakerPriceSats || process.env.XKR_ASB_PRICE_SATS || "5");
+    startMakerBoard({ minSat: 0, maxSat: 0 }, priceSats, { serviceOnly: true });
+    console.log("[swap-maker] service presence up (reachable for cooperative redeem; not selling)");
+  } catch (e) {
+    console.warn("[swap-maker] failed to start service presence:", e.message);
+  }
+}
+
+// Keeps the maker reachable whenever a redeem is owed, re-establishing the ASB
+// and/or presence if they were torn down (e.g. the user stopped market-making
+// while a punished swap still owes the taker a cooperative redeem). No time cap.
+async function ensureMakerPresence() {
+  try {
+    if (!makerOwesCooperativeRedeem()) return;
+    if (swapMaker) return; // already present (selling board or service presence)
+    if (!xkrSwapAsb.isRunning()) {
+      await resumeMakerSwapsIfAny(); // starts ASB + presence
+      return;
+    }
+    await startMakerServicePresence();
+  } catch (_) {}
+}
+
+// Taker side: keep reconnecting to the maker to finish a cooperative redeem after
+// being punished. The engine retries for ~1 min per resume then idles, so we
+// re-bridge and re-resume on a timer until the maker is reachable and the swap
+// advances out of "btc is punished" (to "xmr is redeemed").
+async function retryStuckTakerSwaps() {
+  try {
+    const infos = await xkrSwapRpc.swapInfos().catch(() => null);
+    if (!Array.isArray(infos)) return;
+    for (const info of infos) {
+      if (!info || !info.swap_id || cancelRequested.has(info.swap_id)) continue;
+      if (info.state_name === "btc is punished") reBridgeAndResume(info, "punish-recover");
+    }
+  } catch (_) {}
 }
 
 // Standard on-chain fee for a normal XKR transfer (atomic units, 0.1 XKR).
@@ -1002,7 +1107,7 @@ ipcMain.handle("swap-maker-swaps", async () => {
   }
 });
 
-function startMakerBoard(args, priceSats) {
+function startMakerBoard(args, priceSats, opts = {}) {
   try {
     if (swapMaker) swapMaker.stop();
     const [spend] = walletBackend.getPrimaryAddressPrivateKeys();
@@ -1010,6 +1115,12 @@ function startMakerBoard(args, priceSats) {
     const minSat = Number(args.minSat || 10000);
 
     async function computeQuote() {
+      // Service presence: on the board and reachable, but advertising nothing so
+      // no new buy can start against us (we're only here to finish owed redeems).
+      if (opts.serviceOnly) {
+        swapMakerAdvertised = { price: Number(priceSats), min_quantity: 0, max_quantity: 0 };
+        return swapMakerAdvertised;
+      }
       let maxSat = configuredMaxSat;
       try {
         const [unlockedAtomic] = await walletBackend.getBalance();
@@ -1027,7 +1138,9 @@ function startMakerBoard(args, priceSats) {
       return swapMakerAdvertised;
     }
 
-    swapMakerAdvertised = { price: Number(priceSats), min_quantity: minSat, max_quantity: configuredMaxSat };
+    swapMakerAdvertised = opts.serviceOnly
+      ? { price: Number(priceSats), min_quantity: 0, max_quantity: 0 }
+      : { price: Number(priceSats), min_quantity: minSat, max_quantity: configuredMaxSat };
     swapMaker = swapSwarm.startMaker({
       xkrAddress: walletBackend.getPrimaryAddress(),
       xkrPrivateSpendKey: spend,
