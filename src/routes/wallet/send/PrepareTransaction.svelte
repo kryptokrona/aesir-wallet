@@ -2,12 +2,16 @@
   import { wallet } from '$lib/stores/wallet.js';
   import Button from '$lib/components/buttons/Button.svelte';
   import toast from 'svelte-french-toast';
-  import { fade } from 'svelte/transition';
+  import { fade, fly } from 'svelte/transition';
+  import { cubicOut } from 'svelte/easing';
   import { onMount } from 'svelte';
   import { fiat } from '$lib/stores/fiat.js';
   import { btc } from '$lib/stores/btc.js';
 
   export let mode = 'xkr';
+
+  $: dir = mode === 'btc' ? 1 : -1;
+  const slide = { duration: 280, easing: cubicOut };
 
   let address;
   let amount;
@@ -121,7 +125,9 @@
   };
 </script>
 
-<div class="wrapper" in:fade>
+<div class="stack" in:fade>
+{#key mode}
+<div class="wrapper" in:fly={{ ...slide, x: 80 * dir }} out:fly={{ ...slide, x: -80 * dir }}>
   <div class="field">
     <input type="text" placeholder={mode === 'btc' ? 'Bitcoin address' : 'Address'} bind:value={address} />
     <Button on:click={pasteAddress} text="Paste" width="105" height="36" />
@@ -138,9 +144,17 @@
     <Button on:click={sendMaxAmount} text="Max" width="105" height="36" />
   </div>
 </div>
+{/key}
+</div>
 
 <style lang="scss">
+  .stack {
+    display: grid;
+    overflow-x: hidden;
+  }
+
   .wrapper {
+    grid-area: 1 / 1;
     padding: 1rem 2rem;
     display: flex;
     flex-direction: column;

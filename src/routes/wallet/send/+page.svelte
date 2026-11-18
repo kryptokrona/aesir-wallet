@@ -21,13 +21,15 @@
   </div>
 </div>
 
-<div style="height: 100%; width: 100%">
+<div class="body">
   <PrepareTransaction bind:this={prepare} {mode} />
-  {#if mode === "xkr"}
-    <ConfirmTransaction />
-  {:else}
-    <ConfirmBtcTransaction />
-  {/if}
+  <div class="bottom">
+    {#if mode === "xkr"}
+      <ConfirmTransaction />
+    {:else}
+      <ConfirmBtcTransaction />
+    {/if}
+  </div>
 </div>
 
 <style lang="scss">
@@ -39,6 +41,20 @@
     min-height: 60px;
     border-bottom: 1px solid var(--border-color);
     padding: 0 2rem 0 2rem;
+  }
+
+  .body {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .bottom {
+    margin-top: auto;
+    padding-bottom: 1rem;
   }
 
   .right {
