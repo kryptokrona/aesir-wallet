@@ -97,20 +97,29 @@
     return (xkrValue + btcValue).toFixed(2);
   }
 
+  let unit = '';
+  $: modeKey = `${$walletMode}:${$fiat.ticker}`;
+
   $: {
     if (!loading && $wallet.balance) {
       if ($walletMode === 'fiat') {
         const value = totalFiat();
         let [ticker, change] = changeTicker($fiat.ticker);
-        if (change) display = ticker + value;
-        else display = value + '///' + ticker.toUpperCase();
+        if (change) {
+          display = ticker + value;
+          unit = '';
+        } else {
+          display = value;
+          unit = ticker.toUpperCase();
+        }
       } else if ($walletMode === 'btc') {
-        const mbtc = (($btc.balanceSat ?? 0) / 1e5).toLocaleString('en-US', {
+        display = (($btc.balanceSat ?? 0) / 1e5).toLocaleString('en-US', {
           maximumFractionDigits: 2,
         });
-        display = mbtc + '///mBTC';
+        unit = 'mBTC';
       } else {
-        display = prettyNumbers($wallet.balance[0] + $wallet.balance[1]).toString() + '///XKR';
+        display = prettyNumbers($wallet.balance[0] + $wallet.balance[1]).toString();
+        unit = 'XKR';
       }
     }
   }
@@ -127,21 +136,19 @@
     <h2 style="transition: opacity 0.3s ease all" on:click={() => walletMode.cycle()}>
       Balance <span style="opacity: 50%; cursor: pointer" on:click><Auto /></span>
     </h2>
-    <div style="display: inline-flex; transition: opacity 0.8s ease" class:blink_me_balance={loading}>
-        {#each display ?? [] as number, i (number + i)}
-          {#key number}
-            {#if number !== '/'}
-              <p
-                in:fly={{ y: 20, delay: i * 100 }}
-                style="font-size: 1.75rem; margin-top: 10px; color: var(--primary-color)"
-              >
-                {number}
-              </p>
-            {:else}
-              <div style="width: 5px;" />
-            {/if}
-          {/key}
-        {/each}
+    <div class="amount-stack" class:blink_me_balance={loading}>
+      {#key modeKey}
+        <div class="amount" in:fly={{ y: 28, duration: 350 }} out:fly={{ y: -28, duration: 350 }}>
+          {#each display ?? [] as number, i (number + i)}
+            {#key number}
+              <p in:fly={{ y: 20, delay: i * 100 }} class="digit">{number}</p>
+            {/key}
+          {/each}
+          {#if unit && !loading}
+            <p class="digit unit" in:fade={{ duration: 500, delay: 100 }}>{unit}</p>
+          {/if}
+        </div>
+      {/key}
     </div>
   </div>
   <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 15px">
@@ -174,6 +181,27 @@
 
     p {
       margin: 0;
+    }
+
+    .amount-stack {
+      display: grid;
+      overflow: hidden;
+      transition: opacity 0.8s ease;
+    }
+
+    .amount {
+      grid-area: 1 / 1;
+      display: inline-flex;
+    }
+
+    .digit {
+      font-size: 1.75rem;
+      margin-top: 10px;
+      color: var(--primary-color);
+    }
+
+    .unit {
+      margin-left: 15px;
     }
 
     .breakdown {
