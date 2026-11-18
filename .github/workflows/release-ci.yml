@@ -130,6 +130,9 @@ jobs:
       - name: Install dependencies
         run: npm install --quiet
 
+      - name: Fetch node lists (offline backup)
+        run: npm run fetch:nodes
+
       # Bundle the swap engine: pull the latest xkr-swap-core release's `swap`
       # and `asb` binaries for THIS platform into bin/, where electron-builder
       # picks them up via extraResources ("bin/*"). Without this the packaged

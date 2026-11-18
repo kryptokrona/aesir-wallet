@@ -65,6 +65,9 @@ jobs:
       - name: Install dependencies
         run: npm install --quiet
 
+      - name: Fetch node lists (offline backup)
+        run: npm run fetch:nodes
+
       - name: Build ${{ matrix.config.name }}
         if: matrix.config.os == 'windows-latest'
         run: npm run build:win-x64
