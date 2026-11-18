@@ -224,7 +224,7 @@ const BTC_NODE_PRESETS = [
   { label: "Blockstream SSL (testnet)", url: "ssl://electrum.blockstream.info:60002" },
 ];
 function getElectrumUrl() {
-  return XKR_SWAP_ELECTRUM_URL;
+  return XKR_SWAP_ELECTRUM_URL || miscs.get("btcElectrumUrl") || "";
 }
 const XKR_SWAP_RENDEZVOUS =
   process.env.XKR_SWAP_RENDEZVOUS ??
@@ -599,11 +599,21 @@ ipcMain.handle("swap-rpc-status", () => ({
   asbRunning: xkrSwapAsb.isRunning(),
 }));
 
+let lastBtcUnreachableToast = 0;
+function maybeNotifyBtcUnreachable(errMsg) {
+  if (!errMsg || !/electrum/i.test(errMsg)) return;
+  const now = Date.now();
+  if (now - lastBtcUnreachableToast < 30000) return;
+  lastBtcUnreachableToast = now;
+  errorMessage("Can't reach the Bitcoin network right now — check your internet connection, or pick a Bitcoin node in Settings.");
+}
+
 async function swapRpc(fn) {
   try {
     return { ok: true, result: await fn() };
   } catch (e) {
     console.error("swap rpc error:", e.message);
+    maybeNotifyBtcUnreachable(e.message);
     return { ok: false, error: e.message };
   }
 }
@@ -730,6 +740,8 @@ function checkElectrum(url, timeoutMs = 6000) {
   });
 }
 ipcMain.handle("check-btc-node", (e, url) => checkElectrum(url));
+ipcMain.handle("swap-btc-status", () => swapRpc(() => xkrSwapRpc.bitcoinStatus()));
+ipcMain.handle("get-swap-network", () => ({ testnet: dev }));
 ipcMain.handle("get-btc-node", () => ({
   url: getElectrumUrl(),
   presets: BTC_NODE_PRESETS,

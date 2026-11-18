@@ -46,6 +46,7 @@ function call(method, params = {}) {
 }
 
 const status = () => call("status");
+const bitcoinStatus = () => call("bitcoin_status");
 const swapInfos = () => call("swap_infos");
 const history = () => call("history");
 const balance = () => call("balance");
@@ -73,6 +74,7 @@ module.exports = {
   setServePort,
   call,
   status,
+  bitcoinStatus,
   swapInfos,
   history,
   balance,

@@ -1,41 +1,116 @@
 <script>
   import { fade } from 'svelte/transition';
+  import { flip } from 'svelte/animate';
   import { createEventDispatcher, onMount } from 'svelte';
+  import { base } from '$app/paths';
   import ArrowRight from '$lib/components/icons/ArrowRight.svelte';
   import { node } from '$lib/stores/node.js';
   import Auto from '$lib/components/icons/Auto.svelte';
   import { Moon } from 'svelte-loading-spinners';
   import Button from '$lib/components/buttons/Button.svelte';
+  import toast from 'svelte-french-toast';
+
+  export let kind = 'xkr'; // "xkr" | "btc"
+  export let showBack = false;
 
   let nodeInput = '';
   let nodeDetails = '';
-  let selectedNode;
-  let loadingNode;
+  let selectedKey = '';
+  let loadingNode = false;
   let nodeList = [];
+  let checking = false;
+  let checked = false;
+
+  // btc-only state
+  let loading = false;
+  let testnet = false;
+
+  const dispatch = new createEventDispatcher();
+
+  const toastStyle =
+    'border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);';
+
+  $: placeholder = kind === 'btc' ? 'ssl://host:port' : 'Enter url & port';
+  $: busy = kind === 'btc' ? loading : $node.loading;
+  $: autoBusy = kind === 'btc' ? loading : loadingNode;
+  $: onlineCount = nodeList.filter((n) => n.online === true).length;
+
+  const keyOf = (n) => (kind === 'btc' ? n.url : `${n.url}:${n.port}`);
 
   onMount(async () => {
+    if (kind === 'btc') {
+      const net = await window.api.invoke('get-swap-network').catch(() => null);
+      testnet = !!(net && net.testnet);
+
+      const cur = await window.api.invoke('get-btc-node').catch(() => null);
+      selectedKey = (cur && cur.url) || '';
+      nodeInput = selectedKey;
+
+      nodeList = await getBtcNodeList(testnet);
+      return;
+    }
+
     if ($node.selectedNode) {
-      if ($node.selectedNode.ssl) {
-        nodeInput = `https://${$node.selectedNode.url}:${$node.selectedNode.port}`;
-      } else {
-        nodeInput = `http://${$node.selectedNode.url}:${$node.selectedNode.port}`;
-      }
-    } else {
-      nodeInput = '';
-      selectedNode = '';
+      const { url, port, ssl } = $node.selectedNode;
+      nodeInput = `${ssl ? 'https' : 'http'}://${url}:${port}`;
+      selectedKey = `${url}:${port}`;
     }
 
     nodeList = await getNodeList();
   });
 
-  const dispatch = new createEventDispatcher();
+  // ---- shared --------------------------------------------------------------
+
+  const rank = (n) => (n.online === true ? 0 : n.online === false ? 2 : 1);
+
+  const pick = (n) => (kind === 'btc' ? chooseBtcNode(n) : chooseNode(n));
+
+  const auto = () => (kind === 'btc' ? applyBtcNode('') : randomNode());
+
+  const connectTo = () => {
+    if (kind === 'btc') {
+      const url = nodeInput.trim();
+      if (url) applyBtcNode(url);
+      return;
+    }
+    connectToXkr();
+  };
+
+  const probe = (n) => (kind === 'btc' ? probeBtc(n) : probeXkr(n));
+
+  const checkNodes = async () => {
+    checking = true;
+    nodeList.forEach((n) => {
+      n.checking = true;
+      n.online = undefined;
+    });
+    nodeList = nodeList;
+    await Promise.all(
+      nodeList.map(async (n) => {
+        n.online = await probe(n);
+        n.checking = false;
+        nodeList = [...nodeList].sort((a, b) => rank(a) - rank(b));
+      }),
+    );
+    checking = false;
+    checked = true;
+  };
 
   const back = () => {
     $node.loading = false;
     dispatch('back');
   };
 
-  const connectTo = () => {
+  // ---- XKR -----------------------------------------------------------------
+
+  const xkrUrl = (n) => `${n.ssl ? 'https://' : 'http://'}${n.url}:${n.port}/info`;
+
+  const probeXkr = (n) =>
+    fetch(xkrUrl(n), { method: 'GET', signal: AbortSignal.timeout(5000) })
+      .then(() => true)
+      .catch(() => false);
+
+  const connectToXkr = () => {
     $node.loading = true;
     let input = nodeInput;
     if (input.startsWith('http://')) {
@@ -72,156 +147,178 @@
     $node.selectedNode = nodeDetails;
   };
 
-  const chooseNode = async (pickedNode, i) => {
+  const chooseNode = async (picked) => {
     $node.loading = true;
-    nodeInput = `${pickedNode.url}:${pickedNode.port}`;
-    selectedNode = i;
-    await checkNode(pickedNode);
+    nodeInput = `${picked.url}:${picked.port}`;
+    selectedKey = keyOf(picked);
+    const listed = nodeList.find((a) => keyOf(a) === selectedKey) || picked;
+    listed.online = await probeXkr(picked);
+    nodeList = nodeList;
     $node.loading = false;
   };
 
   const getNodeList = async () => {
     let nodes = await fetch('https://raw.githubusercontent.com/kryptokrona/kryptokrona-public-nodes/main/nodes.json');
     nodes = await nodes.json();
-    nodes = nodes.nodes;
+    return nodes.nodes;
+  };
+
+  const randomNode = async () => {
+    loadingNode = true;
+    try {
+      const nodes = await getNodeList();
+      for (const ssl of [true, false]) {
+        const candidates = nodes.filter((n) => !!n.ssl === ssl).sort(() => 0.5 - Math.random());
+        for (const candidate of candidates) {
+          if (await probeXkr(candidate)) {
+            const listed = nodeList.find((a) => keyOf(a) === keyOf(candidate));
+            await chooseNode(listed || candidate);
+            return;
+          }
+        }
+      }
+      toast.error('No reachable node found', { position: 'top-right', style: toastStyle });
+    } catch (e) {
+      toast.error('Could not load the node list', { position: 'top-right', style: toastStyle });
+    } finally {
+      loadingNode = false;
+    }
+  };
+
+  // ---- BTC -----------------------------------------------------------------
+
+  // Electrum servers.json is { host: { s: sslPort, t: tcpPort } }. Prefer SSL.
+  const normalizeElectrum = (servers) => {
+    const nodes = [];
+    for (const [host, info] of Object.entries(servers || {})) {
+      if (info && info.s) nodes.push({ name: host, url: `ssl://${host}:${info.s}` });
+      else if (info && info.t) nodes.push({ name: host, url: `tcp://${host}:${info.t}` });
+    }
     return nodes;
   };
 
-  const randomNode = async (ssl = true) => {
-    loadingNode = true;
-    let recommended_node = undefined;
-
-    let nodes = await getNodeList();
-
-    let node_requests = [];
-    let ssl_nodes = [];
-    if (ssl) {
-      ssl_nodes = nodes.filter((node) => {
-        return node.ssl;
-      });
-    } else {
-      ssl_nodes = nodes.filter((node) => {
-        return !node.ssl;
-      });
-    }
-
-    ssl_nodes = ssl_nodes.sort((a, b) => 0.5 - Math.random());
-
-    for (let n = 0; n < ssl_nodes.length; n++) {
-      let this_node = ssl_nodes[n];
-
-      let nodeURL = `${this_node.ssl ? 'https://' : 'http://'}${this_node.url}:${this_node.port}/info`;
+  const getBtcNodeList = async (isTestnet) => {
+    const net = isTestnet ? 'testnet' : 'mainnet';
+    try {
+      const res = await fetch(
+        `https://raw.githubusercontent.com/spesmilo/electrum/master/electrum/chains/${net}/servers.json`,
+      );
+      if (!res.ok) throw new Error('fetch failed');
+      return normalizeElectrum(await res.json());
+    } catch (e) {
       try {
-        const resp = await fetch(
-          nodeURL,
-          {
-            method: 'GET',
-          },
-          1000,
-        );
-
-        if (resp.ok) {
-          loadingNode = false;
-          const nodeIndex = nodeList.find((a) => a.url === this_node.url && a.ssl === this_node.ssl);
-          chooseNode(this_node, nodeList.indexOf(nodeIndex));
-
-          return;
-        }
-      } catch (e) {
-        console.log(e);
+        const res = await fetch(`${base}/offline-nodes/btc-${net}.json`);
+        return (await res.json()).nodes || [];
+      } catch (_) {
+        return [];
       }
     }
-
-    if (recommended_node === undefined) {
-      nodeInput = await randomNode(false);
-    }
   };
 
-  const checkNodes = async () => {
-    // Create an array to store all fetch promises
-    const fetchPromises = [];
+  const probeBtc = (n) => window.api.invoke('check-btc-node', n.url).catch(() => false);
 
-    for (const node of nodeList) {
-      const nodeURL = `${node.ssl ? 'https://' : 'http://'}${node.url}:${node.port}/info`;
-      const fetchPromise = fetch(nodeURL, { method: 'GET' })
-        .then((response) => {
-          node.online = true;
-          nodeList = nodeList;
-        })
-        .catch((error) => {
-          // Handle errors here
-          node.online = false;
-          nodeList = nodeList;
-        });
-      fetchPromises.push(fetchPromise);
-    }
-
-    // Wait for all fetch promises to resolve
-    await Promise.all(fetchPromises);
-    console.log(nodeList);
-  };
-
-  const checkNode = async (pickedNode) => {
-    // Create an array to store all fetch promises
-    const fetchPromises = [];
-
-    const nodeURL = `${pickedNode.ssl ? 'https://' : 'http://'}${pickedNode.url}:${pickedNode.port}/info`;
-    const fetchPromise = fetch(nodeURL, { method: 'GET' })
-      .then((response) => {
-        pickedNode.online = true;
-        nodeList.some((a) => {
-          if (a.url === pickedNode.url && a.ssl === pickedNode.ssl) a.online = true;
-        });
-        nodeList = nodeList;
-      })
-      .catch((error) => {
-        node.online = false;
-        nodeList.some((a) => {
-          if (a.url === pickedNode.url && a.ssl === pickedNode.ssl) a.online = false;
-        });
-        nodeList = nodeList;
+  const applyBtcNode = async (url) => {
+    loading = true;
+    const res = await window.api.invoke('set-btc-node', url).catch((e) => ({ ok: false, error: e.message }));
+    loading = false;
+    if (res && res.ok) {
+      selectedKey = url;
+      toast.success(url ? 'Bitcoin node set — reconnecting…' : 'Using automatic node selection', {
+        position: 'top-right',
+        style: toastStyle,
       });
-    fetchPromises.push(fetchPromise);
-    // Wait for all fetch promises to resolve
-    await Promise.all(fetchPromises);
+      dispatch('done', { url });
+    } else {
+      toast.error(`Couldn't set Bitcoin node${res && res.error ? ': ' + res.error : ''}`, {
+        position: 'top-right',
+        style: toastStyle,
+      });
+    }
+  };
+
+  const chooseBtcNode = async (picked) => {
+    nodeInput = picked.url;
+    selectedKey = picked.url;
+    picked.online = await probeBtc(picked);
+    nodeList = nodeList;
   };
 </script>
 
 <section in:fade>
-  <h2>Pick a node</h2>
+  <div class="head">
+    {#if showBack}
+      <button class="back" on:click={back}>← Back</button>
+    {/if}
+    <h2>{kind === 'btc' ? 'Pick a Bitcoin node' : 'Pick a node'}</h2>
+  </div>
+
   <div class="field">
-    <input placeholder="Enter url & port" type="text" spellcheck="false" autofocus bind:value={nodeInput} />
-    <button style="margin-right: 0.25rem" on:click={randomNode}>
-      {#if loadingNode}
+    <input placeholder={placeholder} type="text" spellcheck="false" bind:value={nodeInput} />
+    <button style="margin-right: 0.25rem" on:click={auto}>
+      {#if autoBusy}
         <Moon color="#ffffff" size="20" unit="px" />
       {:else}
         <Auto />
       {/if}
     </button>
-
-    <button disabled={$node.loading} on:click={connectTo}>
-      {#if $node.loading}
+    <button disabled={busy} on:click={connectTo}>
+      {#if busy}
         <Moon color="#ffffff" size="20" unit="px" />
       {:else}
         <ArrowRight green={nodeInput} />
       {/if}
     </button>
   </div>
-  <div class="node-list">
-    {#each nodeList as node, i}
-      <div
-        class="node-card"
-        class:selected={selectedNode === i}
-        on:click={() => {
-          chooseNode(node, i);
-        }}
-      >
-        <p id="node">{node.name}</p>
-        <span class="status" class:online={node.online === true} class:offline={node.online === false}>&nbsp;</span>
-      </div>
-    {/each}
+
+  <div class="card">
+    <div class="header">
+      <h5>Nodes</h5>
+      {#if checked && !checking}
+        <span class="count">{onlineCount} of {nodeList.length} online</span>
+      {:else}
+        <span class="count">{nodeList.length}</span>
+      {/if}
+    </div>
+    <div class="list">
+      {#each nodeList as n (keyOf(n))}
+        <div
+          class="row"
+          class:selected={selectedKey === keyOf(n)}
+          role="button"
+          tabindex="0"
+          on:click={() => pick(n)}
+          on:keydown={(e) => e.key === 'Enter' && pick(n)}
+          animate:flip={{ duration: 300 }}
+        >
+          <span class="name">{n.name}</span>
+          {#if n.checking}
+            <span class="status checking"><i />Checking</span>
+          {:else if n.online === true}
+            <span class="status online"><i />Online</span>
+          {:else if n.online === false}
+            <span class="status offline"><i />Offline</span>
+          {/if}
+        </div>
+      {/each}
+    </div>
   </div>
-  <Button on:click={() => checkNodes()} text="Check availability" width="155" height="36" />
+
+  <div class="actions">
+    <Button
+      text={autoBusy ? 'Choosing…' : 'Choose automatically'}
+      disabled={autoBusy}
+      on:click={auto}
+      width="175"
+      height="36"
+    />
+    <Button
+      text={checking ? 'Checking…' : 'Check availability'}
+      disabled={checking}
+      on:click={checkNodes}
+      width="155"
+      height="36"
+    />
+  </div>
 </section>
 
 <style lang="scss">
@@ -230,59 +327,134 @@
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    gap: 2rem;
-    max-width: 500px;
+    gap: 1.5rem;
+    width: min(500px, 100%);
   }
 
-  .node-list {
+  .head {
     display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
+    align-items: center;
+    align-self: stretch;
     justify-content: center;
-  }
-
-  .node-card {
-    background-color: var(--card-background);
-    border: 1px solid var(--card-border);
-    padding: 0.55rem 1rem;
-    border-radius: 0.4rem;
-    cursor: pointer;
     position: relative;
 
-    p {
-      margin: 0;
-      font-size: 0.75rem;
-    }
-
-    .status {
-      display: inline-block;
-      background-color: rgba(255, 255, 255, 0.2);
-      border-radius: 50%;
-      height: 6px;
-      width: 6px;
+    .back {
       position: absolute;
-      top: 5px;
-      right: 5px;
-    }
-
-    .online {
-      background-color: greenyellow;
-    }
-
-    .offline {
-      background-color: red;
+      left: 0;
+      background: transparent;
+      border: none;
+      color: var(--text-color);
+      cursor: pointer;
+      font-size: 0.85rem;
+      opacity: 0.8;
     }
   }
 
-  .selected {
-    border-color: var(--success-color);
-    color: var(--title-color);
-  }
-
-  .button_wrapper {
+  .card {
+    align-self: stretch;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    height: 300px;
     display: flex;
+    flex-direction: column;
+    overflow: hidden;
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 15px;
+      border-bottom: 1px solid var(--border-color);
+
+      h5 {
+        margin: 0;
+      }
+
+      .count {
+        font-size: 0.75rem;
+        opacity: 0.6;
+      }
+    }
+
+    .list {
+      flex: 1;
+      overflow-y: auto;
+    }
+  }
+
+  .row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     gap: 1rem;
-    width: 400px;
+    opacity: 0.8;
+    cursor: pointer;
+    padding: 5px 15px;
+    border-bottom: 1px solid var(--border-color);
+
+    &:hover {
+      opacity: 1;
+    }
+
+    &.selected {
+      opacity: 1;
+      color: var(--primary-color);
+    }
+
+    .name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  .status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    font-size: 0.7rem;
+    color: var(--text-color);
+    opacity: 0.85;
+
+    i {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    &.online i {
+      background: var(--success-color);
+      box-shadow: 0 0 6px var(--success-color);
+    }
+
+    &.offline i {
+      background: var(--alert-color);
+    }
+
+    &.checking {
+      opacity: 0.5;
+
+      i {
+        animation: pulse 1s ease-in-out infinite;
+      }
+    }
+  }
+
+  @keyframes pulse {
+    0%,
+    100% {
+      opacity: 0.3;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+
+  .actions {
+    display: flex;
+    gap: 0.75rem;
     justify-content: center;
   }
 
@@ -291,6 +463,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    align-self: stretch;
     padding: 0 6px 0 10px;
     background-color: var(--card-background);
     border: 1px solid var(--card-border);
@@ -303,7 +476,8 @@
 
     input {
       margin: 0 auto;
-      width: 300px;
+      flex: 1;
+      min-width: 0;
       height: 48px;
       transition: 200ms ease-in-out;
       color: var(--text-color);
@@ -321,6 +495,7 @@
       background-color: #252525;
       height: 36px;
       width: 48px;
+      flex-shrink: 0;
       display: inline-flex;
       align-items: center;
       justify-content: center;
