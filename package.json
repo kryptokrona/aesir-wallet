@@ -25,7 +25,8 @@
     "build:mac-arm64": "cross-env NODE_ENV=production vite build && electron-builder --mac --arm64 --config build.config.json -p always",
     "build:mac-x64": "cross-env NODE_ENV=production vite build && electron-builder --mac --x64 --config build.config.json -p always",
     "build:linux-x64": "cross-env NODE_ENV=production vite build && electron-builder --linux --x64 --config build.config.json -p always",
-    "publish:mac-intel": "cross-env NODE_ENV=production vite build && electron-builder --mac --x64 --config build.config.json -p always"
+    "publish:mac-intel": "cross-env NODE_ENV=production vite build && electron-builder --mac --x64 --config build.config.json -p always",
+    "test:backend": "node --test tests/backend/*.test.cjs"
   },
   "build": {
     "publish": [
@@ -57,14 +58,15 @@
     "electron-window-state": "^5.0.3",
     "file-saver": "^2.0.5",
     "headless-qr": "^1.0.3",
+    "hugin-network": "file:../xkr-work/hugin-p2p",
     "hyperdht": "6.33.0",
     "hyperswarm": "^4.7.7",
     "hyperswarm-hugin": "1.0.4",
     "keypear": "1.2.2",
     "keytar": "^7.9.0",
-    "kryptokrona-crypto": "^1.0.3",
-    "kryptokrona-utils": "^1.4.0",
-    "kryptokrona-wallet-backend-js": "^2.6.0",
+    "kryptokrona-crypto": "file:../kryptokrona-crypto",
+    "kryptokrona-utils": "file:../kryptokrona-utils",
+    "kryptokrona-wallet-backend-js": "file:../kryptokrona-wallet-backend-js",
     "lightweight-charts": "^4.1.1",
     "ndjson": "^2.0.0",
     "node-notifier": "^10.0.1",
@@ -109,9 +111,8 @@
     "vite": "^5.2.13"
   },
   "overrides": {
-    "electron": {
-      "got": "^12.5.1"
-    },
-    "kryptokrona-utils": "$kryptokrona-utils"
+    "kryptokrona-crypto": "$kryptokrona-crypto",
+    "kryptokrona-utils": "$kryptokrona-utils",
+    "kryptokrona-wallet-backend-js": "$kryptokrona-wallet-backend-js"
   }
 }

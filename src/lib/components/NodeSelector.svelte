@@ -30,7 +30,7 @@
   const toastStyle =
     'border-radius: 5px; background: var(--toast-bg-color); border: 1px solid var(--toast-b-color); color: var(--toast-text-color);';
 
-  $: placeholder = kind === 'btc' ? 'ssl://host:port' : 'Enter url & port';
+  $: placeholder = kind === 'btc' ? 'ssl://host:port' : 'url:port, hyperswarm or an xkr: invite';
   $: busy = kind === 'btc' ? loading : $node.loading;
   $: autoBusy = kind === 'btc' ? loading : loadingNode;
   $: onlineCount = nodeList.filter((n) => n.online === true).length;
@@ -52,7 +52,7 @@
 
     if ($node.selectedNode) {
       const { url, port, ssl } = $node.selectedNode;
-      nodeInput = `${ssl ? 'https' : 'http'}://${url}:${port}`;
+      nodeInput = isSwarm(url) ? url : `${ssl ? 'https' : 'http'}://${url}:${port}`;
       selectedKey = `${url}:${port}`;
     }
 
@@ -103,17 +103,27 @@
 
   // ---- XKR -----------------------------------------------------------------
 
+  // An xkrd node found over Hyperswarm (`hyperswarm`), or a private node's invite (`xkr:…`):
+  // the wallet backend finds the node, so there is no address to probe from here.
+  const SWARM_ENTRY = { name: 'Hyperswarm (automatic)', url: 'hyperswarm', port: 0, ssl: false, swarm: true };
+  const isSwarm = (url) => url === 'hyperswarm' || (typeof url === 'string' && url.startsWith('xkr:'));
+
   const xkrUrl = (n) => `${n.ssl ? 'https://' : 'http://'}${n.url}:${n.port}/info`;
 
   const probeXkr = (n) =>
-    fetch(xkrUrl(n), { method: 'GET', signal: AbortSignal.timeout(5000) })
-      .then(() => true)
-      .catch(() => false);
+    isSwarm(n.url)
+      ? Promise.resolve(true)
+      : fetch(xkrUrl(n), { method: 'GET', signal: AbortSignal.timeout(5000) })
+          .then(() => true)
+          .catch(() => false);
 
   const connectToXkr = () => {
     $node.loading = true;
-    let input = nodeInput;
-    if (input.startsWith('http://')) {
+    let input = nodeInput.trim();
+    const swarmUrl = input.replace(/:0$/, '');
+    if (isSwarm(swarmUrl)) {
+      nodeDetails = { url: swarmUrl, port: 0, ssl: false };
+    } else if (input.startsWith('http://')) {
       input = input.replace(/(^\w+:|^)\/\//, '');
       nodeDetails = {
         url: input.split(':')[0] ?? input,
@@ -160,7 +170,7 @@
   const getNodeList = async () => {
     let nodes = await fetch('https://raw.githubusercontent.com/kryptokrona/kryptokrona-public-nodes/main/nodes.json');
     nodes = await nodes.json();
-    return nodes.nodes;
+    return [SWARM_ENTRY, ...nodes.nodes];
   };
 
   const randomNode = async () => {
@@ -168,7 +178,7 @@
     try {
       const nodes = await getNodeList();
       for (const ssl of [true, false]) {
-        const candidates = nodes.filter((n) => !!n.ssl === ssl).sort(() => 0.5 - Math.random());
+        const candidates = nodes.filter((n) => !n.swarm && !!n.ssl === ssl).sort(() => 0.5 - Math.random());
         for (const candidate of candidates) {
           if (await probeXkr(candidate)) {
             const listed = nodeList.find((a) => keyOf(a) === keyOf(candidate));

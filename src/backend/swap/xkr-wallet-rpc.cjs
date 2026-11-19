@@ -10,8 +10,10 @@ const floorScanHeight = () => parseInt(process.env.XKR_WALLET_SCAN_HEIGHT || '0'
 
 const scanCoinbase = () => process.env.XKR_SCAN_COINBASE === '1' || process.env.XKR_SCAN_COINBASE === 'true';
 
-function makeDaemon(daemonHost, daemonPort, ssl) {
-    return new WB.Daemon(daemonHost, daemonPort, false, !!ssl);
+function makeDaemon(ctx) {
+    // a node over Hyperswarm: the main wallet's requester (hugin-network/xkr-daemon)
+    if (ctx.requester) return WB.Daemon.withRequester(ctx.requester);
+    return new WB.Daemon(ctx.daemonHost, ctx.daemonPort, false, !!ctx.ssl);
 }
 
 // How many blocks below a known lock height we start the ephemeral sweep wallet,
@@ -20,6 +22,9 @@ const LOCK_SCAN_MARGIN = 100;
 
 // Raw POST to the kryptokrona daemon (wallet-backend-js has no tx-by-hash call).
 function daemonRequest(ctx, path, payload) {
+    if (ctx.requester) {
+        return ctx.requester.request('post', path, payload).then((answer) => answer.body);
+    }
     return new Promise((resolve, reject) => {
         const data = JSON.stringify(payload);
         const mod = ctx.ssl ? require('https') : http;
@@ -132,7 +137,7 @@ const methods = {
     async watchForLock({ address, viewSecret, amount, timeoutMs, scanHeight }, ctx) {
         if (!address || !viewSecret || !amount) throw new Error('address, viewSecret, amount required');
         return withWallet(
-            () => WB.WalletBackend.importViewWallet(makeDaemon(ctx.daemonHost, ctx.daemonPort, ctx.ssl), scanHeight || floorScanHeight(), viewSecret, address),
+            () => WB.WalletBackend.importViewWallet(makeDaemon(ctx), scanHeight || floorScanHeight(), viewSecret, address),
             async (wallet) => {
                 const { unlocked, locked, txHash } = await poll('deposit', timeoutMs || 180000, 2000, async () => {
                     const [u, l] = await wallet.getBalance();
@@ -156,7 +161,7 @@ const methods = {
                 (lockTxid ? ` lockTxid=${lockTxid}` : ''),
         );
         return withWallet(
-            () => WB.WalletBackend.importWalletFromKeys(makeDaemon(ctx.daemonHost, ctx.daemonPort, ctx.ssl), importHeight, viewSecret, spendSecret),
+            () => WB.WalletBackend.importWalletFromKeys(makeDaemon(ctx), importHeight, viewSecret, spendSecret),
             async (wallet) => {
                 const outcome = await poll('spendable balance or prior sweep', 300000, 2000, async () => {
                     const prior = (await wallet.getTransactions()).find((t) => t.totalAmount() < 0);
@@ -188,7 +193,7 @@ const methods = {
         if (!spendSecret || !viewSecret || !txHash) throw new Error('spendSecret, viewSecret, txHash required');
         const need = typeof confirmations === 'number' ? confirmations : 1;
         return withWallet(
-            () => WB.WalletBackend.importWalletFromKeys(makeDaemon(ctx.daemonHost, ctx.daemonPort, ctx.ssl), scanHeight || floorScanHeight(), viewSecret, spendSecret),
+            () => WB.WalletBackend.importWalletFromKeys(makeDaemon(ctx), scanHeight || floorScanHeight(), viewSecret, spendSecret),
             async (wallet) => {
                 const depth = await poll('tx confirmations', timeoutMs || 600000, 3000, async () => {
                     const tx = await wallet.getTransaction(txHash);
@@ -231,7 +236,7 @@ const methods = {
         }
 
         return withWallet(
-            () => WB.WalletBackend.importWalletFromKeys(makeDaemon(ctx.daemonHost, ctx.daemonPort, ctx.ssl), scanHeight || floorScanHeight(), senderViewSecret, senderSpendSecret),
+            () => WB.WalletBackend.importWalletFromKeys(makeDaemon(ctx), scanHeight || floorScanHeight(), senderViewSecret, senderSpendSecret),
             async (wallet) => {
                 await poll('spendable balance for lock', 180000, 2000, async () => {
                     const [u] = await wallet.getBalance();
@@ -265,7 +270,7 @@ const methods = {
         }
 
         return withWallet(
-            () => WB.WalletBackend.importWalletFromKeys(makeDaemon(ctx.daemonHost, ctx.daemonPort, ctx.ssl), scanHeight || floorScanHeight(), viewSecret, spendSecret),
+            () => WB.WalletBackend.importWalletFromKeys(makeDaemon(ctx), scanHeight || floorScanHeight(), viewSecret, spendSecret),
             async (wallet) => {
                 await poll('balance sync', 60000, 2000, async () => {
                     const [walletHeight, , networkHeight] = wallet.getSyncStatus();
@@ -278,8 +283,8 @@ const methods = {
     },
 };
 
-function start({ port, daemonHost, daemonPort, ssl, getMainWallet, makerRemaining }) {
-    const ctx = { daemonHost, daemonPort, ssl: !!ssl, getMainWallet, makerRemaining };
+function start({ port, daemonHost, daemonPort, ssl, requester, getMainWallet, makerRemaining }) {
+    const ctx = { daemonHost, daemonPort, ssl: !!ssl, requester: requester || null, getMainWallet, makerRemaining };
     const server = http.createServer((req, res) => {
         if (req.method !== 'POST') {
             res.writeHead(405).end();

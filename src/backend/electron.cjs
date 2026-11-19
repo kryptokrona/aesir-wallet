@@ -16,6 +16,7 @@ const xkrSwapAsb = require("./swap/asb.cjs");
 const { swapNotification } = require("./swap/swapNotify.cjs");
 const notifier = require("node-notifier");
 const Crypto = require("kryptokrona-crypto").Crypto;
+const { isSwarmNode, defaultNode, makeDaemon, swarmNodeAnswers, currentRequester } = require("./daemon.cjs");
 const fetch = require("cross-fetch");
 const keytar = require("keytar");
 const Store = require("electron-store");
@@ -428,8 +429,14 @@ async function startXkrSwapService(node) {
     if (!node) return;
     try {
       if (!process.env.XKR_WALLET_SCAN_HEIGHT) {
-        const info = await fetchTimeout(`${node.ssl ? "https://" : "http://"}${node.url}:${node.port}/getinfo`);
-        const j = info.ok ? await info.json() : null;
+        let j = null;
+        if (isSwarmNode(node.url)) {
+          const answer = currentRequester() ? await currentRequester().request("get", "/info") : null;
+          j = answer && answer.status === 200 ? answer.body : null;
+        } else {
+          const info = await fetchTimeout(`${node.ssl ? "https://" : "http://"}${node.url}:${node.port}/getinfo`);
+          j = info.ok ? await info.json() : null;
+        }
         if (j && j.height) process.env.XKR_WALLET_SCAN_HEIGHT = String(Math.max(0, j.height - 1000));
       }
     } catch (_) {}
@@ -438,6 +445,7 @@ async function startXkrSwapService(node) {
       daemonHost: node.url,
       daemonPort: node.port,
       ssl: node.ssl,
+      requester: isSwarmNode(node.url) ? currentRequester() : null,
       getMainWallet: () => walletBackend,
       makerRemaining: () => makerRemainingAtomic(),
     });
@@ -1173,7 +1181,8 @@ function startMakerBoard(args, priceSats, opts = {}) {
 
 ipcMain.on("start-app", async e => {
   const myWallets = await wallets.get("wallets") ?? false;
-  const node = await nodes.get("node") ?? null;
+  // no node saved yet: the local node when one answers, else an xkrd node over Hyperswarm
+  const node = (await nodes.get("node")) ?? (await defaultNode());
   const data = { myWallets, node };
 
   autoUpdater.autoInstallOnAppQuit = false;
@@ -1185,7 +1194,7 @@ ipcMain.on("start-app", async e => {
   mainWindow.webContents.send("started-app", data);
   mainWindow.setSize(600, 700, true);
   if (node) {
-    daemon = new WB.Daemon(node.url, node.port);
+    daemon = makeDaemon(node);
   }
   mainWindow.webContents.send('version', app.getVersion())
 });
@@ -1240,7 +1249,7 @@ ipcMain.on("start-wallet", async (e, walletName, password, node, file) => {
   nodes.set("node", { url: node.url, port: node.port, ssl: node.ssl });
 
   if (!daemon) {
-    daemon = new WB.Daemon(node.url, node.port);
+    daemon = makeDaemon(node);
   }
 
   if (loggedIn) {
@@ -1438,7 +1447,7 @@ ipcMain.handle("create-wallet", async (e, walletName, password, node) => {
   try {
 
     if (!daemon) {
-      daemon = new WB.Daemon(node.url, node.port);
+      daemon = makeDaemon(node);
     }
 
     walletName = walletName
@@ -1544,7 +1553,7 @@ ipcMain.handle("import-seed", async (e, seed, walletName, password, height, node
   console.log(seed, walletName, password, height);
 
   if (!daemon) {
-    daemon = new WB.Daemon(node.url, node.port);
+    daemon = makeDaemon(node);
   }
 
   [walletBackend, err] = await WB.WalletBackend.importWalletFromSeed(daemon, height, seed);
@@ -1665,6 +1674,8 @@ ipcMain.handle("check-node", async (e, node) => {
 });
 
 async function checkNode(node) {
+  // a Hyperswarm node: the requester finds a synchronized node itself
+  if (isSwarmNode(node.url)) return await swarmNodeAnswers();
   try {
     const req = await fetchTimeout(`${node.ssl ? 'https://' : 'http://' }${node.url}:${node.port}/getinfo`);
 
@@ -1684,9 +1695,9 @@ async function checkNode(node) {
 
 ipcMain.handle('change-node', async (e, node) => {
   console.log('SETTING', node);
-  const check = await checkNode(node);
-  daemon = new WB.Daemon(node.url, node.port);
+  daemon = makeDaemon(node);
   await walletBackend.swapNode(daemon);
+  const check = await checkNode(node);
   nodes.set("node", { url: node.url, port: node.port, ssl: node.ssl });
   if (check) {
     successMessage('Connecting to node')
